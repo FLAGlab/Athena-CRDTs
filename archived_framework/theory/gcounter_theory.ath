@@ -1,0 +1,61 @@
+load "src/framework/theory/semilattice_theory"
+load "src/framework/nat-max"
+module GCounterTheoryV3 {
+  open SemilatticeTheory
+  open N
+  declare gc-join: [N N] -> N
+  declare gc-bot: N
+  assert* gc-join-is-max :=
+    ((gc-join ?x:N ?y:N) = (N.Max ?x ?y))
+  assert* gc-bot-is-zero :=
+    (gc-bot = zero)
+  conclude gc-commutative-proven :=
+    (forall ?n1:N ?n2:N . (gc-join ?n1 ?n2) = (gc-join ?n2 ?n1))
+    pick-any n1:N n2:N
+      (!chain [(gc-join n1 n2)
+             = (N.Max n1 n2)       [gc-join-is-max]
+             = (N.Max n2 n1)       [N.Max.commutative]
+             = (gc-join n2 n1)     [gc-join-is-max]])
+  conclude gc-associative-proven :=
+    (forall ?n1:N ?n2:N ?n3:N .
+      (gc-join (gc-join ?n1 ?n2) ?n3) = (gc-join ?n1 (gc-join ?n2 ?n3)))
+    pick-any n1:N n2:N n3:N
+      (!chain [(gc-join (gc-join n1 n2) n3)
+             = (N.Max (gc-join n1 n2) n3)         [gc-join-is-max]
+             = (N.Max (N.Max n1 n2) n3)           [gc-join-is-max]
+             = (N.Max n1 (N.Max n2 n3))           [N.Max.associative]
+             = (N.Max n1 (gc-join n2 n3))         [gc-join-is-max]
+             = (gc-join n1 (gc-join n2 n3))       [gc-join-is-max]])
+  conclude gc-idempotent-proven :=
+    (forall ?n:N . (gc-join ?n ?n) = ?n)
+    pick-any n:N
+      (!chain [(gc-join n n)
+             = (N.Max n n)         [gc-join-is-max]
+             = n                   [N.Max.idempotent]])
+  assert* nat-max-zero-left :=
+    ((N.Max zero ?x:N) = ?x:N)
+  conclude gc-left-identity-proven :=
+    (forall ?n:N . (gc-join gc-bot ?n) = ?n)
+    pick-any n:N
+      (!chain [(gc-join gc-bot n)
+             = (gc-join zero n)    [gc-bot-is-zero]
+             = (N.Max zero n)      [gc-join-is-max]
+             = n                   [nat-max-zero-left]])
+  assert* nat-max-zero-right :=
+    ((N.Max ?x:N zero) = ?x:N)
+  conclude gc-right-identity-proven :=
+    (forall ?n:N . (gc-join ?n gc-bot) = ?n)
+    pick-any n:N
+      (!chain [(gc-join n gc-bot)
+             = (gc-join n zero)    [gc-bot-is-zero]
+             = (N.Max n zero)      [gc-join-is-max]
+             = n                   [nat-max-zero-right]])
+  define GCounter-Adapter := 
+    (renaming |{SemilatticeTheory.join := gc-join, 
+                SemilatticeTheory.bot := gc-bot}|)
+  (!claim (GCounter-Adapter SemilatticeTheory.Commutative))
+  (!claim (GCounter-Adapter SemilatticeTheory.Associative))
+  (!claim (GCounter-Adapter SemilatticeTheory.Idempotent))
+  (!claim (GCounter-Adapter SemilatticeTheory.LeftIdentity))
+  (!claim (GCounter-Adapter SemilatticeTheory.RightIdentity))
+} 

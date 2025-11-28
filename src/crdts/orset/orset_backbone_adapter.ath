@@ -1,0 +1,105 @@
+load "orset_specification"
+load "../../framework/backbone"
+
+module ORSetAdapter {
+  # OR-Set Adapter: Connects ORSetSpec to Backbone
+  #
+  # This adapter demonstrates WHY OR-Set needs Backbone:
+  # - Unique tag generation requires vector clock timestamps
+  # - Causal delivery ensures removes only affect observed adds
+  # - Cannot be implemented with Payload (no causal context)
+  #
+  # COMPARISON TO 2P-SET:
+  # - 2P-Set uses Payload (simpler, no clocks)
+  # - 2P-Set limitation: can't re-add removed elements
+  # - OR-Set uses Backbone (causal) => enables re-addition
+  
+  open ORSetSpec
+  open Backbone
+  
+  # Convenience wrappers: pass ORSetSpec operations to Backbone
+  
+  # Initialize: Create configuration with vector clocks
+  define (orset-init ids) := 
+    (init-with-clocks orset-merge orset-initial orset-apply-update ids)
+  
+  # Update: Local add or remove operation
+  # Actor-id passed to apply-update (like LWW)
+  define (orset-update cfg actor-id operation) :=
+    (update-local cfg actor-id operation orset-initial orset-apply-update)
+  
+  # Broadcast: Send operation to specific actors
+  # Backbone handles passing actor-id to apply-update
+  define (orset-broadcast cfg from-actor to-actors operation) :=
+    (broadcast-to cfg from-actor to-actors operation orset-initial orset-apply-update)
+  
+  # Query: Check if element is in set at an actor
+  define (orset-contains-at cfg actor-id element) :=
+    (query-state cfg actor-id 
+                 (lambda (state) (orset-contains state element))
+                 false)
+  
+  # Query: Get state at an actor
+  define (orset-state-at cfg actor-id) :=
+    (query-state cfg actor-id 
+                 (lambda (state) state)
+                 orset-initial)
+  
+  # Merge states: Use specification's merge
+  define (orset-merge-states s1:ORSetState s2:ORSetState) :=
+    (orset-merge s1 s2)
+  
+  # === Prove Semilattice Properties ===
+  
+  module SemilatticeProofs {
+    # These proofs reference the theory proofs from ORSetSpec
+    
+    define commutative-for-orset :=
+      (forall ?s1:ORSetState ?s2:ORSetState . 
+        (orset-merge ?s1 ?s2) = (orset-merge ?s2 ?s1))
+    
+    define associative-for-orset :=
+      (forall ?s1:ORSetState ?s2:ORSetState ?s3:ORSetState . 
+        (orset-merge (orset-merge ?s1 ?s2) ?s3) = 
+        (orset-merge ?s1 (orset-merge ?s2 ?s3)))
+    
+    define idempotent-for-orset :=
+      (forall ?s:ORSetState . (orset-merge ?s ?s) = ?s)
+    
+    conclude commutative-holds := commutative-for-orset
+      pick-any s1:ORSetState s2:ORSetState
+        (!chain [(orset-merge s1 s2)
+               = (orset-merge s2 s1)  
+                   [ORSetSpec.Theory.merge-commutative-holds]])
+    
+    conclude associative-holds := associative-for-orset
+      pick-any s1:ORSetState s2:ORSetState s3:ORSetState
+        (!chain [(orset-merge (orset-merge s1 s2) s3)
+               = (orset-merge s1 (orset-merge s2 s3))  
+                   [ORSetSpec.Theory.merge-associative-holds]])
+    
+    conclude idempotent-holds := idempotent-for-orset
+      pick-any s:ORSetState
+        (!chain [(orset-merge s s)
+               = s  
+                   [ORSetSpec.Theory.merge-idempotent-holds]])
+  }
+}
+
+(print "\n=== OR-Set Backbone Adapter ===\n")
+(print "[OK] Adapter connects ORSetSpec to Backbone\n")
+(print "[OK] Operations passed to backbone:\n")
+(print "     - merge-fn = orset-merge (union of sets)\n")
+(print "     - initial = orset-initial (empty sets)\n")
+(print "     - apply-fn = orset-apply-update (add tag or tombstone)\n")
+(print "\n[OK] Generic backbone operations used:\n")
+(print "     - update-local: Apply add/remove with clock tick\n")
+(print "     - broadcast-to: Send operation with causal metadata\n")
+(print "     - query-state: Check membership or get state\n")
+(print "     - reduce/reduce*: Deliver messages with causal ordering\n")
+(print "\n[OK] Proved semilattice properties: commutative, associative, idempotent\n")
+(print "\n[SUCCESS] OR-Set ready for causal distributed execution!\n")
+(print "[KEY DIFFERENCE FROM 2P-SET]:\n")
+(print "     - 2P-Set: Payload (no clocks) => can't re-add\n")
+(print "     - OR-Set: Backbone (vector clocks) => re-add enabled\n")
+(print "     - Demonstrates why causal CRDTs need backbone infrastructure\n")

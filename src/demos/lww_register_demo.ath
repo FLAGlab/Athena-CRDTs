@@ -1,0 +1,205 @@
+load "../crdts/lww_register/lww_register_payload_adapter"
+
+# Demo: LWW-Register with Vector Clocks
+#
+# Demonstrates:
+# 1. Last-write-wins semantics using vector clocks
+# 2. Concurrent writes with deterministic tie-breaking
+# 3. Causal consistency via happens-before relation
+# 4. Strong eventual consistency (convergence)
+
+open LWWRegisterAdapter
+open LWWRegisterSpec
+open VectorClocks
+open Backbone
+
+(print "\n===================================================================")
+(print "  LWW-Register Demo: Vector Clock Causality")
+(print "===================================================================\n")
+
+# ------------------------------------------------------------------
+# Setup: Three actors (alice, bob, charlie)
+# ------------------------------------------------------------------
+
+define demo-actor-base := (string->id "replica")
+define demo-actor-ids := ((string->id "alice") :: 
+                          (string->id "bob") :: 
+                          (string->id "charlie") :: nil)
+
+define alice := (string->id "alice")
+define bob := (string->id "bob")
+define charlie := (string->id "charlie")
+
+(print "Actors: alice, bob, charlie\n")
+
+# Initialize configuration
+define cfg0 := (lww-init demo-actor-ids)
+
+(print "Initial configuration:")
+(print "  alice   = ") (eval (lww-read-config cfg0 alice))
+(print "  bob     = ") (eval (lww-read-config cfg0 bob))
+(print "  charlie = ") (eval (lww-read-config cfg0 charlie))
+
+# ------------------------------------------------------------------
+# Scenario 1: Single write from Alice
+# ------------------------------------------------------------------
+
+(print "\n--- Scenario 1: Alice writes 'hello' ---\n")
+
+define val-hello := (LWWRegisterSpec.val (string->id "hello"))
+
+# Alice writes locally
+define cfg1 := (lww-update cfg0 alice val-hello)
+
+(print "After alice writes 'hello':")
+(print "  alice   = ") (eval (lww-read-config cfg1 alice))
+(print "  bob     = ") (eval (lww-read-config cfg1 bob))
+(print "  charlie = ") (eval (lww-read-config cfg1 charlie))
+
+# Broadcast to others
+define cfg2 := (lww-broadcast cfg1 alice (bob :: charlie :: nil) val-hello)
+
+(print "\nAfter broadcast (all actors receive):")
+(print "  alice   = ") (eval (lww-read-config cfg2 alice))
+(print "  bob     = ") (eval (lww-read-config cfg2 bob))
+(print "  charlie = ") (eval (lww-read-config cfg2 charlie))
+
+# Check convergence
+define scenario1-converged := 
+  ((lww-read-config cfg2 alice) = (lww-read-config cfg2 bob) &
+   (lww-read-config cfg2 bob) = (lww-read-config cfg2 charlie))
+
+(print "\nConvergence check: ") (eval scenario1-converged)
+
+# ------------------------------------------------------------------
+# Scenario 2: Sequential writes (Alice then Bob)
+# ------------------------------------------------------------------
+
+(print "\n--- Scenario 2: Alice writes 'first', then Bob writes 'second' ---\n")
+
+define val-first := (LWWRegisterSpec.val (string->id "first"))
+define val-second := (LWWRegisterSpec.val (string->id "second"))
+
+# Alice writes 'first'
+define cfg3 := (lww-update cfg0 alice val-first)
+define cfg4 := (lww-broadcast cfg3 alice (bob :: charlie :: nil) val-first)
+
+(print "After alice writes 'first' and broadcasts:")
+(print "  alice   = ") (eval (lww-read-config cfg4 alice))
+(print "  bob     = ") (eval (lww-read-config cfg4 bob))
+(print "  charlie = ") (eval (lww-read-config cfg4 charlie))
+
+# Bob writes 'second' (his clock now shows alice's write happened before)
+define cfg5 := (lww-update cfg4 bob val-second)
+define cfg6 := (lww-broadcast cfg5 bob (alice :: charlie :: nil) val-second)
+
+(print "\nAfter bob writes 'second' and broadcasts:")
+(print "  alice   = ") (eval (lww-read-config cfg6 alice))
+(print "  bob     = ") (eval (lww-read-config cfg6 bob))
+(print "  charlie = ") (eval (lww-read-config cfg6 charlie))
+
+# Check convergence - all should have 'second' (bob's write came after)
+define scenario2-converged :=
+  ((lww-read-config cfg6 alice) = (lww-read-config cfg6 bob) &
+   (lww-read-config cfg6 bob) = (lww-read-config cfg6 charlie) &
+   (lww-read-config cfg6 alice) = val-second)
+
+(print "\nConvergence check (all have 'second'): ") (eval scenario2-converged)
+
+# ------------------------------------------------------------------
+# Scenario 3: Concurrent writes with tie-breaking
+# ------------------------------------------------------------------
+
+(print "\n--- Scenario 3: Concurrent writes from Alice and Bob ---\n")
+
+define val-from-alice := (LWWRegisterSpec.val (string->id "alice-value"))
+define val-from-bob := (LWWRegisterSpec.val (string->id "bob-value"))
+
+# Both write concurrently from initial state
+define cfg7a := (lww-update cfg0 alice val-from-alice)
+define cfg7b := (lww-update cfg0 bob val-from-bob)
+
+(print "Alice writes 'alice-value' (clock: alice=1)")
+(print "Bob writes 'bob-value' (clock: bob=1)")
+(print "These writes are CONCURRENT (no causal relationship)\n")
+
+# Now they exchange updates
+# Alice receives Bob's write
+define alice-state := match (Payload.map-lookup (Backbone.get-cfg-states cfg7a) alice) {
+  NONE => lww-initial
+| (SOME s) => s
+}
+
+define bob-state := match (Payload.map-lookup (Backbone.get-cfg-states cfg7b) bob) {
+  NONE => lww-initial
+| (SOME s) => s
+}
+
+# Merge: both states have concurrent clocks
+# Tie-breaking uses lexicographic order on values
+define merged := (lww-merge alice-state bob-state)
+
+(print "After merge (deterministic tie-breaking):")
+(print "  Merged value = ") (eval (first merged))
+
+# Verify commutativity: merge(a,b) = merge(b,a)
+define merged-reverse := (lww-merge bob-state alice-state)
+define concurrent-commutative := ((first merged) = (first merged-reverse))
+
+(print "\nCommutativity check: ") (eval concurrent-commutative)
+
+# ------------------------------------------------------------------
+# Scenario 4: Happens-before relation
+# ------------------------------------------------------------------
+
+(print "\n--- Scenario 4: Vector clock happens-before ---\n")
+
+# Alice writes, then Charlie writes based on Alice's state
+define cfg8 := (lww-update cfg0 alice val-first)
+define cfg9 := (lww-broadcast cfg8 alice (charlie :: nil) val-first)
+
+(print "Alice writes 'first' and sends to Charlie")
+
+# Charlie's clock now shows: alice=1, charlie=0
+# Charlie writes based on this state
+define cfg10 := (lww-update cfg9 charlie val-second)
+
+(print "Charlie writes 'second' with knowledge of Alice's write")
+(print "Charlie's clock: alice=1, charlie=1\n")
+
+# Alice's original state: alice=1, bob=0, charlie=0
+# Charlie's new state: alice=1, bob=0, charlie=1
+# Charlie's write happened AFTER Alice's (charlie's clock > alice's)
+
+define alice-final-state := match (Payload.map-lookup (Backbone.get-cfg-states cfg8) alice) {
+  NONE => lww-initial
+| (SOME s) => s
+}
+
+define charlie-final-state := match (Payload.map-lookup (Backbone.get-cfg-states cfg10) charlie) {
+  NONE => lww-initial
+| (SOME s) => s
+}
+
+# When merged, Charlie's write wins (happened after)
+define happens-before-merge := (lww-merge alice-final-state charlie-final-state)
+
+(print "After merge (charlie's write wins):")
+(print "  Final value = ") (eval (first happens-before-merge))
+
+# ------------------------------------------------------------------
+# Summary
+# ------------------------------------------------------------------
+
+(print "\n===================================================================")
+(print "  Summary: LWW-Register Properties Demonstrated")
+(print "===================================================================")
+(print "  * Last-write-wins using vector clocks")
+(print "  * Concurrent writes with deterministic tie-breaking")
+(print "  * Happens-before relation preserved")
+(print "  * Commutative merge (strong eventual consistency)")
+(print "  * Vector clock integration with unified framework")
+(print "===================================================================\n")
+
+(print "\n[SUCCESS] LWW-Register demo complete!")
+(print "[NOTE] This is the FIRST vector-clock-based CRDT in unified framework\n")

@@ -1,0 +1,23 @@
+load "erlang.ath"
+load "set-util"
+load "msets-notp"
+load "fmaps"
+load "pair"
+load "list-util"
+load "by-move"
+open ByMove
+open Actor
+module ByMoveProgress {
+  declare reducible : [(Cfg ConfigElement)] -> Boolean
+  assert* reducible-def :=
+  [ ((reducible k) <==> not (reduce k = k)) ]
+  declare deadlocked : [(Cfg ConfigElement)] -> Boolean
+  assert* deadlocked-def :=
+  [ ((deadlocked k) <==> not (reducible k)) ]
+  define [config P pL] :=
+    [ ?config:(Cfg ConfigElement) ?P:(Cfg ConfigElement) ?pL:(Cfg ConfigElement) ]
+  assert* progress-requiring-top :=
+  [ forall config flag actorIde frameStackList expression mailbox0 linkedActors .
+      reducible (cg config (One (Actor requiring_actor)))
+  ]
+}

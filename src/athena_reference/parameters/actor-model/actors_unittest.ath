@@ -1,0 +1,24 @@
+load "actors.ath"
+
+module Test1 {
+open Actor-Cfg
+
+assert (theory-axioms Theory)
+
+(!property count.ignore-local-state no-renaming Theory)
+
+(!property-test uids-empty no-renaming Theory)
+(!property-test uids-nonempty no-renaming Theory)
+(!property-test uids-ignore-messages no-renaming Theory)
+(!property-test uids-ignore-local-state no-renaming Theory)
+(!property-test unique-ids0 no-renaming Theory)
+(!property-test unique-ids1 no-renaming Theory)
+(!property-test unique-ids2 no-renaming Theory)
+(!property-test unique-ids3 no-renaming Theory)
+(!property-test unique-ids4 no-renaming Theory)
+
+} # Test1
+
+
+
+

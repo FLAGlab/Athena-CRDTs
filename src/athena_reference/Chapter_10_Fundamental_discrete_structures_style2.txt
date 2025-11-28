@@ -1,0 +1,2690 @@
+fpmics 2015/12/8 11:38 Page 493 #515
+10Fundamental discrete structures
+IN THIS chapter we introduce some fundamental datatypes and prove a number of use-
+ful theorems about them. Many of these will be used subsequen tly in the book. All of
+them are of key importance in computer science, particularl y for the modeling and veriﬁ-
+cation of digital systems. Thus, familiarity with these str uctures and their properties should
+prove valuable in a broad range of endeavors of diverse scope and generality, from craft-
+ing dicrete mathematical models and inductive arguments to using formal speciﬁcation or
+proof languages other than Athena.1
+A common thread throughout this chapter is the constructive deﬁnition of datatype oper-
+ations and the subsequent derivation of more abstract chara cterization theorems for those
+operations. Having constructive deﬁnitions available, ty pically formulated with conditional
+rewrite rules, means that one can execute operations on arbitrary inputs and observe the
+results, which is exceedingly useful for building up intuit ions, especially for computation-
+ally minded readers. It also means that various non-trivial conjectures can be mechanically
+tested via the falsify procedure, a feature that is put to use repeatedly in this cha pter (and
+later in the book too).
+Much of the material we develop here, especially in the secti on on sets, is standard fare
+for discrete mathematics cources. The difference of course is that the present development
+is entirely mechanized. Not only are the speciﬁcations exec utable, but, more importantly,
+all the proofs—the centerpiece of this material—are entire ly mechanized as well. This
+chapter demonstrates, we believe, that structured high-le vel proofs are often possible even
+in the absence of external ATPs. These proofs particularly a ttest to the pervasiveness and
+clarity of the tabular proof notation implemented by the chain method. Many of the result-
+ing proofs are virtually isomorphic to their English textbo ok counterparts. For instance, we
+prove a large number of set-theoretic results that are also d erived in the book “Axiomatic
+Set Theory” by Patrick Suppes [80]. In many cases the Athena p roofs given here and those
+given in the book are virtually identical. As an example, con sider the following theorem
+(where \denotes the set difference operation):
+A\(A∩B)=A\B
+Here is the textbook proof (p. 29, Section 2.3), verbatim:
+Theorem 1: A\(A∩B)=A\B
+PROOF : Let xbe an arbitrary element. Then
+1 These datatypes resurface in key roles in many formal speci ﬁcation and veriﬁcation systems; they may do so
+in superﬁcially different guises, but their fundamental pr operties, as studied here, remain invariant.
+
+fpmics 2015/12/8 11:38 Page 494 #516
+494 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+x∈A\(A∩B) ⇔ x∈A&~(x∈A∩B) by Theorem 31
+⇔ x∈A&~(x∈A&x∈B) by Theorem 12
+⇔ x∈A&(x/\e}atio\slash∈A∨x/\e}atio\slash∈B) by sentential logic
+⇔ (x∈A&x/\e}atio\slash∈A)∨(x∈A&x/\e}atio\slash∈B) by sentential logic
+⇔ x∈A&x/\e}atio\slash∈B by sentential logic
+⇔ x∈A\B by Theorem 31
+Theorems 31 and 12 are previously derived results in the text book, respectively:
+∀x,A,B.x∈A\B⇔x∈A&x/\e}atio\slash∈B (10.1)
+and
+∀x,A,B.x∈A∩B⇔x∈A&x∈B (10.2)
+These are essentially characterization theorems for set di fference and intersection, respec-
+tively. And here is the corresponding Athena proof:
+pick-any A B
+  (!set-identity-intro-direct
+  pick-any x
+    (!chain [(x in A \ (A /\ B))
+    <==> (x in A &˜x in A /\ B) [DC]
+    <==> (x in A &˜(x in A & x in B)) [IC]
+    <==> (x in A & (˜x in A |˜x in B)) [prop-taut]
+    <==> ((x in A &˜x in A) | (x in A &˜x in B)) [prop-taut]
+    <==> (x in A &˜x in B) [prop-taut]
+    <==> (x in A \ B) [DC]]))
+    Here,DCandICare Athena formulations of the characterization theorems f or difference
+    and intersection, namely (10.1) and (10.2) respectively, a lso previously derived, which are
+    written as:
+    conclude DC := (forall A B x . x in A \ B <==> x in A &˜x in B)
+    ···
+    conclude IC := (forall A B x . x in A /\ B <==> x in A & x in B)
+    ···
+    Modulo trivial notational differences, the two proofs are v irtually identical in structure and
+    detail level.
+    Of course not all proofs can be written entirely as chains, an d even when that is possi-
+    ble, the results do not always achieve this level of clarity a nd simplicity. Neverthless, proof
+
+fpmics 2015/12/8 11:38 Page 495 #517
+10.1. ORDERED PAIRS 495
+chains, both equational and implicational, are widely appl icable, and when they are appli-
+cable they are typically very helpful in elucidating the log ical structure of the argument.
+All sections in this chapter follow the same general pattern : they start with some brief
+remarks on the general ideas behind the datatype and a subsec tion on representation and
+notation, which deﬁnes the datatype as an inductive structu re and lays down notational con-
+ventions such as precedence levels for constructors, input expansions and output transfor-
+mations, etc. This is followed by additional subsections th at introduce the most important
+operations of the datatype and derive various results about them. Exercises are sprinkled
+throughout. Most of them have complete solutions included i n an appendix.
+All of these datatype theories are developed inside their ow n modules, but the modules
+for pairs and options are open at the top level by default, as t heir contents are both widely
+used and relatively meager (and thus do not pollute the globa l namespace to any signiﬁcant
+degree).
+10.1 Ordered Pairs
+10.1.1 Representation and notation
+Intuitively, an ordered pair of two objects aandb, often written in conventional notation as
+(a,b), is a pair of aandbin which order is signiﬁcant: ais the ﬁrstelement of the pair and
+bis the second. It follows that, if a/\e}atio\slash=b, then(a,b)and(b,a)are two distinct ordered pairs,
+even though they contain the same elements. Indeed, the fund amental property of ordered
+pairs is that (a1,b1)is the same pair as (a2,b2)iffa1=a2andb1=b2. We will see that
+when we formalize ordered pairs as an inductive datatype, th is property follows directly
+from the datatype’s axioms.
+We introduce ordered pairs with a polymorphic datatype Pair, which has only one con-
+structor, the binary symbol pair. We also declare two selectors, one for retrieving the left
+and another for retrieving the right element of an ordered pa ir:
+datatype (Pair S T) := (pair pair-left:S pair-right:T)
+All of the code of this section is introduced inside a predeﬁn ed module Pair that is loaded
+when Athena ﬁrst starts:
+module Pair {
+  ...
+}
+Because ordered pairs are so widely used, this module is by de faultopened at the top level.
+
+fpmics 2015/12/8 11:38 Page 496 #518
+496 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+We introduce the symbol @as an alias for the constructor pair, so we can write pairs
+(a,b)in inﬁx notation as (a@b). We want the pair constructor to bind quite tightly, so we
+give it a high precedence level:
+set-precedence pair 310
+define @ := pair
+We deﬁne some variable abbreviations and assert the relevan t datatype and selector axioms:
+define [x y z w p p1 p2] :=
+[?x ?y ?z ?w ?p:(Pair 'S'T) ?p1:(Pair 'S1'T1)
+?p2:(Pair 'S2'T2)]
+assert pair-axioms :=
+(datatype-axioms "Pair" joined-with selector-axioms "Pa ir")
+.1.2 Results and methods
+Let us now prove a few theorems.
+conclude pair-theorem-1 :=
+(forall p . p = (pair-left p) @ (pair-right p))
+datatype-cases pair-theorem-1 {
+  (Pas(pair x y)) =>
+  (!chain [P = ((pair-left P) @ (pair-right P)) [pair-axioms] ])
+}
+conclude pair-theorem-2 :=
+(forall x y z w . x @ y = z @ w <==> y @ x = w @ z)
+pick-any x y z w
+  (!chain [(x @ y = z @ w) <==> (x = z & y = w) [pair-axioms]
+  <==> (y = w & x = z) [prop-taut]
+  <==> (y @ x = w @ z) [pair-axioms]])
+  Let’s check to ensure that the aforementioned fundamental p roperty of ordered pairs is an
+  element of pair-axioms :
+  define fp := (forall x y z w . x @ y = z @ w <==> x = z & y = w)
+  > (member? fp pair-axioms)
+Term: true
+We introduce a swap function that swaps the elements of an ordered pair:
+declare swap: (S, T) [(Pair S T)] -> (Pair T S)
+assert* swap-def := [(swap x @ y = y @ x)]
+
+fpmics 2015/12/8 11:38 Page 497 #519
+10.1. ORDERED PAIRS 497
+> (eval swap swap 1 @ /quotesingle.Vara)
+Term: (pair 1 /quotesingle.Vara)
+> (eval swap swap swap 1 @ /quotesingle.Vara)
+Term: (pair /quotesingle.Vara 1)
+conclude swap-theorem-1 :=
+(forall x y . swap swap x @ y = x @ y)
+pick-any x y
+  (!chain [(swap swap x @ y) = (swap y @ x) [swap-def]
+  = (x @ y) [swap-def]])
+  What if we wanted to state the theorem by quantifying directl y over ordered pairs? In
+  other words, consider the following formulation of this res ult:
+  (forall p .swap swap p = p)
+  How would we go about proving this version? We could proceed b y considering an arbi-
+  trary pair p, but then we would need to somehow get a hold of the left and rig ht elements
+  ofpand work with them directly, as required by the deﬁning axiom s ofswap:
+  conclude swap-theorem-1b := (forall p . swap swap p = p)
+  pick-any p
+    let{E := (!chain-> [true ==> (exists x y . p = x @ y) [pair-axioms]] )}
+      pick-witnesses x yforE
+        (!chain-> [(swap swap x @ y)
+        = (swap y @ x) [swap-def]
+        = (x @ y) [swap-def]
+        ==> (swap swap p = p) [(p = x @ y)]])
+        This idiom is so frequent that it is well worth abstracting in to a method in a way that hides
+        the details involving existential quantiﬁers and their man ipulation. In particular, oftentimes
+        we need to prove a result of the form
+        ∀p:(Pair S T).···p··· (10.3)
+        that is universally quantiﬁed over all pairs p, where pranges over (Pair S T)for some S
+        andT. While we could proceed as above, the steps involving the exi stential quantiﬁcation
+        and its unpacking would be tedious. It is better—as well as mo re customary—to pick an
+        arbitrary xof sort Sand an arbitrary yof sort Tand prove instead the result for the term
+        (x@y), i.e., derive the following variant of (10.3):
+        ∀x:S y:T.···(x@y)··· (10.4)
+
+fpmics 2015/12/8 11:38 Page 498 #520
+498 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+Once we have (10.4), we can readily obtain the desired (10.3) by using a standard bit of
+reasoning similar to that used in the proof of swap-theorem-1b .
+That reasoning is encapsulated into a unary method pair-converter , deﬁned inside the
+Pair module, that takes a premise of the form (10.4) and derives a c onclusion of the
+form (10.3), where the body ···p···of (10.3) is obtained from the body of the premise,
+···(x@y)···, by replacing every occurrence of the term (x@y)byp.2With this method
+we could have proven swap-theorem-1b in a more natural style as follows:
+conclude swap-theorem-1b := (forall p . swap swap p = p)
+(!pair-converter
+pick-any x y
+  (!chain [(swap swap x @ y) = (swap y @ x) [swap-def]
+  = (x @ y) [swap-def]]))
+  Indeed, if swap-theorem-1 is already in place, we can get swap-theorem-1b in one line:
+  >conclude swap-theorem-1b := (forall p . swap swap p = p)
+  (!pair-converter swap-theorem-1)
+Theorem : (forall ?p:(Pair 'S'T)
+(= (swap (swap ?p:(Pair 'S'T)))
+?p:(Pair 'S'T)))
+Exercise 10.1: Prove the sentence:
+(forall p .swap p = (pair-right p) @ (pair-left p))
+by using pair-converter .
+The conversion method works in the opposite direction as wel l, e.g., given a premise of
+the form (10.4) it will derive one of the form (10.3). However , the other direction is more
+common in practice. The method also handles existential qua ntiﬁers, so it will go from a
+premise of the form
+∃p:(Pair S T).···p···
+to a conclusion of the form
+∃x:S y:T.···(x@y)···
+and conversely.
+2 Some caution is needed: if the body of (10.4) contains free o ccurrences of xorythat are notinside a term
+(x@y), then these occurrences will not be replaced by anything, an d the result will most likely be meaningless,
+if harmless.
+
+fpmics 2015/12/8 11:38 Page 499 #521
+10.2. OPTIONS 499
+10.2 Options
+10.2.1 Representation and notation
+Option values are generated by the following polymorphic da tatype:
+datatype (Option S) := NONE | (SOME option-val:S)
+Intuitively, this deﬁnition says that a value of sort (Option S)is either NONE or else it is
+of the form (SOME v)for some value vof sort S. In the latter case, applying the selector
+function option-val to(SOME v)retrieves the value v. The symbol SOME is given low prece-
+dence (110), as we want its scope to extend as far to the right a s possible, as illustrated
+below.
+> (SOME /quotesingle.Varfoo :: nil)
+Term: (SOME (:: /quotesingle.Varfoo
+nil:(List Ide)))
+> (?x = SOME 3.14)
+Term: (= ?x:(Option Real)
+(SOME 3.14))
+> NONE
+Term: NONE:(Option 'T169)
+> (eval option-val SOME 99 - 1)
+Term: 98
+Options are useful in a number of contexts, most notably for e rror handling. The intuition
+here is this: If a function fthat is normally supposed to produce a value of sort Sgenerates
+an error, it can instead return NONE as its output; this will explicitly indicate the occurrence
+of an error. If, on the other hand, all goes well and fsuccessfully computes a result vof
+sortS, it can return the output (SOME v), indicating that the computation went well and
+produced the result v. Hence, to make fdeal with errors explicitly, we modify its output
+sort by lifting it from Sto(Option S).
+It is important to keep in mind the datatype axioms for Option :
+1.NONE is distinct from any value of the form (SOME v); and
+2.(SOME v1)is identical to (SOME v2)iffv1is identical to v2.
+3. Every option value is either equal to NONE or to a value of the form (SOME v).
+
+fpmics 2015/12/8 11:38 Page 500 #522
+500 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+For reference convenience, we give the name opt-axioms to the list of these axioms:
+assert opt-axioms := (datatype-axioms "Option")
+10.2.2 Some useful results
+We conclude this section with some useful option lemmas. The se are derived inside a
+module named Options when Athena ﬁrst starts, but that module too is subsequently open
+  at the top level. We prove a few of these and leave the rest as ex ercises.
+  define [x y z] := [?x ?y ?z]
+  conclude option-lemma-1 := (forall x y . x = SOME y ==> x =/= NONE)
+  pick-any x y
+    assume hyp := (x = SOME y)
+      (!chain-> [true ==> (NONE =/= SOME y) [opt-axioms]
+      ==> (NONE =/= x) [hyp]
+      ==> (x =/= NONE) [sym]])
+      conclude option-lemma-2 :=
+      (forall x . x =/= NONE ==> exists y . x = SOME y)
+      pick-any x
+        assume hyp := (x =/= NONE)
+          (!chain->
+          [true ==> (x = NONE | exists y . x = SOME y) [opt-axioms]
+          ==> (exists y . x = SOME y) [(dsyl with hyp)]])
+          define option-lemma-2-conv :=
+          (forall x . (forall y . x =/= SOME y) ==> x = NONE)
+          define option-lemma-3 :=
+          (forall x . x = NONE ==>˜exists y . x = SOME y)
+          define option-lemma-4 :=
+          (forall x y . x = NONE ==> x =/= SOME y)
+          conclude option-lemma-5 :=
+          (forall x y z . x = SOME y & y =/= z ==> x =/= SOME z)
+          pick-any x y z
+            assume h := (x = SOME y & y =/= z)
+              (!chain-> [h ==> (y =/= z) [right-and]
+              ==> (SOME y =/= SOME z) [opt-axioms]
+              ==> (x =/= SOME z) [h]])
+              Exercise 10.2: Supply the missing proofs.
+
+fpmics 2015/12/8 11:38 Page 501 #523
+10.3. SETS, RELATIONS, AND FUNCTIONS 501
+10.3 Sets, Relations, and Functions
+10.3.1 Representation and notation
+Finite sets are introduced through a polymorphic structure (Set S) that is inductively gen-
+erated from two constructors: a nullary constructor null representing the empty set of
+sortS, and a binary constructor insert , which adds an element of sort Sinto a set of sort
+(Set S) .
+structure (Set S) := null | (insert S (Set S))
+This structure deﬁnition, and all subsequent code and proof s in this section, can be found
+inside an Athena module named Set, which is part of the standard Athena library. Unlike
+Options andPair, this module is not open by default.
+Observe that this structure deﬁnition appears to be structu rally identical to that of ﬁnite
+lists:
+datatype (List S) := nil | (:: S (List S))
+with the role of nilplayed by null and that of ::played by insert . There is one crucial
+difference, however: Lists are freely generated (hence the datatype keyword), whereas sets
+are only inductively generated (hence the structure keyword). Free generation means that
+two lists are equal iff they are syntactically identical. Th us, e.g.,(:: 1 (:: 2 nil)) and
+(:: 2 (:: 1 nil))
+represent different lists. This is reﬂected in the datatype-axioms ofList, one of which is:
+(forall h1 t1 h2 t2 . h1 :: t1 = h2 :: t2 ==> h1 = h2 & t1 = t2)
+and whose contrapositive is:
+(forall h1 t1 h2 t2 . h1 =/= h2 | t1 =/= t2 ==> h1 :: t1 =/= h2 :: t2)
+By contrast, as Setis a merely inductively—but not freely—generated structur e, the
+axioms that we get from it via structure-axioms do not include the analogue of the fore-
+going axiom for lists.3Indeed, we will have to ensure that (insert 1 (insert 2 null))
+and
+(insert 2 (insert 1 null))
+areidentical in order to capture the extensionality principle for sets, which states that two
+sets are equal iff they contain the same elements.
+3 If we tried to apply datatype-axioms toSet, we would get an error to the effect that
+constructor-injectivity requires a datatype constructor as an argument.
+
+fpmics 2015/12/8 11:38 Page 502 #524
+502 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+It will be convenient to be able to transform square-bracket -enclosed Athena lists into
+sets and vice versa, so we can write, for instance, [1 2 3] as a shorthand for the set
+(1 insert 2 insert 3 insert null) .
+We introduce two such procedures, alist->set andset->lst :
+1define (alist->set L) :=
+2matchL {
+3 [] => null
+4| (list-of x rest) => (insert (alist->set x) (alist->set rest))
+5| _ => L
+6}
+Recursing on both the head and the tail of the list allows us to convert nested lists into
+nested sets, e.g.:
+> (?x = Set.alist->set [[1 2]])
+Term: (= ?x:(Set.Set (Set.Set Int))
+(Set.insert (Set.insert 1
+(Set.insert 2
+Set.null:(Set.Set Int)))
+Set.null:(Set.Set (Set.Set Int))))
+We deﬁne a converse procedure as well, to go from ﬁnite sets to Athena lists, which also
+removes duplicates from the ﬁnal output list:
+define (set->alist-aux s) :=
+matchs {
+null => []
+| (insert x rest) => (add (set->alist-aux x) (set->alist-au x rest))
+| _ => s
+}
+define (set->alist s) :=
+match(set->alist-aux s) {
+(some-list L) => (dedup L)
+| _ => s
+}
+> (set->alist 1 insert 2 insert insert 1 null)
+List: [1 2]
+We also expand the input space of insert so that it can accept Athena lists as second
+arguments:
+expand-input insert [id st->set]
+
+fpmics 2015/12/8 11:38 Page 503 #525
+10.3. SETS, RELATIONS, AND FUNCTIONS 503
+And in the interest of brevity and readability, we deﬁne ++as an alias for insert :
+define ++ := insert
+We can now write sets in a succinct and fairly natural notatio n:
+> (1 ++ [2 3])
+Term: (insert 1
+(insert 2
+(insert 3
+null:(Set Int))))
+We also set the precedence of ++to be relatively high, and deﬁne some abbreviations for
+term variables: x,y,zandh,h’as polymorphic variables of entirely indeterminate sorts,
+and the rest speciﬁcally as (polymorphic) set variables:
+set-precedence ++ 210
+define [x y z h h /quotesingle.Vars s/quotesingle.Vart t/quotesingle.Vars1 s2 s3 A B C D E] :=
+[?x ?y ?z ?h ?h /quotesingle.Var?s:(Set 'T1)···?t:(Set 'T3)···?A:(Set 'T8)···]
+.3.2 Set membership, the subset relation, and set identit y
+The ﬁrst relation we introduce is the most fundamental one: t he set membership relation.
+We expand its input space so that it can take square-bracket- enclosed lists as second argu-
+ments (which will be converted to set terms via alist->set ). And we deﬁne the relation
+recursively, much in the same way that a similar relation for list membership would be
+deﬁned:
+declare in: (T) [T (Set T)] -> Boolean [[id alist->set]]
+assert* in-def :=
+[(˜_ in null)
+(x in h ++ t <==> x = h | x in t)]
+The ﬁrst axiom simply says that nothing is a member of the empt y set (null), or more
+precisely, that everything is not a member of null. And the second axiom says that an
+element xis a member of a set of the form (h ++ t) iff either xis equal to hor elsexis a
+member of t. Let us use eval to conﬁrm that these axioms have the intended effect:
+> (eval 23 in [1 5 23 98])
+Term: true
+> (eval 23 in [1 5 98])
+Term: false
+
+fpmics 2015/12/8 11:38 Page 504 #526
+504 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+The following two lemmas are simple but handy:
+conclude null-characterization := (forall x . x in [] <==> false)
+pick-any x
+  (!equiv
+  assume hyp := (x in [])
+    (!absurd hyp (!chain-> [true ==> (˜x in []) [in-def]]))
+    assume false
+      (!from-false (x in [])))
+      conclude in-lemma-1 := (forall x A . x in x ++ A)
+      pick-any x A
+        (!chain-> [(x = x) ==> (x in x ++ A) [in-def]])
+        We often use upper-case shorthands for characterization th eorems such as the above:
+        define NC := null-characterization
+        We call this a “characterization” result for null, by the way, because it provides necessary
+        and sufﬁcient membership conditions for null. We will derive several other characteriza-
+        tion results in what follows.
+        We continue with another fundamental relation, built on top of the membership relation:
+        thesubset relation, customarily represented by the symbol ⊆. A set Ais a subset of a set B
+        iff every element of Ais also an element of B. In symbols:
+        ∀A,B.A⊆B⇔(∀x.x∈A⇒x∈B) (10.5)
+        (As in other parts of the book, we occasionally use conventio nal mathematical notation,
+        typeset in Latex, for increased readability. The correspon dence with Athena sentences is
+        immediate if one knows how to interpret the primitive relati on symbols; in this case the
+        symbol ∈corresponds to inand⊆tosubset .)
+        We could deﬁne subset directly by asserting (10.5). However, such a deﬁnition wou ld
+        have a drawback: it would not be constructive, due to the unre stricted universal quantiﬁer
+        that occurs on the right-hand side of the biconditional. And without a constructive deﬁ-
+        nition, typically given by recursion, evaluation will not w ork, e.g., eval will not be able
+        to reduce a term like ([1] subset [2 1 3]) totrue. We want eval to be able to handle
+        such terms, not only in order to test our axioms, but also in or der to test conjectures. For
+        that reason we will instead give a constructive deﬁnition of subset . Once we have such a
+        deﬁnition, we will then derive property (10.5) from it.
+        This is a general strategy that we will pursue with subsequen t function and relation
+        symbols in this chapter, and later in the book as well. For ins tance, instead of deﬁning
+        set-theoretic union by directly asserting that an element xbelongs to the union of Aand
+        Biff it either belongs to Aor it belongs to B, we instead give a recursive deﬁnition of
+
+fpmics 2015/12/8 11:38 Page 505 #527
+10.3. SETS, RELATIONS, AND FUNCTIONS 505
+union and then inductively derive the said property from it.4In general, when there is a
+choice between a constructive deﬁnition D1and a non-constructive deﬁnition D2, we will
+typically prefer to go with D1and then proceed to derive D2from D1, usually by induction.
+In this case the required recursive deﬁnition can be given as follows:
+declare subset: (S) [(Set S) (Set S)] -> Boolean [[alist->set alist- >set]]
+assert* subset-def :=
+[([] subset _)
+(h ++ t subset A <==> h in A & t subset A)]
+We can now use eval to conﬁrm that the deﬁnition works as expected:
+> (eval [1 2] subset [3 2 4 1 5])
+Term: true
+> (eval [1 2] subset [3 2])
+Term: false
+We now go on to derive the non-constructive characterizatio n of the subset relation from
+this deﬁnition. This is done in two steps, beginning with the left-to-right direction stating
+that if Ais a subset of B(according to subset-def ) then for all x, ifxbelongs to Athen x
+also belongs to B. Like most other characterization results in this section, it is proved by
+structural induction:
+1define subset-characterization-1 :=
+2by-induction (forall A B . A subset B ==> forall x . x in A ==> x in B) {
+3 null => pick-any B
+4 assume (null subset B)
+5 pick-any x
+6 (!chain [(x in null) ==> false [NC]
+7 ==> (x in B) [prop-taut]])
+8| (Aas(insert h t)) =>
+9 pick-any B
+10 assume hyp := (A subset B)
+11 pick-any x
+12 let{IH := (all B . t subset B ==> all x . x in t ==> x in B);
+13 _ := (!chain-> [hyp ==> (t subset B) [subset-def]])}
+14 assume (x in A)
+15 (!cases (!chain<- [(x = h | x in t) <== (x in A) [in-def]])
+16 assume (x = h)
+17 (!chain-> [hyp ==> (h in B) [subset-def]
+18 ==> (x in B) [(x = h)]])
+4 Of course this is only possible because we are dealing speci ﬁcally with ﬁnite sets. No algorithms (at least in the
+conventional Church-Turing sense of “algorithm”) can comp ute the union of two arbitrary (possibly uncountably)
+inﬁnite sets.
+
+fpmics 2015/12/8 11:38 Page 506 #528
+506 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+19 (!chain [(x in t) ==> (x in B) [IH]]))
+20}
+Note that the inference on line 13 is necessary for the last chain application (on line 19).
+The converse direction is likewise proved by structural ind uction. With both directions
+available, the classical (non-constructive) subset chara cterization is easy to derive.
+define subset-characterization-2 :=
+(forall A B . (forall x . x in A ==> x in B) ==> A subset B)
+define subset-characterization :=
+(forall s1 s2 . s1 subset s2 <==> forall x . x in s1 ==> x in s2)
+Exercise 10.3: Derive the two preceding sentences.
+We deﬁne SCas a handy abbreviation for subset-characterization :
+define SC := subset-characterization
+It will be very useful to have an introduction method for goal s of the form (ssubset t),
+based on subset-characterization . Speciﬁcally, the method will take a premise of the
+form
+(forall x . x in s==> x in t)
+and will use SCto derive the desired goal (ssubset t):
+define subset-intro :=
+method (p)
+  matchp {
+  (forall x ((x in A) ==> (x in B))) =>
+  (!chain-> [p ==> (A subset B) [SC]])
+}
+Recall that when an inductively generated structure is not f ree, we typically need to
+deﬁne the identity relation on that structure, i.e., we need to state exactly when two terms
+of that structure are to count as identical. In this case, the identity relation on sets is deﬁned
+as should be expected: two sets are equal iff each is a subset o f the other:
+assert* set-identity := (A = B <==> A subset B & B subset A)
+Recall also that when a structural identity axiom of this kin d is asserted, Athena automati-
+cally adjusts eval to ensure that it adheres to the new deﬁnition. Thus, we now ha ve:
+> (eval 1 ++ 2 ++ [] = 2 ++ 1 ++ [])
+Term: true
+
+fpmics 2015/12/8 11:38 Page 507 #529
+10.3. SETS, RELATIONS, AND FUNCTIONS 507
+If we did not have a constructive deﬁnition of subset , we would also not have a constructive
+set identity, and the eval call above would fail.
+An alternative and non-constructive characterization of s et identity is the following:
+define set-identity-characterization :=
+(forall A B . A = B <==> forall x . x in A <==> x in B)
+define SIC := set-identity-characterization
+In our case we can readily derive SICfromset-identity andSC; the proof is left as an
+exercise.
+Similar to subset-intro , we deﬁne a method set-identity-intro that takes two
+premises of the form (ssubset t)and(tsubset s)and derives (s=t):
+define set-identity-intro :=
+method (p1 p2)
+  match[p1 p2] {
+  [(A subset B) (B subset A)] =>
+  (!chain-> [p1 ==> (p1 & p2) [augment]
+  ==> (A = B) [set-identity]])
+}
+A more direct introduction method, based on SIC, is also useful. This one takes a premise
+of the form
+∀x.x∈A⇔x∈B
+and derives the conclusion A=B:
+define set-identity-intro-direct :=
+method (premise)
+  matchpremise {
+  (forall x ((x in A) <==> (x in B))) =>
+  (!chain-> [premise ==> (A = B) [SIC]])
+}
+UsingSICwe can also derive a couple of handy alternative characteriz ations of the empty
+set:
+conclude NC-2 := (forall A . A = null <==> forall x .˜x in A)
+pick-any A
+  (!chain [(A = null)
+  <==> (forall x . x in A <==> x in null) [SIC]
+  <==> (forall x . x in A <==> false) [NC]
+  <==> (forall x .˜x in A) [prop-taut]])
+  define NC-3 := (forall A . A =/= null <==> exists x . x in A)
+  The proof of NC-3 is left as an exercise. The following will be a convenient abb reviation,
+  deﬁned as a procedure:
+
+fpmics 2015/12/8 11:38 Page 508 #530
+508 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+define (non-empty S) := (S =/= null)
+Some standard results about the subset relation can be readily derived now: reﬂexiv-
+ity, anti-symmetry, and transitivity. We prove transitivi ty here and leave the other two as
+exercises.
+define subset-reflexivity := (forall A . A subset A)
+define subset-antisymmetry :=
+(forall A B . A subset B & B subset A ==> A = B)
+conclude subset-transitivity :=
+(forall A B C . A subset B & B subset C ==> A subset C)
+pick-any A B C
+  assume (A subset B & B subset C)
+    (!subset-intro
+    pick-any x
+      (!chain [(x in A)
+      ==> (x in B) [SC]
+      ==> (x in C) [SC]]))
+      Exercise 10.4: Supply the missing proofs.
+      Theproper subset relation is deﬁned as follows:
+      declare proper-subset: (S) [(Set S) (Set S)] -> Boolean
+      [[alist->set alist->set]]
+      assert* proper-subset-def :=
+      [(s1 proper-subset s2 <==> s1 subset s2 & s1 =/= s2)]
+      > (eval [1 2] proper-subset [2 3 1])
+Term: true
+A characterization theorem and some useful lemmas follow; t heir proofs are left as exer-
+cises.
+define proper-subset-characterization :=
+(forall s1 s2 . s1 proper-subset s2 <==>
+s1 subset s2 & exists x . x in s2 &˜x in s1)
+define PSC := proper-subset-characterization
+define proper-subset-lemma :=
+(forall A B x . A subset B & x in B &˜x in A ==> A proper-subset B)
+
+fpmics 2015/12/8 11:38 Page 509 #531
+10.3. SETS, RELATIONS, AND FUNCTIONS 509
+Exercise 10.5: Supply the missing proofs.
+We end this section by introducing an operation for forming s ingletons:
+declare singleton: (S) [S] -> (Set S)
+assert* singleton-def := [(singleton x = x ++ null)]
+conclude singleton-characterization :=
+(forall x y . x in singleton y <==> x = y)
+pick-any x y
+  (!chain [(x in singleton y)
+  <==> (x in y ++ null) [singleton-def]
+  <==> (x = y | x in null) [in-def]
+  <==> (x = y | false) [NC]
+  <==> (x = y) [prop-taut]])
+  .3.3 Set operations
+  Next, we introduce three important binary set operations: u nion, intersection, and differ-
+  ence:
+  declare union, intersection , diff:
+  (S) [(Set S) (Set S)] -> (Set S) [120 [alist->set alist->set] ]
+  define [\/ /\ \] := [union intersection diff]
+  As we did with subset , we will deﬁne these operations constructively and then ded uctively
+  derive their classical non-constructive characterizatio ns. We begin with union:
+  assert* union-def :=
+  [([] \/ s = s)
+  (h ++ t \/ s = h ++ (t \/ s))]
+  We transform the output of eval so that sets are printed out in square-bracket notation:
+  transform-output eval [set->alist]
+  We useeval to test the deﬁnition:
+  > (eval [1 2 3] \/ [4 5 6 3])
+List: [1 2 3 4 5 6]
+Note that the strong typing of these operations means that we cannot, for instance, form
+the union of a set of integers and a set of identiﬁers. So while something like
+(exists x . x in [1 2 3] \/ [4 5])
+
+fpmics 2015/12/8 11:38 Page 510 #532
+510 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+is perfectly sensible, the apparently similar
+(exists x . x in [1 2 3] \/ [ /quotesingle.Vara/quotesingle.Varb])
+leads to an error, because the term ([1 2 3] \/ [’a ’b]) is ill-sorted. For those familiar
+with typed functional languages, this is similar to the stro ng typing of lists in languages
+such as ML and Haskell, which prohibits, e.g., the concatena tion of a list of integers and
+a list of characters. And the workaround behind such typing r estrictions is also similar: if
+we are interested in sets containing two different sorts of t hings SandT, say numbers and
+meta-identiﬁers, we can introduce a new algebraic datatype Urepresenting the (explicitly
+tagged) union of SandTand proceed to work directly with sets of sort Uinstead. Using
+this approach, for instance, we could represent the above se t as follows:
+datatype U := (int Int) | (ide Ide)
+(exists x . x = [(int 1) (int 2) (int 3)] \/ [(ide /quotesingle.Vara) (ide /quotesingle.Varb)])
+And with some input expansions automating the injection of t he sort tags, we could write
+out terms of this augmented sort quite naturally.
+The classical characterization of union is:
+(forall A B x . x in A \/ B <==> x in A | x in B) (10.6)
+We derive (10.6) in two steps, one for each direction of the ab ove biconditional:
+conclude union-characterization-1 :=
+(forall A B x . x in A \/ B ==> x in A | x in B)
+by-induction union-characterization-1 {
+  null => pick-any B x
+  (!chain [(x in null \/ B)
+  ==> (x in B) [union-def]
+  ==> (x in null | x in B) [alternate]])
+  | (Aas(h insert t)) =>
+  let{IH := (forall B x . x in t \/ B ==> x in t | x in B)}
+    pick-any B x
+      (!chain [(x in A \/ B)
+      ==> (x in h ++ (t \/ B)) [union-def]
+      ==> (x = h | x in t \/ B) [in-def]
+      ==> (x = h | x in t | x in B) [IH]
+      ==> ((x = h | x in t) | x in B) [prop-taut]
+      ==> (x in A | x in B) [in-def]])
+    }
+    The converse, and the ultimate derivation of the non-constr uctive union characterization,
+    are left as exercises.
+    define union-characterization-2 :=
+    (forall A B x . x in A | x in B ==> x in A \/ B)
+
+fpmics 2015/12/8 11:38 Page 511 #533
+10.3. SETS, RELATIONS, AND FUNCTIONS 511
+define union-characterization :=
+(forall A B x . x in A \/ B <==> x in A | x in B)
+define UC := union-characterization
+Exercise 10.6: Derive the above two sentences.
+We continue with intersection:
+assert* intersection-def :=
+[(null /\ s = null)
+(h ++ t /\ A = h ++ (t /\ A) <== h in A)
+(h ++ t /\ A = t /\ A <==˜h in A)]
+> (eval [1 2 1] /\ [5 1 3])
+List: [1]
+And again we derive the classical characterization of inter section:
+(forall A B x . x in A /\ B <==> x in A & x in B) (10.7)
+in two steps:
+conclude intersection-characterization-1 :=
+(forall A B x . x in A /\ B ==> x in A & x in B)
+by-induction intersection-characterization-1 {
+  null =>
+  pick-any B x
+    (!chain [(x in null /\ B)
+    ==> (x in null) [intersection-def]
+    ==> false [NC]
+    ==> (x in null & x in B) [prop-taut]])
+    | (Aas(insert h t)) =>
+    let{IH := (forall B x . x in t /\ B ==> x in t & x in B)}
+      pick-any B x
+        (!two-cases
+          assume (h in B)
+            (!chain
+            [(x in (h ++ t) /\ B)
+            ==> (x in h ++ (t /\ B)) [intersection-def]
+            ==> (x = h | x in t /\ B) [in-def]
+            ==> (x = h | x in t & x in B) [IH]
+            ==> ((x = h | x in t) & (x = h | x in B)) [prop-taut]
+            ==> (x in A & (x in B | x in B)) [in-def (h in B)]
+            ==> (x in A & x in B) [prop-taut]])
+            assume (˜h in B)
+              (!chain [(x in A /\ B)
+              ==> (x in t /\ B) [intersection-def]
+              ==> (x in t & x in B) [IH]
+
+fpmics 2015/12/8 11:38 Page 512 #534
+512 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+==> (x in A & x in B) [in-def]]))
+}
+As usual, the two-cases analysis in the inductive case is dictated by the correspond ing case
+split inintersection-def . The same goes for the converse, which is left as an exercise. The
+classical characterization of intersection, which we will abbreviate as IC, is then readily
+derived from the two directions.
+define intersection-characterization-2 :=
+(forall A B x . x in A & x in B ==> x in A /\ B)
+define intersection-characterization :=
+(forall A B x . x in A /\ B <==> x in A & x in B)
+define IC := intersection-characterization
+Exercise 10.7: Deriveintersection-characterization-2 andIC.
+The following is an immediate corollary of IC:
+conclude intersection-subset-theorem :=
+(forall A B . A /\ B subset A)
+pick-any A B
+  (!subset-intro
+  pick-any x
+    (!chain [(x in A /\ B)
+    ==> (x in A) [IC]]))
+    Finally, we go through the same process for the set-theoreti c difference operation:
+    assert* diff-def :=
+    [(null \ _ = null)
+    (h ++ t \ A = t \ A <== h in A)
+    (h ++ t \ A = h ++ (t \ A) <==˜h in A)]
+    > (eval [1 2 3] \ [3 1])
+List: [2]
+We derive the following:
+define diff-characterization-1 :=
+(forall A B x . x in A \ B ==> x in A &˜x in B)
+define diff-characterization-2 :=
+(forall A B x . x in A &˜x in B ==> x in A \ B)
+conclude diff-characterization :=
+
+fpmics 2015/12/8 11:38 Page 513 #535
+10.3. SETS, RELATIONS, AND FUNCTIONS 513
+(forall A B x . x in A \ B <==> x in A &˜x in B)
+pick-any A B x
+  (!equiv
+  (!chain [(x in A \ B)
+  ==> (x in A &˜x in B) [diff-characterization-1]])
+  (!chain [(x in A &˜x in B)
+  ==> (x in A \ B) [diff-characterization-2]]))
+  define DC := diff-characterization
+  As we did with union and intersection, we break the proof into two independent lemmas,
+  one for each direction of the biconditional.
+  Exercise 10.8: Supply the proofs of diff-characterization-1 and
+  diff-characterization-2 .
+  We also introduce an operation that removes an element from a set, using - as an alias
+  for it:
+  declare remove: (S) [(Set S) S] -> (Set S) [- [alist->set id]]
+  assert* remove-def :=
+  [(null - _ = null)
+  (h ++ t - x = t - x <== x = h)
+  (h ++ t - x = h ++ (t - x) <== x =/= h)]
+  (eval [1 2 3 2 5] - 2)
+  > List: [1 3 5]
+  Deriving the corresponding characterization theorem for t his operation is left as an exer-
+  cise:
+  define remove-characterization :=
+  (forall A x y . y in A - x <==> y in A & y =/= x)
+  define RC := remove-characterization
+  Some simple but useful corollaries of RCfollow; the proofs are left as exercises.
+  define remove-corollary := (forall A x .˜x in A - x)
+  define remove-corollary-2 := (forall A x .˜x in A ==> A - x = A)
+  define remove-corollary-3 := (forall A x y . x in A & y =/= x ==> x in A - y)
+  define remove-corollary-4 := (forall A x y .˜x in A ==>˜x in A - y)
+  define remove-corollary-5 :=
+  (forall A B x . A subset B &˜x in A ==> A subset B - x)
+  Exercise 10.9: Supply the missing proofs.
+
+fpmics 2015/12/8 11:38 Page 514 #536
+514 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+We have now derived characterization theorems for most of th e fundamental set-
+theoretic functions and relations: union, intersection, s et difference, the subset and identity
+relations, and removal. We can proceed to prove some importa nt results, starting with the
+commutativity and associativity of union and intersection :
+conclude intersection-commutes := (forall A B . A /\ B = B /\ A)
+pick-any A B
+  (!set-identity-intro-direct
+  pick-any x
+    (!chain [(x in A /\ B) <==> (x in A & x in B) [IC]
+    <==> (x in B & x in A) [prop-taut]
+    <==> (x in B /\ A) [IC]]))
+    The proof of union commutativity is similar.
+    define union-commutes := (forall A B . A \/ B = B \/ A)
+    Using the direct introduction method for set identity, as ab ove, tends to result in readable
+    proofs because the method requires a biconditional, and the se can often be derived neatly
+    with equivalence chains. By contrast, if we were to use the bi nary introduction method that
+    requires two subset premises, set-identity-intro , the proof would need to derive the two
+    subset directions separately:
+    conclude intersection-commutes := (forall A B . A /\ B = B /\ A)
+    pick-any A B
+      let{A-subset-of-B :=
+        (!subset-intro
+        pick-any x
+          (!chain [(x in A /\ B)
+          ==> (x in A & x in B) [IC]
+          ==> (x in B & x in A) [prop-taut]
+          ==> (x in B /\ A) [IC]]));
+          B-subset-of-A :=
+          (!subset-intro
+          pick-any x
+            (!chain [(x in B /\ A)
+            ==> (x in B & x in A) [IC]
+            ==> (x in A & x in B) [prop-taut]
+            ==> (x in A /\ B) [IC]]))
+          }
+          (!set-identity-intro A-subset-of-B B-subset-of-A)
+          Even with this approach, however, we could use method abstra ction to shorten the proofs
+          considerably. In particular, observe that the reasoning be hind the second lemma in the
+          above proof is the same as that of the ﬁrst lemma. We could abst ract this reasoning into a
+          common method which would then be used to derive both lemmas a s follows:
+
+fpmics 2015/12/8 11:38 Page 515 #537
+10.3. SETS, RELATIONS, AND FUNCTIONS 515
+conclude intersection-commutes := (forall A B . A /\ B = B /\ A)
+let{M :=method (A B)# derive (A /\ B subset B /\ A)
+  (!subset-intro
+  pick-any x
+    (!chain [(x in A /\ B)
+    ==> (x in A & x in B) [IC]
+    ==> (x in B & x in A) [prop-taut]
+    ==> (x in B /\ A) [IC]]))}
+    pick-any A B
+      (!set-identity-intro (!M A B) (!M B A))
+      This is a shorter and more elegant proof. In general, oftenti mes when two or more stretches
+      of reasoning can be seen to follow the same general pattern, t hat pattern can be factored
+      out into a single reusable method. This can be seen as a formal ization of the colloquial
+      mathematical idiom that derives a result “by parity of reaso ning,” or by citing an earlier
+      proof and stating that the derivation of the present result i s “symmetric” or similar to the
+      one given earlier. That said, in what follows we will general ly prefer to use the direct
+      method of set-identity introduction.
+        We proceed with the associativity of intersection and union ; the proof of the latter is
+        similar to that of the former and we omit it.
+        conclude intersection-associativity :=
+        (forall A B C . A /\ (B /\ C) = (A /\ B) /\ C)
+        pick-any A B C
+          (!set-identity-intro-direct
+          pick-any x
+            (!chain [(x in A /\ B /\ C)
+            <==> (x in A & x in B /\ C) [IC]
+            <==> (x in A & x in B & x in C) [IC]
+            <==> ((x in A & x in B) & x in C) [prop-taut]
+            <==> ((x in A /\ B) & x in C) [IC]
+            <==> (x in (A /\ B) /\ C) [IC]]))
+            define union-associativity := (forall A B C . A \/ B \/ C = (A \/ B) \/ C)
+            Idempotence is also handy to derive for both operations:
+            conclude /\-idempotence := (forall A . A /\ A = A)
+            pick-any A
+              (!set-identity-intro-direct
+              pick-any x
+                (!chain [(x in A /\ A)
+                <==> (x in A & x in A) [IC]
+                <==> (x in A) [prop-taut]]))
+                Union idempotence is likewise established, and deﬁned as \/-idempotence .
+                The following is a useful result specifying necessary and su fﬁcient conditions for the
+                union of two sets to be empty:
+
+fpmics 2015/12/8 11:38 Page 516 #538
+516 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+conclude union-null-theorem :=
+(forall A B . A \/ B = null <==> A = null & B = null)
+pick-any A B
+  (!chain [(A \/ B = null)
+  <==> (forall x . x in A \/ B <==> x in null) [SIC]
+  <==> (forall x . x in A \/ B <==> false) [NC]
+  <==> (forall x . x in A | x in B <==> false) [UC]
+  <==> (forall x .˜x in A &˜x in B) [prop-taut]
+  <==> ((forall x .˜x in A) & (forall x˜x in B)) [taut]
+  <==> (A = null & B = null) [NC-2]])
+  We continue with two distributivity theorems. The ﬁrst one i s this:
+  ∀A,B,C.A∪(B∩C)=(A∪B)∩(A∪C)
+  conclude distributivity-1 :=
+  (forall A B C . A \/ (B /\ C) = (A \/ B) /\ (A \/ C))
+  pick-any A B C
+    (!set-identity-intro-direct
+    pick-any x
+      (!chain [(x in A \/ (B /\ C))
+      <==> (x in A | x in B /\ C) [UC]
+      <==> (x in A | x in B & x in C) [IC]
+      <==> ((x in A | x in B) & (x in A | x in C)) [prop-taut]
+      <==> (x in A \/ B & x in A \/ C) [UC]
+      <==> (x in (A \/ B) /\ (A \/ C)) [IC]]))
+      The distributivity result above shows that union distribut es over intersection. Our next
+      distributivity result shows that intersection distribute s over union. Its proof is similar and
+      left as an exercise.
+      define distributivity-2 :=
+      (forall A B C . A /\ (B \/ C) = (A /\ B) \/ (A /\ C))
+      Exercise 10.10: Derivedistributivity-2 .
+      We continue with some theorems about set-theoretic differe nce:
+      conclude diff-theorem-1 := (forall A . A \ A = null)
+      pick-any A
+        (!set-identity-intro-direct
+        pick-any x
+          (!chain [(x in A \ A)
+          <==> (x in A &˜x in A) [DC]
+          <==> false [prop-taut]
+          <==> (x in null) [NC]]))
+          conclude diff-theorem-2 :=
+          (forall A B C . B subset C ==> A \ C subset A \ B)
+
+fpmics 2015/12/8 11:38 Page 517 #539
+10.3. SETS, RELATIONS, AND FUNCTIONS 517
+pick-any A B C
+  assume (B subset C)
+    (!subset-intro
+    pick-any x
+      (!chain [(x in A \ C)
+      ==> (x in A &˜x in C) [DC]
+      ==> (x in A &˜x in B) [SC]
+      ==> (x in A \ B) [DC]]))
+      Note that if we transpose the order of the two terms in the cons equent of the last theorem,
+      the result does not hold:
+      define p := (forall A B C . B subset C ==> A \ B subset A \ C)
+      > (falsify p 20)
+List: [ /quotesingle.Varsuccess
+|{
+?A:(Set Int) := (insert 1 null:(Set Int))
+?B:(Set Int) := null:(Set Int)
+?C:(Set Int) := (insert 1 null:(Set Int))
+}|]
+We go on to derive a number of additional results relating the three fundamental set oper-
+ations of union, intersection, and difference:
+define diff-theorem-3 := (forall A B . A \ (A /\ B) = A \ B)
+conclude diff-theorem-4 :=
+(forall A B . A /\ (A \ B) = A \ B)
+pick-any A B
+  (!set-identity-intro-direct
+  pick-any x
+    (!chain [(x in A /\ (A \ B))
+    <==> (x in A & x in A \ B) [IC]
+    <==> (x in A & x in A &˜x in B) [DC]
+    <==> (x in A &˜x in B) [prop-taut]
+    <==> (x in A \ B) [DC]]))
+    define diff-theorem-5 := (forall A B . (A \ B) \/ B = A \/ B)
+    define diff-theorem-6 := (forall A B . (A \/ B) \ B = A \ B)
+    define diff-theorem-7 := (forall A B . (A /\ B) \ B = null)
+    conclude diff-theorem-8 :=
+    (forall A B . (A \ B) /\ B = null)
+    pick-any A B
+      (!set-identity-intro-direct
+      pick-any x
+
+fpmics 2015/12/8 11:38 Page 518 #540
+518 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+(!chain [(x in (A \ B) /\ B)
+<==> (x in A \ B & x in B) [IC]
+<==> ((x in A &˜x in B) & x in B) [DC]
+<==> false [prop-taut]
+<==> (x in null) [NC]]))
+define diff-theorem-9 := (forall A B C . A \ (B \/ C) = (A \ B) /\ (A \ C))
+conclude diff-theorem-10 :=
+(forall A B C . A \ (B /\ C) = (A \ B) \/ (A \ C))
+pick-any A B C
+  (!set-identity-intro-direct
+  pick-any x
+    (!chain [(x in A \ (B /\ C))
+    <==> (x in A &˜x in B /\ C) [DC]
+    <==> (x in A &˜(x in B & x in C)) [IC]
+    <==> (x in A & (˜x in B |˜x in C)) [prop-taut]
+    <==> ((x in A &˜x in B) | (x in A &˜x in C)) [prop-taut]
+    <==> (x in A \ B | x in A \ C) [DC]
+    <==> (x in (A \ B) \/ (A \ C)) [UC]]))
+    define diff-theorem-11 := (forall A B . A \ (A \ B) = A /\ B)
+    define diff-theorem-12 := (forall A B . A subset B ==> A \/ (B \ A) = B)
+    conclude subset-theorem-1 :=
+    (forall A B . A subset B ==> A \/ B = B)
+    pick-any A B
+      assume (A subset B)
+        (!set-identity-intro-direct
+        pick-any x
+          (!chain [(x in A \/ B)
+          <==> (x in A | x in B) [UC]
+          <==> (x in B | x in B) [prop-taut SC]
+          <==> (x in B) [prop-taut]]))
+          define subset-theorem-2 := (forall A B . A subset B ==> A /\ B = A)
+          define intersection-subset-theorem /quotesingle.Var:=
+          (forall A B C . A subset B /\ C <==> A subset B & A subset C)
+          conclude union-lemma-2 :=
+          (forall A B x . x ++ (A \/ B) = A \/ x ++ B)
+          pick-any A B x
+            (!chain [(x ++ (A \/ B))
+            = (x ++ (B \/ A)) [union-commutes]
+            = ((x ++ B) \/ A) [union-def]
+            = (A \/ (x ++ B)) [union-commutes]])
+            conclude absorption-1 :=
+            (forall x A . x in A <==> x ++ A = A)
+
+fpmics 2015/12/8 11:38 Page 519 #541
+10.3. SETS, RELATIONS, AND FUNCTIONS 519
+pick-any x A
+  (!equiv
+  assume hyp := (x in A)
+    (!set-identity-intro-direct
+    pick-any y
+      (!chain [(y in x ++ A)
+      <==> (y = x | y in A) [in-def]
+      <==> (y in A | y in A) [hyp prop-taut]
+      <==> (y in A) [prop-taut]]))
+      assume (x ++ A = A)
+        (!chain-> [true ==> (x in x ++ A) [in-lemma-1]
+        ==> (x in A) [SIC]]))
+        Note that on the second step of the equivalence chain in the ab ove proof, we specify both
+        hypandprop-taut as justiﬁers. Neither would be sufﬁcient by itself.
+        Exercise 10.11: Supply the missing proofs.
+        Note that the union analogue of intersection-subset-theorem’ does not hold:
+        > (falsify (forall A B C . A subset B \/ C <==> A subset B | A subset C) 10)
+List: [ /quotesingle.Varsuccess
+|{?A:(Set.Set Int) :=
+(Set.insert 1
+(Set.insert 2
+Set.null:(Set.Set Int)))
+?B:(Set.Set Int) := (Set.insert 1
+Set.null:(Set.Set Int))
+?C:(Set.Set Int) := (Set.insert 2
+Set.null:(Set.Set Int))
+}|]
+However, a weaker version does hold:
+define union-subset-theorem :=
+(forall A B C . A subset B | A subset C ==> A subset B \/ C)
+Exercise 10.12: Proveunion-subset-theorem .
+.3.4 Cartesian Products
+In this section we will develop the theory of cartesian produ cts, which will become the
+foundation for a theory of relations and functions. The core cartesian-product operation
+will be a polymorphic binary function Xwhich accepts as inputs two sets of sorts Sand
+T; and produces an output set of sort (Pair S T), i.e., a set of ordered pairs of elements
+from SandT. We will give a constructive deﬁnition of this operation in t erms of a simpler
+
+fpmics 2015/12/8 11:38 Page 520 #542
+520 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+operation, paired-with , that takes a single element xof sort Sand a set Aof sort Tand
+produces a set of sort (Pair S T), by prepending xin front of every element of A. Thus,
+for instance, applying paired-with to 3 and the set {2, 8}will produce the set of pairs
+{(3, 2),(3, 8)}(using conventional notation for sets and for ordered pairs ).
+declare paired-with: (S, T) [S (Set T)] -> (Set (Pair S T))
+[130 [id alist->fset]]
+assert* paired-with-def :=
+[(_ paired-with null = null)
+(x paired-with h ++ t = x @ h ++ (x paired-with t))]
+> (eval 3 paired-with [2 8])
+List: [(pair 3 8) (pair 3 2)]
+The following proof derives the set-theoretic characteriz ation ofpaired-with from its con-
+structive deﬁnition:
+conclude paired-with-characterization :=
+(forall B x y a . x @ y in a paired-with B <==> x = a & y in B)
+by-induction paired-with-characterization {
+  null => pick-any x y a
+  (!chain [(x @ y in a paired-with null)
+  <==> (x @ y in null) [paired-with-def]
+  <==> false [NC]
+  <==> (x = a & false) [prop-taut]
+  <==> (x = a & y in null) [NC]])
+  | (Bas(insert h t)) =>
+  pick-any x y a
+    let{IH := (forall x y a .
+      x @ y in a paired-with t <==> x = a & y in t))}
+      (!chain
+      [(x @ y in a paired-with h ++ t)
+      <==> (x @ y in a @ h ++ (a paired-with t)) [paired-with-def]
+      <==> (x @ y = a @ h | x @ y in a paired-with t) [in-def]
+      <==> (x = a & y = h | x @ y in a paired-with t) [pair-axioms]
+      <==> (x = a & y = h | x = a & y in t) [IH]
+      <==> (x = a & (y = h | y in t)) [prop-taut]
+      <==> (x = a & y in B) [in-def]])
+    }
+    define PWC := paired-with-characterization
+    Exercise 10.13: The following is a useful result:
+    define paired-with-lemma-1 :=
+    (forall A x . x paired-with A = null ==> A = null)
+
+fpmics 2015/12/8 11:38 Page 521 #543
+10.3. SETS, RELATIONS, AND FUNCTIONS 521
+Prove this lemma.
+We can now deﬁne cartesian products constructively in terms ofpaired-with :
+declare product: (S, T) [(Set S) (Set T)] -> (Set (Pair S T))
+[150 [alist->set alist->set]]
+define X := product
+assert* product-def :=
+[(null X _ = null)
+(h ++ t X A = h paired-with A \/ t X A)]
+> (eval [1 2] X [ /quotesingle.Vara/quotesingle.Varb])
+List: [(pair 1 /quotesingle.Vara) (pair 2 /quotesingle.Vara) (pair 1 /quotesingle.Varb) (pair 2 /quotesingle.Varb)]
+The classical set-theoretic characterization of this oper ation can be derived from the pre-
+ceding deﬁnition by induction; the proof is left as an exerci se.
+define cartesian-product-characterization :=
+(forall A B a b . a @ b in A X B <==> a in A & b in B)
+define CPC := cartesian-product-characterization
+An alternative characterization is occasionally useful:
+define cartesian-product-characterization-2 :=
+(forall x A B . x in A X B <==> exists a b . x = a @ b & a in A & b in B)
+define CPC-2 := cartesian-product-characterization-2
+Exercise 10.14: DeriveCPCandCPC-2 .
+We derive a number of theorems:
+conclude product-theorem-1 :=
+(forall A B . A X B = null ==> A = null | B = null)
+datatype-cases product-theorem-1 {
+  null =>
+  pick-any B
+    (!chain [(null X B = null)
+    ==> (null = null) [product-def]
+    ==> (null = null | B = null) [prop-taut]])
+    | (Aas(insert h t)) =>
+    pick-any B
+      (!chain
+      [(h ++ t X B = null)
+      ==> (h paired-with B \/ t X B = null) [product-def]
+      ==> (h paired-with B = null & t X B = null) [union-null-theorem ]
+
+fpmics 2015/12/8 11:38 Page 522 #544
+522 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+==> (B = null) [paired-with-lemma-1]
+==> (h ++ t = null | B = null) [prop-taut]])
+}
+define product-theorem-2 :=
+(forall A B . A X B = null <==> A = null | B = null)
+define product-theorem-3 :=
+(forall A B . non-empty A & non-empty B ==> A X B = B X A <==> A = B)
+define product-theorem-4 :=
+(forall A B C . non-empty A & A X B subset A X C ==> B subset C)
+define product-theorem-5 :=
+(forall A B C . B subset C ==> A X B subset A X C)
+conclude product-theorem-6 :=
+(forall A B C . A X (B /\ C) = A X B /\ A X C)
+pick-any A B C
+  (!set-identity-intro-direct
+  (!pair-converter
+  pick-any x y
+    (!chain [(x @ y in A X (B /\ C))
+    <==> (x in A & y in B /\ C) [CPC]
+    <==> (x in A & y in B & y in C) [IC]
+    <==> ((x in A & y in B) & (x in A & y in C)) [prop-taut]
+    <==> (x @ y in A X B & x @ y in A X C) [CPC]
+    <==> (x @ y in A X B /\ A X C) [IC]])))
+    define product-theorem-7 := (forall A B C . A X (B \/ C) = A X B \/ A X C)
+    define product-theorem-8 := (forall A B C . A X (B \ C) = A X B \ A X C)
+    Exercise 10.15: Supply the missing proofs.
+    .3.5 Relations
+    From now on we will understand a binary relation from A to B precisely as a set of ordered
+    pairs(a,b)with a ∈A and b ∈B. This is the usual mathematical deﬁnition of relations.
+    Thus, in what follows, instead of “binary relations” we will be speaking about sets of
+    ordered pairs. We introduce a few convenient variables for b inary relations:
+    define [R R1 R2 R3 R4] :=
+    [?R:(Set (Pair 'T14'T15)) ?R1:(Set (Pair 'T16'T17)) ···]
+    Let us now begin by deﬁning the domain andrange of a given relation. The domain of a
+    relation Ris the set of all left elements of all the ordered pairs in R; the range of Ris the
+
+fpmics 2015/12/8 11:38 Page 523 #545
+10.3. SETS, RELATIONS, AND FUNCTIONS 523
+set of all right elements of those pairs. In conventional mat hematical notation:
+dom(R)= {a| ∃b.(a,b)∈R} (10.8)
+and
+range(R)= {b| ∃a.(a,b)∈R} (10.9)
+We give constructive deﬁnitions of both as follows:
+declare dom: (S, T) [(Set (Pair S T))] -> (Set S) [150 [alist->set]]
+assert* dom-def :=
+[(dom null = null)
+(dom x @ _ ++ t = x ++ dom t)]
+> (eval dom [( /quotesingle.Vara @ 1) ( /quotesingle.Varb @ 2) ( /quotesingle.Varc @ 98)])
+List: [ /quotesingle.Vara/quotesingle.Varb/quotesingle.Varc]
+declare range: (S, T) [(Set (Pair S T))] -> (Set T) [150 [alist->set]]
+assert* range-def :=
+[(range null = null)
+(range _ @ y ++ t = y ++ range t)]
+> (eval range [( /quotesingle.Vara @ 1) ( /quotesingle.Varb @ 2) ( /quotesingle.Varc @ 98)])
+List: [1 2 98]
+From these deﬁnitions, the conventional characterization s (10.8) and (10.9) can be derived
+by induction. These characterizations, whose proofs are le ft as exercises, are deﬁned below
+along with a few simple but useful lemmas relating the member ship relation to domand
+range :
+conclude in-dom-lemma-1 :=
+(forall R a x y . a = x ==> a in dom x @ y ++ R)
+pick-any R a x y
+  (!chain [(a = x) ==> (a in x ++ dom R) [in-def]
+  ==> (a in dom x @ y ++ R) [dom-def]])
+  define in-range-lemma-1 :=
+  (forall R a x y . a = y ==> a in range x @ y ++ R)
+  conclude in-dom-lemma-2 :=
+  (forall R x a b . x in dom R ==> x in dom a @ b ++ R)
+  pick-any R x a b
+    (!chain [(x in dom a @ b ++ R)
+    <== (x in a ++ dom R) [dom-def]
+    <== (x in dom R) [in-def]])
+    define in-range-lemma-2 :=
+
+fpmics 2015/12/8 11:38 Page 524 #546
+524 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+(forall R y a b . y in range R ==> y in range a @ b ++ R)
+define dom-characterization :=
+(forall R x . x in dom R <==> exists y . x @ y in R)
+define range-characterization :=
+(forall R y . y in range R <==> exists x . x @ y in R)
+define [DOMC RANC] := [dom-characterization range-characteriza tion]
+We now derive a number of results about domains and ranges. Th e proofs of some of
+these are left as exercises. We ﬁrst note that both operation s distribute over unions:
+conclude dom-theorem-1 :=
+(forall R1 R2 . dom (R1 \/ R2) = dom R1 \/ dom R2)
+pick-any R1 R2
+  (!set-identity-intro-direct
+  pick-any x
+    (!chain
+    [(x in dom (R1 \/ R2))
+    <==> (exists y . x @ y in R1 \/ R2) [DOMC]
+    <==> (exists y . x @ y in R1 | x @ y in R2) [UC]
+    <==> ((exists y . x @ y in R1) | (exists y . x @ y in R2)) [taut]
+    <==> (x in dom R1 | x in dom R2) [DOMC]
+    <==> (x in dom R1 \/ dom R2) [UC]]))
+    define range-theorem-1 :=
+    (forall R1 R2 . range (R1 \/ R2) = range R1 \/ range R2)
+    Exercise 10.16: Proverange-theorem-1 .
+    These results might lead us to suspect that the two operation s distribute over intersections
+    as well, e.g., that the following holds:
+    define dom-intersection-conjecture :=
+    (forall R1 R2 . dom (R1 /\ R2) = dom R1 /\ dom R2)
+    However, when we put the conjecture to the test we see that it f ails:
+    > (falsify dom-intersection-conjecture 10)
+List: [ /quotesingle.Varsuccess
+|{
+?R1:(Set (Pair Int Int)) := (insert (pair 1 1)
+null:(Set (Pair Int Int)))
+?R2:(Set (Pair Int Int)) := (insert (pair 1 2)
+null:(Set (Pair Int Int)))
+
+fpmics 2015/12/8 11:38 Page 525 #547
+10.3. SETS, RELATIONS, AND FUNCTIONS 525
+}|]
+The produced counterexample shows that the conjecture does not hold when R1= {(1, 1)}
+andR2= {(1, 2)}. In that case we have dom(R1∩R2)=dom(∅)= ∅, while
+dom(R1)∩dom(R2)= {1} ∩ {1} = { 1}
+so the two sides are unequal. But weaker versions of the conje cture do hold for both oper-
+ations:
+conclude dom-theorem-2 :=
+(forall R1 R2 . dom (R1 /\ R2) subset dom R1 /\ dom R2)
+pick-any R1 R2
+  (!subset-intro
+  pick-any x
+    (!chain
+    [(x in dom (R1 /\ R2))
+    ==> (exists y . x @ y in R1 /\ R2) [DOMC]
+    ==> (exists y . x @ y in R1 & x @ y in R2) [IC]
+    ==> ((exists y . x @ y in R1) & (exists y . x @ y in R2)) [taut]
+    ==> (x in dom R1 & x in dom R2) [DOMC]
+    ==> (x in dom R1 /\ dom R2) [IC]]))
+    define range-theorem-2 :=
+    (forall R1 R2 . range (R1 /\ R2) subset range R1 /\ range R2)
+    define dom-theorem-3 :=
+    (forall R1 R2 . dom R1 \ dom R2 subset dom (R1 \ R2))
+    define range-theorem-3 :=
+    (forall R1 R2 . range R1 \ range R2 subset range (R1 \ R2))
+    Exercise 10.17: Supply the missing proofs.
+    Next we introduce the converse of a binary relation R. This is simply the relation that
+    holds between aandbiffRholds between banda. We introduce the double-minus sign --
+    as an alias for this operation:
+    declare conv: (S, T) [(Set (Pair S T))] -> (Set (Pair T S))
+    [210 [alist->set]]
+    define -- := conv
+    assert* conv-def :=
+    [(-- null = null)
+    (-- x @ y ++ t = y @ x ++ -- t)]
+    > (eval -- [(1 @ /quotesingle.Vara) (2 @ /quotesingle.Varb) (3 @ /quotesingle.Varc)])
+List: [(pair /quotesingle.Vara 1) (pair /quotesingle.Varb 2) (pair /quotesingle.Varc 3)]
+
+fpmics 2015/12/8 11:38 Page 526 #548
+526 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+As usual, the characterization theorem for this operation i s derived by induction:
+conclude converse-characterization :=
+(forall R x y . x @ y in -- R <==> y @ x in R)
+by-induction converse-characterization {
+  null => pick-any x y
+  (!chain [(x @ y in -- null)
+  <==> (x @ y in null) [conv-def]
+  <==> false [NC]
+  <==> (y @ x in null) [NC]])
+  | (Ras(insert (pair a b) t)) =>
+  let{IH := (forall x y . x @ y in -- t <==> y @ x in t)}
+    pick-any x y
+      (!chain [(x @ y in -- R)
+      <==> (x @ y in b @ a ++ -- t) [conv-def]
+      <==> (x @ y = b @ a | x @ y in -- t) [in-def]
+      <==> (y @ x = a @ b | x @ y in -- t) [pair-theorem-2]
+      <==> (y @ x = a @ b | y @ x in t) [IH]
+      <==> (y @ x in R) [in-def]])
+    }
+    define CC := converse-characterization
+    A number of useful results can be derived:
+    define converse-theorem-1 := (forall R . -- -- R = R)
+    conclude converse-theorem-2 :=
+    (forall R1 R2 . -- (R1 /\ R2) = -- R1 /\ -- R2)
+    pick-any R1 R2
+      (!set-identity-intro-direct
+      (!pair-converter
+      pick-any x y
+        (!chain [(x @ y in -- (R1 /\ R2))
+        <==> (y @ x in R1 /\ R2) [CC]
+        <==> (y @ x in R1 & y @ x in R2) [IC]
+        <==> (x @ y in -- R1 & x @ y in -- R2) [CC]
+        <==> (x @ y in -- R1 /\ -- R2) [IC]])))
+        define converse-theorem-3 := (forall R1 R2 . -- (R1 \/ R2) = -- R1 \/ -- R2)
+        define converse-theorem-4 := (forall R1 R2 . -- (R1 \ R2) = -- R1 \ -- R2 )
+        We continue with the important notion of relation composition . The composition of
+        a relation R1from S1toS2with a relation R2from S2toS3, which we will denote by
+        (R1oR2), is the set of all and only those ordered pairs (x@z)for which there is a ysuch
+        that(x@y)is in R1and(y@z)is in R2. Roughly speaking, the composition relates two
+        elements xandziff there is some “intermediate” node ybetween xandz. For example, we
+        will have:
+
+fpmics 2015/12/8 11:38 Page 527 #549
+10.3. SETS, RELATIONS, AND FUNCTIONS 527
+>let{R1 := [( /quotesingle.Varnyc @/quotesingle.Varboston) ( /quotesingle.Varaustin @ /quotesingle.Vardc)];
+R2 := [( /quotesingle.Varboston @ /quotesingle.Varmontreal) ( /quotesingle.Vardc @/quotesingle.Varchicago) ( /quotesingle.Varchicago @ /quotesingle.Varseattle)]}
+(eval R1 o R2)
+List: [(pair /quotesingle.Varnyc/quotesingle.Varmontreal) (pair /quotesingle.Varaustin /quotesingle.Varchicago)]
+We give a constructive deﬁnition of composition in two stage s. First we deﬁne a sim-
+pler operation, composed-with , that can only compose a given ordered pair (a@b)with
+a binary relation R. The result is another relation that contains all and only th ose pairs
+(a@c)such that (b@c)is in R:
+declare composed-with: (S1, S2, S3)
+[(Pair S1 S2) (Set (Pair S2 S3))] -> (Set (Pair S1 S3))
+[200 [id alist->set]]
+assert* composed-with-def :=
+[(_ composed-with null = null)
+(x @ y composed-with z @ w ++ t =
+x @ w ++ (x @ y composed-with t) <== y = z)
+(x @ y composed-with z @ w ++ t =
+x @ y composed-with t <== y =/= z)]
+> (eval 1 @ 2 composed-with [(2 @ 5) (7 @ 8) (2 @ 3)])
+List: [(pair 1 5) (pair 1 3)]
+define composed-with-characterization :=
+(forall R x y z w . w @ z in x @ y composed-with R <==> w = x & y @ z in R)
+The inductive derivation of the characterization result is left as an exercise.
+We can now deﬁne the main composition operator as follows:
+declare o: (S1, S2, S3) [(Set (Pair S1 S2)) (Set (Pair S2 S3))]
+-> (Set (Pair S1 S3)) [200 [alist->set alist->set]]
+assert* o-def :=
+[(null o _ = null)
+(x @ y ++ t o R = x @ y composed-with R \/ t o R)]
+> (eval [( /quotesingle.Varnyc @/quotesingle.Varboston) ( /quotesingle.Varhouston @ /quotesingle.Vardallas) ( /quotesingle.Varaustin @ /quotesingle.Vardc)] o
+[(/quotesingle.Varboston @ /quotesingle.Varmontreal) ( /quotesingle.Vardallas @ /quotesingle.Varchicago) ( /quotesingle.Vardc @/quotesingle.Varnyc)] o
+[(/quotesingle.Varchicago @ /quotesingle.Varseattle) ( /quotesingle.Varmontreal @ /quotesingle.Varlondon)])
+List: [(pair /quotesingle.Varnyc/quotesingle.Varlondon) (pair /quotesingle.Varhouston /quotesingle.Varseattle)]
+A characterization theorem and various useful results abou t composition can now be
+derived; most proofs are left as exercises:
+
+fpmics 2015/12/8 11:38 Page 528 #550
+528 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+define o-characterization :=
+(forall R1 R2 x z . x @ z in R1 o R2 <==>
+exists y . x @ y in R1 & y @ z in R2)
+define OC := o-characterization
+define compose-theorem-1 := (forall R1 R2 . dom R1 o R2 subset dom R1)
+define compose-theorem-2 :=
+(forall R1 R2 R3 R4 . R1 subset R2 & R3 subset R4
+==> R1 o R3 subset R2 o R4)
+define compose-theorem-3 :=
+(forall R1 R2 R3 . R1 o (R2 \/ R3) = R1 o R2 \/ R1 o R3)
+define compose-theorem-4 :=
+(forall R1 R2 R3 . R1 o (R2 /\ R3) subset R1 o R2 /\ R1 o R3)
+define compose-theorem-5 :=
+(forall R1 R2 R3 . R1 o R2 \ R1 o R3 subset R1 o (R2 \ R3))
+define composition-associativity :=
+(forall R1 R2 R3 . R1 o R2 o R3 = (R1 o R2) o R3)
+conclude compose-theorem-6 :=
+(forall R1 R2 . -- (R1 o R2) = -- R2 o -- R1)
+pick-any R1 R2
+  (!set-identity-intro-direct
+  (!pair-converter
+  pick-any x y
+    (!chain [(x @ y in -- (R1 o R2))
+    <==> (y @ x in R1 o R2) [CC]
+    <==> (exists z . y @ z in R1 & z @ x in R2) [OC]
+    <==> (exists z . z @ y in -- R1 & x @ z in -- R2) [CC]
+    <==> (exists z . x @ z in -- R2 & z @ y in -- R1) [prop-taut]
+    <==> (x @ y in -- R2 o -- R1) [OC]])))
+    We continue with the notion of relation restriction . Restricting a relation Rto a set of
+    elements Ayields a relation consisting of all and only those pairs (x@y)inRsuch that
+    x∈A. We again deﬁne this relation incrementally, starting with an operation that restricts
+    a relation to a single element:
+    declare restrict1: (S, T) [(Set (Pair S T)) S] -> (Set (Pair S T))
+    [200 [alist->set id]]
+    assert* restrict1-def :=
+    [(null restrict1 _ = null)
+    (x @ y ++ t restrict1 z = x @ y ++ (t restrict1 z) <== x = z)
+    (x @ y ++ t restrict1 z = t restrict1 z <== x =/= z)]
+
+fpmics 2015/12/8 11:38 Page 529 #551
+10.3. SETS, RELATIONS, AND FUNCTIONS 529
+> (eval [(1 @ /quotesingle.Vara) (2 @ /quotesingle.Varb) (1 @ /quotesingle.Varc)] restrict1 1)
+List: [(pair 1 /quotesingle.Vara) (pair 1 /quotesingle.Varc)]
+A characterization theorem is derived by structural induct ion; the proof is omitted.
+define restrict1-characterization :=
+(forall R x y a . x @ y in R restrict1 a <==> x @ y in R & x = a)
+We now deﬁne the regular restriction operator as follows:
+declare restrict: (S, T) [(Set (Pair S T)) (Set S)] ->
+(Set (Pair S T)) [200 [alist->set alist->set]]
+define ˆ := restrict
+assert* restrict-def :=
+[(R ˆ null = null)
+(R ˆ h ++ t = R restrict1 h \/ R ˆ t)]
+> (eval [(1 @ /quotesingle.Vara) (2 @ /quotesingle.Varb) (3 @ /quotesingle.Varc) (1 @ /quotesingle.Varf)] ˆ [1 2])
+List: [(pair 1 /quotesingle.Vara) (pair 1 /quotesingle.Varf) (pair 2 /quotesingle.Varb)]
+A characterization theorem and some useful results follow:
+define restrict-characterization :=
+(forall A R x y . x @ y in R restrict A <==> x @ y in R & x in A)
+define RSC := restrict-characterization
+define restriction-theorem-1 :=
+(forall R A B . A subset B ==> R ˆ A subset R ˆ B)
+define restriction-theorem-2 :=
+(forall R A B . R ˆ (A /\ B) = R ˆ A /\ R ˆ B)
+conclude restriction-theorem-3 :=
+(forall R A B . R ˆ (A \/ B) = R ˆ A \/ R ˆ B)
+pick-any R A B
+  (!set-identity-intro-direct
+  (!pair-converter
+  pick-any x y
+    (!chain [(x @ y in R ˆ (A \/ B))
+    <==> (x @ y in R & x in A \/ B) [RSC]
+    <==> (x @ y in R & (x in A | x in B)) [UC]
+    <==> ((x @ y in R & x in A) | (x @ y in R & x in B)) [prop-taut]
+    <==> (x @ y in R ˆ A | x @ y in R ˆ B) [RSC]
+    <==> (x @ y in R ˆ A \/ R ˆ B) [UC]])))
+    define restriction-theorem-4 := (forall R A B . R ˆ (A \ B) = R ˆ A \ R ˆ B)
+
+fpmics 2015/12/8 11:38 Page 530 #552
+530 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+define restriction-theorem-5 :=
+(forall R1 R2 A . (R1 o R2) ˆ A = (R1 ˆ A) o R2)
+Theimage of a relation Ron a set Ais the set of all ysuch that (x@y)∈Rfor some
+xinA. This is the same as the range of the restriction of RonA:
+declare image: (S, T) [(Set (Pair S T)) (Set S)] -> (Set T)
+[200 [alist->set alist->set]]
+assert* image-def := [(R ** A = range R ˆ A)]
+> (eval [(1 @ /quotesingle.Vara) (2 @ /quotesingle.Varb) (3 @ /quotesingle.Varc)] ** [1 3])
+List: [ /quotesingle.Vara/quotesingle.Varc]
+We derive a characterization theorem and some useful result s:
+define image-characterization :=
+(forall R A y . y in R ** A <==> exists x . x @ y in R & x in A)
+define IMGC := image-characterization
+define image-theorem-1 :=
+(forall R A B . R ** (A \/ B) = R ** A \/ R ** B)
+define image-theorem-2 :=
+(forall R A B . R ** (A /\ B) subset R ** A /\ R ** B)
+define image-theorem-3 :=
+(forall R A B . R ** A \ R ** B subset R ** (A \ B))
+define image-theorem-4 :=
+(forall R A B . A subset B ==> R ** A subset R ** B)
+define image-theorem-5 :=
+(forall R A . R ** A = null <==> dom R /\ A = null)
+define image-theorem-6 :=
+(forall R A . dom R /\ A subset -- R ** R ** A)
+define image-theorem-7 :=
+(forall R A B . (R ** A) /\ B subset R ** (A /\ -- R ** B))
+.3.6 Set cardinality
+We deﬁne the size or cardinality of a set as follows:
+
+fpmics 2015/12/8 11:38 Page 531 #553
+10.3. SETS, RELATIONS, AND FUNCTIONS 531
+declare card: (S) [(Set S)] -> N [[alist->set]]
+define S := N.S
+assert* card-def :=
+[(card null = zero)
+(card h ++ t = card t <== h in t)
+(card h ++ t = S card t <==˜h in t)]
+transform-output eval [nat->int]
+> (eval card [1 2 3] \/ [4 7 8])
+Term: 6
+A number of useful results involving cardinality are proven in theSetmodule. We note a
+few of them below; most of the proofs are omitted.
+define card-theorem-1 := (forall x . card singleton x = S zero)
+conclude card-theorem-2 :=
+(forall A x .˜x in A ==> card A < card x ++ A)
+pick-any A x
+  assume hyp := (˜x in A)
+    (!chain-> [true ==> (card A < S card A) [N.Less.<S]
+    ==> (card A < card x ++ A) [card-def]])
+    define minus-card-theorem := (forall A x . x in A ==> card A = S card A - x )
+    define subset-card-theorem := (forall A B . A subset B ==> card A <= ca rd B)
+    define proper-subset-card-theorem :=
+    (forall A B . A proper-subset B ==> card A < card B)
+    conclude intersection-card-theorem-1 :=
+    (forall A B . card A /\ B <= card A)
+    pick-any A B
+      (!chain-> [true ==> (A /\ B subset A) [intersection-subset- theorem]
+      ==> (card A /\ B <= card A) [subset-card-theorem]])
+      define intersection-card-theorem-2 := (forall A B . card A /\ B <= ca rd B)
+      define intersection-card-theorem-3 :=
+      (forall A B x .˜x in A & x in B ==> card (x ++ A) /\ B = S card A /\ B)
+      define union-card :=
+      (forall A B . card A \/ B = ((card A) + (card B)) - card A /\ B)
+      define diff-card-lemma :=
+      (forall A B . card A = (card A \ B) + (card A /\ B))
+
+fpmics 2015/12/8 11:38 Page 532 #554
+532 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+conclude diff-card-theorem :=
+(forall A B . card A \ B = (card A) - card A /\ B)
+pick-any A B
+  (!chain->
+  [true
+  ==> (card A = (card A \ B) + card A /\ B) [diff-card-lemma]
+  ==> ((card A \ B) + card A /\ B = card A) [sym]
+  ==> (card A \ B = (card A) - card A /\ B) [N.Minus.Plus-Minus-pr operties]])
+  .3.7 Powersets
+  The powerset of a set Ais the set of all subsets of A. We introduce this operation as a
+  function symbol with the following signature:
+  declare powerset: (S) [(Set S)] -> (Set (Set S)) [[alist->set]]
+  We will deﬁne this operation constructively in two stages. F irst we introduce a binary
+  operation in-all that takes an arbitrary element xof sort Sand an arbitrary set Aof sets of
+  sortS, and produces the set of sets obtained from Sby inserting xin every set AinA:
+  declare in-all: (S) [S (Set (Set S))] -> (Set (Set S)) [[id alist->set ]]
+  assert* in-all-def :=
+  [(_ in-all null = null)
+  (x in-all A ++ t = (x ++ A) ++ (x in-all t))]
+  > (eval 7 in-all [[1 2] [] [4 5 6]])
+List: [[7 1 2] [7] [7 4 5 6]]
+The following is a characterization theorem for in-all :
+define in-all-characterization :=
+(forall U s x . s in x in-all U <==> exists B . B in U & s = x ++ B)
+We can now deﬁne powerset recursively in terms of this operation:
+assert* powerset-def :=
+[(powerset null = singleton null)
+(powerset x ++ t = (powerset t) \/ (x in-all powerset t))]
+> (eval powerset [1 2 3])
+List: [[] [3] [2] [2 3] [1] [1 3] [1 2] [1 2 3]]
+
+fpmics 2015/12/8 11:38 Page 533 #555
+10.3. SETS, RELATIONS, AND FUNCTIONS 533
+The corresponding characterization theorem is this:
+define powerset-characterization :=
+(forall A B . B in powerset A <==> B subset A)
+define POSC := powerset-characterization
+A number of useful theorems involving the powerset operator are derived:
+conclude ps-theorem-1 := (forall A . null in powerset A)
+pick-any A
+  (!chain-> [true ==> (null subset A) [subset-def]
+  ==> (null in powerset A) [POSC]])
+  conclude ps-theorem-2 := (forall A . A in powerset A)
+  pick-any A
+    (!chain-> [true ==> (A subset A) [subset-reflexivity]
+    ==> (A in powerset A) [POSC]])
+    conclude ps-theorem-3 :=
+    (forall A B . A subset B <==> powerset A subset powerset B)
+    pick-any A B
+      (!equiv assume (A subset B)
+      (!subset-intro
+      pick-any C
+        (!chain [(C in powerset A)
+        ==> (C subset A) [POSC]
+        ==> (C subset B) [subset-transitivity]
+        ==> (C in powerset B) [POSC]]))
+        assume (powerset A subset powerset B)
+          (!chain-> [true ==> (A in powerset A) [ps-theorem-2]
+          ==> (A in powerset B) [SC]
+          ==> (A subset B) [POSC]]))
+          conclude ps-theorem-4 :=
+          (forall A B . powerset A /\ B = (powerset A) /\ (powerset B))
+          pick-any A B
+            (!set-identity-intro-direct
+            pick-any C
+              (!chain
+              [(C in powerset A /\ B)
+              <==> (C subset A /\ B) [POSC]
+              <==> (C subset A & C subset B) [intersection-subset-theorem /quotesingle.Var]
+              <==> (C in powerset A & C in powerset B) [POSC]
+              <==> (C in (powerset A) /\ (powerset B)) [IC]]))
+              Remarkably, the union analogue of ps-theorem-4 does not hold:
+              define p := (forall A B . powerset A \/ B = (powerset A) \/ (powerset B))
+              > (falsify p 10)
+
+fpmics 2015/12/8 11:38 Page 534 #556
+534 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+List: [ /quotesingle.Varsuccess
+|{
+?A := (Set.insert 1
+Set.null)
+?B := (Set.insert 2
+Set.null)
+}|]
+> (eval powerset [1] \/ [2])
+List: [[] [2] [1] [1 2]]
+> (eval (powerset [1]) \/ (powerset [2]))
+List: [[] [1] [2]]
+But a weaker version of the result does hold:
+define ps-theorem-5 :=
+(forall A B . (powerset A) \/ (powerset B) subset powerset A \/ B)
+Exercise 10.18: Proveps-theorem-5 .
+.4 Maps
+.4.1 Representation and notation
+Finite maps are another pervasive data type, and an indispen dable tool in our mathematical
+arsenal for the modeling and analysis of discrete systems. W hile we could develop the
+theory of such maps as part of our theory of sets, along the lin es of section 10.3.5, the
+direct approach we take here will be more expedient. However , sets will be widely used in
+this theory, as they often are elsewhere. For instance, the d omain of a map will be deﬁned to
+return a setof keys, while the range of a map will be a set of values. We will use upper-case
+letters from the beginning of the alphabet as variables rang ing over ﬁnite sets of arbitrary
+sorts:
+define [A B C] := [?A:(Set.Set 'S1) ?B:(Set.Set 'S2) ?C:(Set.Set 'S3)]
+(All of the code in this section appears inside a module, Map, that is part of the Athena
+library.)
+Maps are intended to represent ﬁnite functions from arbitra ry keys to arbitrary values.
+Conventional algorithmic treatments of the subject focus o n different implementations of
+maps and on the computational complexity of the fundamental map operations in each of
+
+fpmics 2015/12/8 11:38 Page 535 #557
+10.4. MAPS 535
+these implementations (red-black trees vs. hash tables, et c.). Here we are primarily inter-
+ested in maps as an abstract data type (the so-called dictionary data type), so our focus
+will be on the speciﬁcation and deductive analysis of some of the essential properties and
+relationships of the fundamental map operations. As usual, we will deﬁne these operations
+constructively, so we will be able to evaluate map insertion s, deletions, and so on. But, as
+elsewhere, the emphasis will be on formal analysis rather th an computational complexity.
+We introduce maps as a polymorphic inductive structure, abs tracted over both the sort
+of the keys and that of the values:
+structure (Map Key Value) := empty-map
+| (update (pair Key Value) (Map Key Value))
+Note that the general shape of this structure is also similar to that of lists, with empty-map
+playing the role of nilandupdate the role of ::(the “cons” operation). The intuition
+here is that update is used to incrementally add new key-value bindings to a map, with
+the bindings represented as ordered pairs. These key-value pairs are added in front of the
+map, so, like lists, maps grow to the left. The construction p rocess always starts with the
+empty map. If a new key-value binding is added to a map mthat shares a key with an
+already existing binding in m, then the newest (leftmost) binding takes precedence. Thus ,
+even though the older pair is not removed from the new map, it i s shadowed by the more
+recent binding. This will become more precise soon, when we c ome to deﬁne how a map
+is applied to a given key. Also, because this is a structure ra ther than a datatype, we will
+have to precisely deﬁne what it means for two maps to be identi cal. As you might guess,
+two maps will be the same iff they produce the same values when applied to the same keys.
+As with other sorts that are structurally similar to lists, i t will be notationally convenient
+to have procedures that can convert Athena lists to maps and c onversely. We start with a
+procedure for converting lists to map terms. Key-value bind ings are recognized as either
+two-element key-value lists [k v] , or, for enhanced notational effect, as three-element list s
+of the form [k --> v] :5
+define (alist->map L) :=
+matchL {
+[] => empty-map
+| (list-of (|| [k --> v] [k v]) rest) => (update (pair k v)
+(alist->map rest))
+| _ => L
+}
+The converse procedure will also come handy:
+Recall that -->is a built-in polymorphic nullary symbol; it is used as a simp le notational placeholder in appro-
+priate contexts.
+
+fpmics 2015/12/8 11:38 Page 536 #558
+536 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+define (map->alist m) :=
+matchm {
+empty-map => []
+| (update (pair k v) rest) => (add [k --> v] map->alist rest)
+| _ => m
+}
+We also introduce a procedure for converting bindings given in such list notation to ordered
+pairs:
+define (alist->pair inner-1 inner-2) :=
+lambda (L)
+matchL {
+[a b] => ((inner-1 a) @ (inner-2 b))
+| [a --> b] => ((inner-1 a) @ (inner-2 b))
+| _ => L
+}
+We now expand the input range of update so that it can receive bindings as lists of the
+above form in the ﬁrst argument position; and lists represen ting maps in the above notation
+in the second position:
+expand-input update [(alist->pair id id) alist->map]
+Since we will be dealing with sets and set operations a good de al, we introduce a few
+abbreviations for their fully qualiﬁed names:
+define [null ++ in subset \/ /\ \ -] :=
+[Set.null Set.++ Set.in Set.subset Set.\/ Set./\ Set.\ Set .-]
+More importantly, we overload ++so that it can be used as an alias for the Mapconstructor
+update in appropriate contexts:
+overload ++ update
+Thus:
+> ([/quotesingle.Vara --> 1] ++ [])
+Term: (update (pair /quotesingle.Vara 1)
+empty-map:(Map Ide Int))
+> (75 ++ [])
+Term: (Set.insert 75
+Set.null:(Set.Set Int))
+We also transform the output of eval so that it prints out sets and maps as Athena lists:
+
+fpmics 2015/12/8 11:38 Page 537 #559
+10.4. MAPS 537
+transform-output eval [Set.set->alist map->alist]
+Finally, we introduce a few convenient variable names:
+define [key key1 key2 k k /quotesingle.Vark1 k2] := [?key ?key1 ?key2 ?k ?k /quotesingle.Var?k1 ?k2]
+define [val val1 val2 v v /quotesingle.Varv1 v2 x x1 x2] :=
+[?val ?val1 ?val2 ?v ?v /quotesingle.Var?v1 ?v2 ?x ?x1 ?x2]
+define [m m1 m2 m3 rest rest1] :=
+[?m:(Map 'S1'S2) ?m1:(Map 'S3'S4) ...]
+.4.2 Map operations and theorems
+With that notational preamble behind us, we are ready to intr oduce the ﬁrst operation on
+maps, which is also the most fundamental one: that of applying a map to a given key. This
+is also known as looking up the value associated with a key. And here we must face the
+question of what value to specify as the result of this operat ion when the given key does
+not exist in the map. Barring subsorting and explicit error e lements, there are three main
+alternatives. One is to return an arbitrary (but ﬁxed) value . Another is to say nothing on
+the matter, i.e., to leave the value of the lookup operation u nspeciﬁed when the key is not
+in the map. And another is to return an Option value of the form (SOME v)when the given
+key is indeed bound to a value vin the map, and NONE otherwise. Here we take this latter
+approach; we examine the ﬁrst alternative in section 10.4.3 .
+declare apply: (Key, Value) [(Map Key Value) Key] -> (Option Value)
+[applied-to 110 [alist->map id]]
+define at := apply
+We have speciﬁed an input converter for the the ﬁrst argument position that allows us to
+write the maps in the list notation we described earlier:
+> ([[/quotesingle.Vara --> 1] [ /quotesingle.Varb --> 2] [ /quotesingle.Varc --> 3]] at /quotesingle.Vara)
+Term: (apply (update (pair /quotesingle.Vara 1)
+(update (pair /quotesingle.Varb 2)
+(update (pair /quotesingle.Varc 3)
+empty-map:(Map Ide Int))))
+/quotesingle.Vara)
+We now deﬁne map application as follows:
+assert* apply-def :=
+[([] at _ = NONE)
+([key val] ++ _ at x = SOME val <== key = x)
+
+fpmics 2015/12/8 11:38 Page 538 #560
+538 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+([key _] ++ rest at x = rest at x <== key =/= x)]
+We test the deﬁnition to make sure it behaves sensibly:
+define ide-map := [[ /quotesingle.Vara --> 1] [ /quotesingle.Varb --> 2] [ /quotesingle.Varc --> 3] [ /quotesingle.Vara --> 99]]
+> (eval ide-map at /quotesingle.Vara)
+Term: (SOME 1)
+> (eval ide-map at /quotesingle.Varb)
+Term: (SOME 2)
+> (eval ide-map at /quotesingle.Varfoo)
+Term: NONE
+The following is a simple but useful lemma:
+conclude apply-lemma-1 :=
+(forall key val rest x .
+[key val] ++ rest at x = NONE ==> rest at x = NONE)
+pick-any key val rest x
+  let{m := ([key val] ++ rest);
+    hyp := (m at x = NONE);
+    goal := (rest at x = NONE)}
+    assume hyp
+      (!two-cases
+        (!chain [(key = x)
+        ==> (m at x = SOME val) [apply-def]
+        ==> (m at x =/= NONE) [(theory-results "Options")]
+        ==> (hyp &˜hyp) [augment]
+        ==> goal [prop-taut]])
+        (!chain [(key =/= x)
+        ==> (m at x = rest at x) [apply-def]
+        ==> (NONE = rest at x) [hyp]
+        ==> goal [sym]]))
+        As usual, the conditions of the deﬁning equations of the oper ation give rise to a correspond-
+        ing case analysis inside the proof. Two more simple but usefu l lemmas on application are
+        given below; their proofs are left as exercises:
+        Exercise 10.19: Consider these deﬁnitions:
+        define apply-lemma-2 :=
+        (forall k v rest x .
+        [k v] ++ rest at x =/= NONE <==> k = x | rest at x =/= NONE)
+        define apply-lemma-3 :=
+
+fpmics 2015/12/8 11:38 Page 539 #561
+10.4. MAPS 539
+(forall m k v1 v2 . m at k = SOME v1 & m at k = SOME v2 ==> v1 = v2)
+Prove both lemmas.
+We continue with an operation that removes a key from a map:
+1declare remove: (Key, Value) [(Map Key Value) Key] -> (Map Key Value)
+2 [- 120 [alist->map id]]
+3
+4left-assoc -
+5
+6assert* remove-def :=
+7[([empty-map - _ = empty-map)
+8([key _] ++ rest - key = rest - key)
+9(key =/= x ==> [key val] ++ rest - x = [key val] ++ (rest - x))]
+Observe the second equation, on line 8: a recursive call is ne eded even when we ﬁnd the
+key to be removed at the front of the map, because there may be a dditional occurrences of
+the key further inside the map. Also note that we have declare d the subtraction operator
+here,-, to associate to the left, so that we can write something like (m - k1 - k2) and have
+it parsed as ((m - k1) - k2) .
+> (eval ide-map - /quotesingle.Vara)
+List: [[ /quotesingle.Varb --> 2] [ /quotesingle.Varc --> 3]]
+> (eval ide-map - /quotesingle.Vara -/quotesingle.Varc)
+List: [[ /quotesingle.Varb --> 2]]
+> (eval ide-map - /quotesingle.Vara -/quotesingle.Varb at/quotesingle.Varc)
+Term: (SOME 3)
+The following proves that the removal operation achieves th e desired effect:
+conclude remove-correctness :=
+(forall m x . m - x at x = NONE)
+by-induction remove-correctness {
+  empty-map =>
+  pick-any x
+    (!chain [([] - x at x)
+    = ([] at x) [remove-def]
+    = NONE [apply-def]])
+    | (mas(update (pair key val) rest)) =>
+    let{IH := (forall x . rest - x at x = NONE)}
+      pick-any x
+        (!two-cases
+          assume case1 := (key = x)
+
+fpmics 2015/12/8 11:38 Page 540 #562
+540 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+(!chain [(m - x at x)
+= (m - key at key) [case1]
+= (rest - x at x) [case1 remove-def]
+= NONE [IH]])
+assume case2 := (key =/= x)
+  (!chain [(m - x at x)
+  = ([key val] ++ (rest - x) at x) [remove-def]
+  = (rest - x at x) [apply-def]
+  = NONE [IH]]))
+}
+This is only one half, the important one, of remove ’s correctness. We also need to prove
+that removing a key from a map does not affect any of the other k eys:
+define remove-correctness-2 :=
+(forall m k k /quotesingle.Var. k =/= k /quotesingle.Var==> m - k at k /quotesingle.Var= m at k /quotesingle.Var)
+The proof is given in the exercises.
+Exercise 10.20: Proveremove-correctness-2 .
+Next, we deﬁne the domain of a map mas the set of all keys in m:
+declare dom: (Key, Value) [(Map Key Value)] -> (Set.Set Key) [[alist ->map]]
+assert* dom-def :=
+[(dom empty-map = null)
+(dom [k _] ++ rest = k ++ dom rest)]
+> (eval dom ide-map)
+List: [ /quotesingle.Vara/quotesingle.Varb/quotesingle.Varc]
+Observe the overloaded use of ++in the deﬁning equation of line 5: On the left-hand side,
+++is used as an alias for update , a map operation; whereas on the right-hand side it is used
+as an alias for Set.insert , a set operation. We deﬁne the sizeof a map mas the cardinality
+of its domain, i.e., the number of keys in m:
+declare size: (S, T) [(Map S T)] -> N [[alist->map]]
+assert* size-def := [(size m = card dom m)]
+transform-output eval [nat->int]
+> (eval size ide-map)
+Term: 3
+> (eval size ide-map - /quotesingle.Vara -/quotesingle.Varb)
+
+fpmics 2015/12/8 11:38 Page 541 #563
+10.4. MAPS 541
+Term: 1
+A few results about domains follow. The ﬁrst two are simple le mmas, but the third is
+a more fundamental characterization theorem; the fourth on e is a useful property of the
+domain of a map obtained from a key removal. The proofs of thre e of these results are left
+as exercises.
+define dom-lemma-1 := (forall k v rest . k in dom [k v] ++ rest)
+define dom-lemma-2 := (forall m k v . dom m subset dom [k v] ++ m)
+conclude dom-characterization :=
+(forall m k . k in dom m <==> m at k =/= NONE)
+by-induction dom-characterization {
+  (masempty-map) =>
+  pick-any k
+    (!equiv
+    (!chain [(k in dom m)
+    ==> (k in null) [dom-def]
+    ==> false [Set.NC]
+    ==> (m at k =/= NONE) [prop-taut]])
+    assume hyp := (m at k =/= NONE)
+      (!chain-> [true
+      ==> (m at k = NONE) [apply-def]
+      ==> (m at k = NONE & hyp) [augment]
+      ==> false [prop-taut]
+      ==> (k in dom m) [prop-taut]]))
+      | (mas(update (pair x y) rest)) =>
+      let{IH := (forall k . k in dom rest <==> rest at k =/= NONE)}
+        pick-any k
+          (!chain [(k in dom m)
+          <==> (k in x ++ dom rest) [dom-def]
+          <==> (k = x | k in dom rest) [Set.in-def]
+          <==> (k = x | rest at k =/= NONE) [IH]
+          <==> (x = k | rest at k =/= NONE) [sym]
+          <==> (m at k =/= NONE) [apply-lemma-2]])
+        }
+        define dom-lemma-3 := (forall m k . dom (m - k) subset dom m)
+        Exercise 10.21: Prove the three lemmas above.
+        We now introduce an operation that converts a map into a set of ordered pairs. This
+        operation will be used to deﬁne identity conditions for maps :
+
+fpmics 2015/12/8 11:38 Page 542 #564
+542 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+declare map->set: (K, V) [(Map K V)] -> (Set.Set (Pair K V))
+[[alist->map]]
+assert* map->set-def :=
+[(map->set empty-map = null)
+(map->set [k v] ++ rest = [k v] ++ map->set rest - k))]
+> (eval map->set ide-map)
+List: [(pair /quotesingle.Vara 1) (pair /quotesingle.Varb 2) (pair /quotesingle.Varc 3)]
+It is noteworthy that the deﬁnition of this function is not pr imitive recursive, mean-
+ing that the argument to the recursive call (in the second equ ation) is not a subterm
+of one of the constructor arguments on the left-hand side, su ch asrest, but rather the
+result of applying another function to such subterms, in this case the result of apply-
+ing theremove operation ( -) torest andk.6The upshot is that sentences of the form
+(forall m.···map->set m···)cannot be derived by ordinary structural induction on
+m. Rather, we have to use another form of induction, measure induction , which requires that
+some quantity associated with the arguments of the function decreases strictly with every
+recursive call. In this case it is the sizeof the argument that decreases with every recursive
+call tomap->set . Themeasure-induction method, a convenient variant of strong induction
+on the natural numbers, deﬁned in the module strong-induction and discussed in sec-
+tion 12.9, can be used to derive such goals, and indeed that me thod is used in the present
+setting to derive a key characterization result for map->set (see exercise 10.23 below).
+We now deﬁne two maps to be identical iff they are identical as sets:
+assert* map-identity := (m1 = m2 <==> map->set m1 = map->set m2)
+We can immediately put the identity conditions to the test:
+>let{map1 := (alist->map [[ /quotesingle.Varb --> 2] [ /quotesingle.Vara --> 1]]);
+map2 := (alist->map [[ /quotesingle.Vara --> 1] [ /quotesingle.Varb --> 2] [ /quotesingle.Varb --> 3]])}
+(eval map1 = map2)
+Term: true
+>let{map1 := (alist->map [[ /quotesingle.Varb --> 2] [ /quotesingle.Vara --> 1]]);
+map2 := (alist->map [[ /quotesingle.Varb --> 2]])}
+(eval map1 = map2)
+Term: false
+6 For a discussion of primitive recursion in the context of in ductive data types and recursively deﬁned functions
+on them, see the paper “Walther Recursion” by McAllester and Arkoudas [50].
+
+fpmics 2015/12/8 11:38 Page 543 #565
+10.4. MAPS 543
+Note that we could have introduced map->set prior to our deﬁnition of dom, and then deﬁned
+the domain of a map as the set-theoretic domain of the corresp onding binary relation:
+(dom m = Set.dom map->set m)
+That would have further underlined the close connection bet ween the two theories, and
+would also have the advantage of reuse. However, the more dir ect approach taken here has
+its own advantages, most notably the simpliﬁcation of certa in proof steps. We will illustrate
+the other approach shortly when we come to deﬁne the range of a map as the set-theoretic
+range of the binary relation obtained by map->set .
+Exercise 10.22: Consider an inverse operation transforming sets of ordered pairs into
+maps:
+declare set->map: (S, T) [(Set.Set (Pair S T))] -> (Map S T)
+[[Set.alist->set]]
+assert* set->map-def :=
+[(set->map null = empty-map)
+(set->map (k @ v) ++ A = [k v] ++ set->map A)]
+What, if anything, might be wrong with this deﬁnition?
+A major characterization theorem needs to be proved at this p oint, namely, that two maps
+are identical in the sense we just described iff they are iden tical in the intuitive sense, i.e.,
+iff they produce identical outputs when applied to identica l inputs:
+define identity-characterization :=
+(forall m1 m2 . m1 = m2 <==> forall k . m1 at k = m2 at k)
+This is fairly straightforward to derive once we have derive d a closely related characteri-
+zation of map->set , namely:
+define map->set-characterization :=
+(forall m k v . k @ v in map->set m <==> m at k = SOME v)}
+*Exercise 10.23: Provemap->set-characterization andidentity-characterization .
+Let us now deﬁne the range of a map as follows:
+declare range: (K, V) [(Map K V)] -> (Set.Set V) [[alist->map]]
+assert* range-def := [(range m = Set.range map->set m)]
+> (eval range ide-map)
+List: [1 2 3]
+
+fpmics 2015/12/8 11:38 Page 544 #566
+544 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+Most of the results we derived about domains have natural ana logues for ranges, albeit
+with some important differences.
+conclude range-lemma-1 :=
+(forall m v . v in range m <==> exists k . k @ v in map->set m)
+pick-any m v
+  (!chain [(v in range m)
+  <==> (v in Set.range map->set m) [range-def]
+  <==> (exists k . k @ v in map->set m) [Set.range-characteriza tion]])
+  conclude range-characterization :=
+  (forall m v . v in range m <==> exists k . m at k = SOME v)
+  pick-any m v
+    (!chain [(v in range m)
+    <==> (exists k . k @ v in map->set m) [range-lemma-1]
+    <==> (exists k . m at k = SOME v) [map->SET-characterization] ])
+    conclude range-lemma-2 :=
+    (forall k v rest . v in range [k v] ++ rest)
+    pick-any k v rest
+      (!chain<- [(v in range [k v] ++ rest)
+      <== (v in Set.range map->set [k v] ++ rest) [range-def]
+      <== (v in Set.range k @ v ++ map->set rest - k) [map->SET-def]
+      <== (v in v ++ Set.range map->set rest - k) [Set.range-def]
+      <== (v = v | v in Set.range map->set rest - k) [Set.in-def]
+      <== (v = v) [alternate]])
+      A subtle difference is that the analogue of dom-lemma-2 does nothold:
+      define range-lemma-conjecture :=
+      (forall m k v . range m subset range [k v] ++ m)
+      > (falsify range-lemma-conjecture 10)
+List: [ /quotesingle.Varsuccess
+|{
+?k:Int := 1
+?m:(Map Int Int) := (update (pair 1 1)
+empty-map:(Map Int Int))
+?v:Int := 0
+}|]
+This should not be surprising. A key can always be rebound to a different value in a map,
+thereby possibly removing the previous value from the range of the map (assuming that no
+other key maps to that same value). But this does not hold for d omains: if a key is in a map,
+then no further additions will ever remove that key from the m ap’s domain.
+Exercise 10.24: Prove:(forall m k . range m - k subset range m) .
+
+fpmics 2015/12/8 11:38 Page 545 #567
+10.4. MAPS 545
+We continue with an operation that restricts a map to a given set of keys, using the
+symbol|ˆas an inﬁx alias for it:
+declare restricted-to: (S, T) [(Map S T) (Set.Set S)] -> (Map S T)
+[|ˆ [alist->map Set.alist->set]]
+assert* restrict-def :=
+[(empty-map |ˆ _ = empty-map)
+(k in A ==> [k v] ++ rest |ˆ A = [k v] ++ (rest |ˆ A))
+(˜k in A ==> [k v] ++ rest |ˆ A = rest |ˆ A)]
+> (eval ide-map |ˆ [ /quotesingle.Varb/quotesingle.Varc])
+List: [[ /quotesingle.Varb --> 2] [ /quotesingle.Varc --> 3]]
+We prove that the domain of any restriction of a map mis always a subset of the domain
+ofm:
+conclude restriction-theorem-1 := (forall m A . dom m |ˆ A subset A)
+by-induction restriction-theorem-1 {
+  empty-map =>
+  pick-any A
+    (!Set.subset-intro
+    pick-any x
+      (!chain [(x in dom empty-map |ˆ A)
+      ==> (x in dom empty-map) [restrict-def]
+      ==> (x in null) [dom-def]
+      ==> false [Set.NC]
+      ==> (x in A) [prop-taut]]))
+      | (mas(update (pair k v) rest)) =>
+      pick-any A
+        let{IH := (forall A . dom rest |ˆ A subset A);
+          lemma := (!chain-> [true ==> (dom rest |ˆ A subset A) [IH]])}
+          (!two-cases
+            assume case-1 := (k in A)
+              (!Set.subset-intro
+              pick-any x
+                (!chain [(x in dom m |ˆ A)
+                ==> (x in dom [k v] ++ (rest |ˆ A)) [restrict-def]
+                ==> (x in k ++ dom rest |ˆ A) [dom-def]
+                ==> (x = k | x in dom rest |ˆ A) [Set.in-def]
+                ==> (x in A | x in dom rest |ˆ A) [case-1]
+                ==> (x in A | x in A) [Set.SC]
+                ==> (x in A) [prop-taut]]))
+                assume case-2 := (˜k in A)
+                  (!Set.subset-intro
+                  pick-any x
+                    (!chain [(x in dom m |ˆ A)
+                    ==> (x in dom rest |ˆ A) [restrict-def]
+                    ==> (x in A) [Set.SC]])))
+                  }
+
+fpmics 2015/12/8 11:38 Page 546 #568
+546 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+Exercise 10.25: Consider:
+define restriction-theorem-2 :=
+(forall m A . dom m subset A ==> m |ˆ A = m)
+Prove this result.
+The above operation restricts a map on a subset of its domain. There is an analogous oper-
+ation that restricts a map on a subset of its range. Let us call thisrange restriction and
+denote it by the symbol ˆ|:
+declare range-restriction: (S, T) [(Map S T) (Set.Set T)] -> (Map S T)
+[150 ˆ| [alist->map Set.alist->set]]
+assert* range-restriction-def :=
+[(empty-map ˆ| _ = empty-map)
+([k v] ++ rest ˆ| A = [k v] ++ (rest ˆ| A) <== v in A)
+([k v] ++ rest ˆ| A = rest ˆ| A <==˜v in A)]
+For example:
+define eye-color := [[ /quotesingle.Varbob --> /quotesingle.Varbrown] [ /quotesingle.Vartom --> /quotesingle.Varblue] [ /quotesingle.Varlisa --> /quotesingle.Vargreen]
+[/quotesingle.Varpeter --> /quotesingle.Varblue] [ /quotesingle.Varann --> /quotesingle.Varbrown]]
+> (eval eye-color ˆ| [ /quotesingle.Varblue])
+List: [[ /quotesingle.Vartom --> /quotesingle.Varblue] [ /quotesingle.Varpeter --> /quotesingle.Varblue]]
+We introduce a useful ternary predicate, agrees-on , which holds between two maps m1
+andm2and a set of keys Aiffm1andm2produce the exact same value for every key in A.
+There is no recursion involved in the deﬁnition of this agree ment predicate. The deﬁnition
+is essentially an abbreviation: m1andm2agree on Aiff their restrictions on Aare identical:
+declare agree-on: (S, T) [(Map S T) (Map S T) (Set.Set S)] -> Boolean
+[[alist->map alist->map Set.alist->set]]
+assert* agree-on-def := [((agree-on m1 m2 A) <==> m1 |ˆ A = m2 |ˆ A)]
+> (eval (agree-on ide-map ide-map [ /quotesingle.Vara/quotesingle.Varb]))
+Term: true
+> (eval (agree-on [[ /quotesingle.Vara --> 1] [ /quotesingle.Varb --> 2]]
+[[/quotesingle.Varb --> 3] [ /quotesingle.Vara --> 1]]
+[/quotesingle.Varb]))
+Term: false
+We have:
+
+fpmics 2015/12/8 11:38 Page 547 #569
+10.4. MAPS 547
+conclude agree-on-sym :=
+(forall m1 m2 A . (agree-on m1 m2 A) <==> (agree-on m2 m1 A))
+pick-any m1 m2 A
+  (!chain [(agree-on m1 m2 A)
+  <==> (m1 |ˆ A = m2 |ˆ A) [agree-on-def]
+  <==> (m2 |ˆ A = m1 |ˆ A) [sym]
+  <==> (agree-on m2 m1 A) [agree-on-def]])
+  We close this section with two more useful binary operations on maps: overriding and
+  composition . Overriding is like union except that preference is given to the values of the
+  rightmost map. In other words, applying the operation of ove rriding to two maps m1and
+  m2results in a map that contains all and only the bindings of bot h maps, except that for
+  bindings with a shared key k, preference is given to m2(the rightmost operand), meaning
+  that the value associated with kin the resulting map is the same value that m2associates
+  with k. We use the symbol **as an alias for this operation:
+  declare override: (S, T) [(Map S T) (Map S T)] -> (Map S T)
+  [** [alist->map alist->map]]
+  assert* override-def :=
+  [(m ** [] = m)
+  (m ** [k v] ++ rest = [k v] ++ (m ** rest))]
+  > (eval [[1 --> /quotesingle.Vara] [2 --> /quotesingle.Varb]] ** [[1 --> /quotesingle.Varfoo] [3 --> /quotesingle.Varc]])
+List: [[1 --> /quotesingle.Varfoo] [3 --> /quotesingle.Varc] [1 --> /quotesingle.Vara] [2 --> /quotesingle.Varb]]
+While the recursive deﬁnition of overriding basically stip ulates that the empty map is a
+right identity element for the operation, we can readily pro ve that it is also a left identity
+element:
+by-induction (forall m . [] ** m = m) {
+  (masempty-map) =>
+  (!chain [(empty-map ** m) = empty-map [override-def]])
+  | (mas(update (pair k v) rest)) =>
+  (!chain [(empty-map ** m)
+  = ([k v] ++ (empty-map ** rest)) [override-def]
+  = ([k v] ++ rest) [([] ** rest = rest)]])
+}
+
+fpmics 2015/12/8 11:38 Page 548 #570
+548 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+Exercise 10.26: Consider the following three conjectures (where k,m1, andm2are univer-
+sally quantiﬁed in all three sentences):
+(k in dom m2 ==> (m1 ** m2) at k = m2 at k) (10.10)
+(dom m2 ** m1 = (dom m2) \/ (dom m1)) (10.11)
+(range m2 ** m1 = (range m2) \/ (range m1)) (10.12)
+Prove or disprove each of these.
+One way to deﬁne the composition of a map m2with a map m1is as follows (there are
+alternative notions of composition, see below): For every k eykin the domain of m1, we
+retrieve the corresponding value vand then apply m2to it, provided that vis in the domain
+ofm2; if not, we ignore the binding of ktov. For instance, if m1andm2are, respectively,
+the following maps:
+[[’paris --> ’france] [’tokyo --> ’japan] [’cairo --> ’egyp t]]
+and
+[[’france --> ’europe] [’algeria --> ’africa] [’japan --> ’ asia]]
+then composing m2with m1would yield:
+[[’paris --> ’europe] [’tokyo --> ’asia]] .
+Note that the binding [’cairo --> ’egypt] is not included in the result, nor are any bind-
+ings from m2itself. The following is a constructive deﬁnition of this op eration; we use o
+as an inﬁx alias for it.
+declare compose: (S1, S2, S3) [(Map S2 S3) (Map S1 S2)] -> (Map S1 S3)
+[o [alist->map alist->map]]
+assert* compose-def :=
+[(_ o empty-map = empty-map)
+(m o [k v] ++ more = [k v /quotesingle.Var] ++ (m o more) <== m at v = SOME v /quotesingle.Var)
+(m o [k v] ++ more = m o more <== m at v = NONE)]
+It is not necessary for both maps to share the sorts of their ke ys and values. All that is
+needed is for the sort of the values of the ﬁrst map to be the sam e as the sort of the keys of
+the second map. Thus, e.g.:
+>let{m1 := [[1 --> /quotesingle.Vara] [2 --> /quotesingle.Varb] [1 --> /quotesingle.Varc]];
+  m2 := [[ /quotesingle.Vara --> true] [ /quotesingle.Varb --> false] [ /quotesingle.Varfoo --> true]]}
+  (eval m2 o m1)
+List: [[1 --> true] [2 --> false]]
+And the foregoing example:
+
+fpmics 2015/12/8 11:38 Page 549 #571
+10.4. MAPS 549
+define capitals :=
+[[/quotesingle.Varparis --> /quotesingle.Varfrance] [ /quotesingle.Vartokyo --> /quotesingle.Varjapan] [ /quotesingle.Varcairo --> /quotesingle.Varegypt]]
+define countries :=
+[[/quotesingle.Varfrance --> /quotesingle.Vareurope] [ /quotesingle.Varalgeria --> /quotesingle.Varafrica] [ /quotesingle.Varjapan --> /quotesingle.Varasia]]
+> (eval countries o capitals)
+List: [[ /quotesingle.Varparis --> /quotesingle.Vareurope] [ /quotesingle.Vartokyo --> /quotesingle.Varasia]]
+Composition is not commutative, and, as deﬁned here, it is no t associative either:
+> (falsify (forall m1 m2 . m1 o m2 = m2 o m1) 10)
+List: [ /quotesingle.Varsuccess
+|{
+?m1:(Map Int Int) := (update (pair 1 1)
+empty-map:(Map Int Int))
+?m2:(Map Int Int) := (update (pair 1 2)
+empty-map:(Map Int Int))
+}|]
+> (falsify (forall m1 m2 m3 . m1 o (m2 o m3) = (m1 o m2) o m3) 10)
+List: [ /quotesingle.Varsuccess
+|{
+?m1:(Map Int Int) := (update (pair 1 1)
+empty-map:(Map Int Int))
+?m2:(Map Int Int) := (update (pair 1 2)
+(update (pair 1 1)
+empty-map:(Map Int Int)))
+?m3:(Map Int Int) := (update (pair 1 1)
+empty-map:(Map Int Int))
+}|]
+When keys and values are of the same sort, composition can be i terated indeﬁnitely:
+declare iterate: (S, S) [(Map S S) N.Nat] -> (Map S S)
+[ˆˆ [alist->map int->nat]]
+assert* iterate-def :=
+[(m ˆˆ zero = m)
+(m ˆˆ N.S n = m o (m ˆˆ n))]
+>let{m := (alist->map [[1 --> 2] [2 --> 3] [3 --> 1]]);
+  _ := (print "\nm iterated once: " (eval m ˆˆ 1));
+  _ := (print "\nm iterated twice: " (eval m ˆˆ 2));
+  _ := (print "\nm iterated thrice: " (eval m ˆˆ 3))}
+  (print "\nAre m and mˆˆ3 identical?: " (eval m = m ˆˆ 3))
+
+fpmics 2015/12/8 11:38 Page 550 #572
+550 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+m iterated once: [[1 --> 3] [2 --> 1] [3 --> 2]]
+m iterated twice: [[1 --> 1] [2 --> 2] [3 --> 3]]
+m iterated thrice: [[1 --> 2] [2 --> 3] [3 --> 1]]
+Are m and mˆˆ3 identical?: true
+Unit: ()
+Exercise 10.27: The following states that domain restriction distributes o ver**:
+(forall m2 m1 A . (m1 ** m2) |ˆ A = m1 |ˆ A ** m2 |ˆ A)
+Provide a proof of this sentence.
+Exercise 10.28: Deﬁne a binary compatibility relation on maps, <->, so that m1<-> m2
+iffm1andm2agree on the intersection of their domains:
+declare compatible: (K, V) [(Map K V) (Map K V)] -> Boolean
+[<-> [alist->map alist->map]]
+assert* compatible-def :=
+[(m1 <-> m2 <==> agree-on m1 m2 (dom m1) /\ (dom m2))]
+Prove or disprove the claim that <->is an equivalence relation (namely, reﬂexive, symmet-
+ric, and transitive).
+Another notion of composition, applicable when keys and val ues are of the same sort, can
+be deﬁned as follows:
+declare o/quotesingle.Var: (S) [(Map S S) (Map S S)] -> (Map S S)
+[[alist->map alist->map]]
+assert* o/quotesingle.Var-def :=
+[(m o/quotesingle.Var[] = m)
+(m o/quotesingle.Var[k v] ++ rest = [k v /quotesingle.Var] ++ (m o /quotesingle.Varrest) <== m at v = SOME v /quotesingle.Var)
+(m o/quotesingle.Var[k v] ++ rest = [k v] ++ (m o /quotesingle.Varrest) <== m at v = NONE)]
+This composition operator is not commutative either, as can be readily veriﬁed.
+Exercise 10.29: Prove or disprove the claim that this alternative compositi on operator is
+associative.
+.4.3 Default maps
+In this subsection we outline an alternative approach to for malizing maps, which is similar
+to—but in certain ways more ﬂexible than—arrays that are eve rywhere initialized with a
+default value. One advantage of this approach is that it maps keys to values directly, rather
+
+fpmics 2015/12/8 11:38 Page 551 #573
+10.4. MAPS 551
+than to value options: if a key is not in the map’s domain, the l ookup operation simply
+returns the map’s default value (say zero, if the values are natural numbers). In Athena,
+these maps are the only ones that may appear inside constrain ts to be solved by SMT
+(satisﬁability-modulo-theories) algorithms; see sectio n??. These maps are also used in
+chapter 18 to represent semantic states. They are deﬁned in A thena’s library in the top-
+level module DMap.
+10.4.3.1 Representation and notation
+Default maps are deﬁned as the following polymorphic induct ive structure, abstacted over
+the sort variables KandV(the sorts of keys and values, respectively):
+structure (DMap K V) := (empty-map V) | (update (pair K V) (DMap K V))
+set-precedence empty-map 250
+Note that this is virtually identical to the Mapstructure (p. 535), with one important dif-
+ference: the irreﬂexive constructor empty-map , which gets a relatively high precedence, is
+now unary rather than nullary (a constant). The sole argumen t ofempty-map is a value—an
+element of sort V—that represents the default value that will be produced whe n a key is not
+present in the map. Other than that, these maps work as before :update incrementally adds
+new bindings to a map, a binding being simply an ordered pair o f a key and a value. These
+maps also grow to the left. A new binding added by update might shadow an older binding
+with the same key.
+As before, we also provide procedures that can serve as input expanders and output
+transformers, allowing us to input and output default maps i n bracket-list notation. The
+input expander is alist->dmap (“Athena list to default map”) and the output transformer
+isdmap->alist (“default map to Athena list”). In Athena (bracket) list not ation, a default
+map is represented as a two-element list
+[d pairs] (10.13)
+where dis the default value of the map and pairs is a list of pairs representing the map’s
+bindings (with bindings on the left taking precedence). Eac h binding is written as either
+[k v]or as[k--> v]. The unary procedure alist->dmap is deﬁned in terms of an aux-
+iliary procedure alist->dmap-general , which, in addition to taking an Athena list of the
+form (10.13) as input, also takes a “preprocessor” procedur e as a second argument and
+applies it to all keys and values, giving us a chance to, e.g., convert natural numbers to
+integers on the ﬂy as we are converting the list to a default ma p term. The default value of
+this argument is the identity, meaning that no preprocessin g of keys and values is done by
+default. The converse procedure, dmap->alist , is likewise deﬁned in terms of the binary
+dmap->alist-general :
+
+fpmics 2015/12/8 11:38 Page 552 #574
+552 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+define (alist->dmap-general L preprocessor) :=
+matchL {
+[d (some-list pairs)] =>
+letrec {loop := lambda (L)
+matchL {
+[] => (empty-map d)
+| (list-of (|| [k --> v] [k v]) rest) =>
+(update (pair (preprocessor k)
+(preprocessor v))
+(loop rest))}}
+(loop pairs)
+| _ => L
+}
+define (alist->dmap L) := (alist->dmap-general L id)
+define (dmap->alist-general m preprocessor) :=
+letrec {loop := lambda (m pairs)
+matchm {
+(empty-map d) => [d (rev pairs)]
+| (update (pair k v) rest) =>
+(loop rest (add [(preprocessor k) -->
+(preprocessor v)]
+pairs))
+| _ => m}}
+(loop m [])
+define (dmap->alist m) := (dmap->alist-general m id)
+Thus, we have:
+define dm := (alist->dmap [0 [[ /quotesingle.Vara --> 1] [ /quotesingle.Varb --> 2] [ /quotesingle.Vara --> 99]]])
+> dm
+Term: (DMap.update (pair /quotesingle.Vara 1)
+(DMap.update (pair /quotesingle.Varb 2)
+(DMap.update (pair /quotesingle.Vara 99)
+(DMap.empty-map 0))))
+> (dmap->alist dm)
+List: [0 [[ /quotesingle.Vara --> 1] [ /quotesingle.Varb --> 2] [ /quotesingle.Vara --> 99]]]
+It is convenient to also have a canonical output transformer that converts a default map
+term into Athena list notation as above, except that only one binding per key is shown, the
+leftmost one, which is the one that matters given that bindin gs with the same key further to
+the right have been rendered obsolete (shadowed):
+
+fpmics 2015/12/8 11:38 Page 553 #575
+10.4. MAPS 553
+define (remove-from m k) :=
+matchm {
+(empty-map _) => m
+| (update (binding as(pair key val)) rest) =>
+check{(k equal? key) => (remove-from rest k)
+|else=> (update binding (remove-from rest k))}
+}
+define (dmap->alist-canonical-general m preprocessor) :=
+letrec {loop := lambda (m pairs)
+matchm {
+(empty-map d) => [d (rev pairs)]
+| (update (pair k v) rest) =>
+(loop (remove-from rest k)
+(add [(preprocessor k) -->
+(preprocessor v)]
+pairs))
+| _ => m}}
+(loop m [])
+> (dmap->alist-canonical-general dm id)
+List: [0 [[ /quotesingle.Vara --> 1] [ /quotesingle.Varb --> 2]]]
+We issue some directives to make update more notationally ﬂexible, and deﬁne a number
+of variable abbreviations:
+expand-input update [(alist->pair id id) alist->dmap]
+overload ++ update
+set-precedence ++ 210
+define [key k k /quotesingle.Vark1 k2 d d /quotesingle.Varval v v /quotesingle.Varv1 v2] := [?key ···]
+define [h t] := [Set.h Set.t]
+define [m m/quotesingle.Varm1 m2 rest] := [?m:(DMap 'S1'S2)···]
+.4.3.2 Main operations, identity conditions, and result s
+The chief operation is of course key lookup:
+declare apply: (K, V) [(DMap K V) K] -> V [110 [alist->dmap id]]
+define at := apply
+assert* apply-def :=
+[(empty-map d at _ = d)
+([k v] ++ rest at x = v <== k = x)
+([k v] ++ rest at x = rest at x <== k =/= x)]
+Let’s test the deﬁnition:
+
+fpmics 2015/12/8 11:38 Page 554 #576
+554 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+define dm := (alist->dmap [0 [[ /quotesingle.Vara --> 1] [ /quotesingle.Varb --> 2] [ /quotesingle.Varc --> 3]]])
+> (eval dm at /quotesingle.Vara)
+Term: 1
+> [(eval dm at /quotesingle.Varb) (eval dm at /quotesingle.Varc)]
+List: [2 3]
+> (eval dm at /quotesingle.Varfoo)
+Term: 0
+Let’s deﬁne a function to get the default value of any map:
+declare default: (K, V) [(DMap K V)] -> V [200 [alist->dmap]]
+assert* default-def :=
+[(default empty-map d = d)
+(default _ ++ rest = default rest)]
+> (eval default dm)
+Term: 0
+Key removal is deﬁned as follows:
+declare remove: (S, T) [(DMap S T) S] -> (DMap S T)
+[- 120 [alist->dmap id]]
+left-assoc -
+assert* remove-def :=
+[(empty-map d - _ = empty-map d)
+([key _] ++ rest - key = rest - key)
+(key =/= x ==> [key val] ++ rest - x = [key val] ++ (rest - x))]
+> (eval dm - /quotesingle.Varb)
+Term: (DMap.update (pair /quotesingle.Vara 1)
+(DMap.update (pair /quotesingle.Varc 3)
+(DMap.empty-map 0)))
+The domain of a default map is a bit more subtle. We only count t hose keys that are bound
+to a value other than the map’s default value. Importantly, w e must then make sure that
+subsequent bindings of that key are removed:
+
+fpmics 2015/12/8 11:38 Page 555 #577
+10.4. MAPS 555
+declare dom: (K, V) [(DMap K V)] -> (Set.Set K) [[alist->dmap]]
+assert* dom-def :=
+[(dom empty-map _ = null)
+(dom [k v] ++ rest = dom rest - k <== v = default rest)
+(dom [k v] ++ rest = k ++ dom rest <== v =/= default rest)]
+define dm :=
+(alist->dmap [0 [[ /quotesingle.Vara --> 1] [ /quotesingle.Varb --> 0] [ /quotesingle.Varc --> 3] [ /quotesingle.Varb --> 99]]])
+> (eval dom dm)
+Term: (Set.insert /quotesingle.Vara
+(Set.insert /quotesingle.Varc
+Set.null:(Set.Set Ide)))
+The size of a default map is deﬁned as the cardinality of its do main:
+declare size: (S, T) [(DMap S T)] -> N [[alist->dmap]]
+assert* size-axioms := [(size m = card dom m)]
+We list some pertinent results below, leaving most proofs as exercises:
+conclude remove-correctness-1 := (forall m x . m - x at x = default m)
+by-induction remove-correctness-1 {
+  (mas(empty-map d)) =>
+  pick-any x
+    (!chain [(m - x at x)
+    = (m at x) [remove-def]
+    = d [apply-def]
+    = (default m) [default-def]])
+    | (mas(update (pair k v) rest)) =>
+    let{IH := (forall x . rest - x at x = default rest)}
+      pick-any x
+        (!two-cases
+          assume (k = x)
+            (!chain [(m - x at x)
+            = (m - k at k) [(k = x)]
+            = (rest - k at k) [remove-def]
+            = (default rest) [IH]
+            = (default m) [default-def]
+            ])
+            assume (k =/= x)
+              (!chain [(m - x at x)
+              = ((k @ v) ++ (rest - x) at x) [remove-def]
+              = (rest - x at x) [apply-def]
+              = (default rest) [IH]
+              = (default m) [default-def]]))
+            }
+
+fpmics 2015/12/8 11:38 Page 556 #578
+556 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+define remove-correctness-2 :=
+(forall m k x . k =/= x ==> m - k at x = m at x)
+define remove-correctness-3 :=
+(forall m k . default m = default m - k)
+define dom-lemma-1 :=
+(forall k v rest . v =/= default rest ==> k in dom [k v] ++ rest)
+define dom-lemma-2 :=
+(forall m k v . v =/= default m ==> dom m subset dom [k v] ++ m)
+define dom-lemma-2b :=
+(forall m x k v . v =/= default m & x in dom m ==> x in dom [k v] ++ m)
+In addition to size, a very simplistic notion of map length is also useful for strong inductive
+proofs:
+define [< <=] := [N.< N.<=]
+declare len: (K, V) [(DMap K V)] -> N [[alist->dmap]]
+assert* len-def :=
+[(len empty-map _ = zero)
+(len [_ _] ++ rest = S len rest)]
+define len-lemma-1 := (forall m k v . len m < len (k @ v) ++ m)
+define len-lemma-2 := (forall m k . len m - k <= len m)
+define len-lemma-3 := (forall key val k rest .
+len rest - k < len key @ val ++ rest)
+define lemma-D := (forall m k . k in dom m <==> m at k =/= default m)
+define remove-correctness-0 := (forall m x .˜x in dom m - x)
+define dom-lemma-3 := (forall m k . dom m - k subset dom m)
+conclude dom-lemma-3 := (forall m k . dom (m - k) subset dom m)
+pick-any m:(DMap 'K'V) k:'K
+  (!Set.subset-intro
+  pick-any x:'K
+    let{[rc1 rc2 rc3] := [remove-correctness-1
+      remove-correctness-2
+      remove-correctness-3]}
+      assume hyp := (x in dom m - k)
+        (!two-cases
+          assume (x = k)
+            let{L := (!chain-> [true
+
+fpmics 2015/12/8 11:38 Page 557 #579
+10.4. MAPS 557
+==> (m - k at k = default m) [rc1]])}
+(!chain-> [hyp
+==> (k in dom m - k) [(x = k)]
+==> (m - k at k =/= default m - k) [lemma-D]
+==> (m - k at k =/= default m) [rc3]
+==> (L & m - k at k =/= default m) [augment]
+==> false [prop-taut]
+==> (x in dom m) [prop-taut]])
+assume (x =/= k)
+  (!chain-> [hyp
+  ==> (m - k at x =/= default m - k) [lemma-D]
+  ==> (m at x =/= default m - k) [rc2]
+  ==> (m at x =/= default m) [rc3]
+  ==> (x in dom m) [lemma-D]])))
+  define dom-corrolary-1 :=
+  (forall key val k rest .
+  k in dom rest - key ==> k in dom [key val] ++ rest)
+  The following will extract a set of key-value pairs from a map . Note that, consistent with
+  the deﬁnition of dom, we only include those bindings whose values are different f rom the
+  map’s default value:
+  declare dmap->set: (K, V) [(DMap K V)] -> (Set.Set (Pair K V))
+  [[alist->dmap]]
+  assert* dmap->SET-def :=
+  [(dmap->set empty-map _ = null)
+  (dmap->set k @ v ++ rest = dmap->set rest - k
+  <== v = default rest)
+  (dmap->set k @ v ++ rest = (k @ v) ++ dmap->set rest - k
+  <== v =/= default rest)]
+  The following are useful results:
+  define dms-lemma-1 := (forall k v . k @ v in dmap->set m ==> k in dom m)
+  define dms-lemma-1b :=
+  (forall m k .˜k in dom m ==> forall v .˜k @ v in dmap->set m)
+  define dms-lemma-1b /quotesingle.Var:=
+  (forall m k .˜k in dom m ==>˜exists v . k @ v in dmap->set m)
+  define dms-theorem-1 :=
+  (forall m k v . k @ v in dmap->set m ==> m at k = v)
+  define dms-theorem-2 :=
+  (forall m k .˜k in dom m ==> m at k = default m)
+
+fpmics 2015/12/8 11:38 Page 558 #580
+558 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+define dms-lemma-2 :=
+(forall m k k /quotesingle.Var. k in dom m & k =/= k /quotesingle.Var==> k in dom m - k /quotesingle.Var)
+define dms-lemma-3 :=
+(forall m key val .
+val =/= default m ==> dom key @ val ++ m = key ++ dom m - key)
+define dms-theorem-3 :=
+(forall m k . k in dom m ==> exists v . k @ v in dmap->set m)
+define at-characterization :=
+(forall m k v . m at k = v <==> k @ v in dmap->set m |
+˜k in dom m & v = default m)
+We now assert the following identity conditions for default maps:
+assert* dmap-identity :=
+(forall m1 m2 . m1 = m2 <==> default m1 = default m2 &
+dmap->set m1 = dmap->set m2)
+In other words, two maps are identical iff (a) their default v alues are the same, and (b) they
+have the exact same sets of bindings, as these are computed by dmap->set .
+A notion of agreement on a set of keys is introduced as follows :
+declare agree-on: (S, T) [(DMap S T) (DMap S T) (Set.Set S)] -> Boolean
+[[alist->dmap alist->dmap Set.alist->set]]
+assert* agree-on-def :=
+[(agree-on m1 m2 null)
+((agree-on m1 m2 h Set.++ t) <==> m1 at h = m2 at h &
+(agree-on m1 m2 t))]
+>let{dm1 := (alist->dmap [0 [[ /quotesingle.Vara --> 1] [ /quotesingle.Varb --> 2] [ /quotesingle.Varc --> 3]]]);
+  dm2 := (alist->dmap [9 [[ /quotesingle.Vara --> 1] [ /quotesingle.Varb --> 8] [ /quotesingle.Varc --> 3]]])}
+  [(eval agree-on dm1 dm2 [ /quotesingle.Vara/quotesingle.Varc])
+  (eval agree-on dm1 dm2 [ /quotesingle.Vara/quotesingle.Varb])]
+List: [true false]
+define agreement-characterization :=
+(forall A m1 m2 . (agree-on m1 m2 A) <==>
+forall k . k in A ==> m1 at k = m2 at k)
+define downward-agreement-lemma :=
+(forall B A m1 m2 . (agree-on m1 m2 A) & B subset A ==>
+(agree-on m1 m2 B))
+And a restriction operation:
+
+fpmics 2015/12/8 11:38 Page 559 #581
+10.5. CHAPTER NOTES 559
+declare restricted-to: (S, T) [(DMap S T) (Set.Set S)] -> (DMap S T)
+[150 |ˆ [alist->dmap Set.alist->set]]
+assert* restrict-axioms :=
+[(empty-map d |ˆ _ = empty-map d)
+(k in A ==> [k v] ++ rest |ˆ A = [k v] ++ (rest |ˆ A))
+(˜k in A ==> [k v] ++ rest |ˆ A = rest |ˆ A)]
+As a non-constructive characterization of identity, we pro ve that two maps are identical
+iff their default values are the same and they map allkeys to the same values:
+define identity-characterization :=
+(forall m1 m2 . m1 = m2 <==> default m1 = default m2 &
+forall k . m1 at k = m2 at k)
+The explicit presence of the condition
+default m1 = default m2 (10.14)
+might seem somewhat odd. After all, one might expect that con dition to be made redundant
+(to be entailed) by the seemingly much stronger condition
+forall k . m1 at k = m2 at k (10.15)
+But that is actually not the case when there are only ﬁnitely m any possible keys and the
+domain of the maps includes all of them. For example, conside r:
+define m1 := (alist->dmap [0 [[true --> 1] [false --> 0]]])
+define m2 := (alist->dmap [9 [[true --> 1] [false --> 0]]])
+For these two maps, with Boolean keys, condition (10.15) holds but (10.14) does not, and
+hence the two are not identical (according to dmap-identity ). However, when there are
+inﬁnitely many possible keys then (10.15) does entail (10.1 4).
+.5 Chapter notes
+Ordered pairs are an extremely fundamental concept in mathe matics, as well as in pro-
+gramming. They are are discussed—at least in passing—in mos t mathematics textbooks,
+especially discrete mathematics textbooks, and in virtual ly all set theory books (see below
+for some references). Their importance is only matched by th eir modesty: There is not ter-
+ribly much to say about them. The main property that we want is for two putative ordered
+pairs to be identical iff their ﬁrst and second components ar e respectively identical. As
+long as that holds, the corresponding objects can serve as or dered pairs. In our case, as
+we saw, this property follows immediately from structural a xioms applicable to all induc-
+tive datatypes. In programming, ordered pairs are the workh orse of Lisp-like languages,
+
+fpmics 2015/12/8 11:38 Page 560 #582
+560 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+where lists are formed by chaining together ordered pairs, b ut they’re widely used in most
+languages, including popular contemporary languages like C++ and Python.
+Options have been used primarily in type theory and function al programming languages
+such as SML and Haskell, but they are also useful in speciﬁcat ion and proofs. See the notes
+of chapter 2 for references to books on functional programmi ng which also discuss option
+values and their uses. Values of “nullable types” in languag es such as Java (essentially
+pointers to heap-allocated objects) can be viewed as a less r igorous version of the same
+basic idea.
+Sets are also an extremely fundamental notion.7All branches of modern mathematics
+are ultimately based on set theory, in that all standard math ematical objects (functions,
+sequences, relations, etc.) can be viewed as sets. For expos itions of classical set theory
+see “Foundations of Set Theory” by A. A. Fraenkel et al. [23]; “Axiomatic Set Theory”
+by Patrick Suppes [80], which contains many of the theorems d erived in this chapter; and
+“Set Theory” by Jech [33]. These books cover classical set th eory, mostly as developed in
+the early 20th century by Zermelo and Fraenkel, known as Zermelo-Fraenkel set theory ,
+or simply as ZF. ZF is untyped, and “naive” untyped set theori es are susceptible to certain
+inconsistencies, such as Russell’s paradox [30]. ZF avoids such paradoxes by postulating
+additional axioms. In typed systems, such as that of Athena, this is not necessary. Indeed,
+type theory was originally developed by Russell precisely i n order to avert the various
+set-theoretic paradoxes that emerged in the beginning of th e last century. Outside of pure
+mathematics, sets play a fundamental role in speciﬁcation. The speciﬁcation language Z
+[1] [32], for instance, is based on (typed) set theory.
+Here we have developed a theory of ﬁnite sets, but most of the p roofs would carry
+over unchanged to a slight modiﬁcation of the theory that cou ld accommodate inﬁnite
+sets. Of course in that case we couldn’t have constructive de ﬁnitions of set operations,
+so our axioms would have to start with what are now derived cha racterization theorems.
+For example, an axiom for the intersection operation would a ssert that an element belongs
+(A∩B)iff it belongs both to Aand to B.
+Maps are a standard abstract data type (ADT); they are also known as a dictionaries
+orassociative arrays . ADTs are usually formulated and studied in an imperative, s tateful
+style that allows for destructive modiﬁcation. For instanc e, in the classical imperative style,
+an operation that removes a key from a map does its work as a “si de effect” by modifying
+thestate of the map on which it is applied. The result “type” of the oper ation is something
+7 In some respects they are more fundamental even than ordere d pairs, as ordered pairs can be deﬁned as sets.
+One of the earliest purely set-theoretic deﬁnitions of an or dered pair (a,b)was famously given by Kuratowski
+[43] in 1921:
+(a,b)= {{a,b},{a}}.
+However, instead of analyzing it in terms of sets, it is possi ble to take the notion of an ordered pair as primitive,
+along with the notion of function, and develop mathematics o n that basis.
+
+fpmics 2015/12/8 11:38 Page 561 #583
+10.5. CHAPTER NOTES 561
+likevoid orunit, i.e., there is no proper result returned by performing the o peration. In
+stateful ADTs, operations are typically divided into three classes:8
+1.creators andproducers ;
+2.observers ; and
+3.mutators .
+The creators of an ADT Tcreate new values of Tfrom values of other types, while its pro-
+ducers create new values of Tfrom other values of T(possibly along with non- Tvalues).
+Observers take Tvalues as arguments and return values of other types as resul ts. Finally,
+mutators modify values of type T, without returning new values.
+In this chapter we have given a functional oralgebraic formulation of the dictionary
+ADT. In functional ADT formulations, there are no mutators.9Operations such as key
+removal, which would be modeled as mutators in a stateful for mulation of the ADT, are
+formulated here as pure mathematical functions instead, which take the old version of the
+map as input and return the new (“modiﬁed”) map as output:
+declare remove: (K, V) [(Map K V) K] -> (Map K V)
+In the algebraic setting, they can be thought of as producers rather than mutators.
+Algebraic formulations of ADTs tend to be more mathematical ly tractable and easier to
+reason about. Perhaps the ﬁrst algebraic formulation of a di ctionary-like ADT10was given
+in a seminal 1962 paper by John McCarthy [51], consisting of
+. Three sorts: Value ,Index , andArray ;
+. two functions, read andwrite , with the following types:
+write :Array×Index×Value→Array
+read :Array×Index→Value
+. and two axioms, in the form of conditional equations:
+i=j⇒read(write(a,i,v),j)=v
+i/\e}atio\slash=j⇒read(write(a,i,v),j)=read(a,j)
+This humble “array theory” is automated by SMT solvers and pl ays a key role in modern
+software veriﬁcation and program analysis [54].
+Four if one bothers to distinguish creators from producers .
+Creators and producers are usually represented as constructors , such as update andempty-map . Note that con-
+structors representing producers are always reﬂexive. Not all producers are constructors, however. Key removal,
+for instance, is modeled as a producer. Observers are operat ions such as size .
+Arrays and maps are not quite the same thing, and our theory of maps is considerably different from
+McCarthy’s theory, but abstracted indices can be seen as key s of sorts.
+
+fpmics 2015/12/8 11:38 Page 562 #584
+562 CHAPTER 10. FUNDAMENTAL DISCRETE STRUCTURES
+
+fpmics 2015/12/8 11:38 Page 563 #585
+IVPROOFS ABOUT ALGORITHMS
+
+fpmics 2015/12/8 11:38 Page 564 #586
+
+fpmics 2015/12/8 11:38 Page 565 #587
+Introduction
+ONE OF the most important applications of logic in computer scienc e is proving cor-
+rectness of an algorithm. In this part, we explore this topic in terms of three examples,
+a binary search algorithm, an exponentiation algorithm, an d a greatest common divisor
+algorithm. We already have at hand most of the tools of logic t hat we need, and indeed,
+upon reﬂection, we can see that we even have done some proofs o f algorithm correctness
+already. Even our axiomatic deﬁnitions of functions such as +,*, and**on natural numbers
+can be considered to embody algorithms, but as such they are r ather trivial. These “algo-
+rithms” have little practical value but are useful mainly as simple starting points for under-
+standing the somewhat more complex issues in other data type s. But a potential obstacle
+to moving on to algorithms of more complexity and practicali ty is way we have expressed
+function deﬁnitions as a set of axioms, which probably seems quite unfamiliar and lim-
+iting to most readers with programming experience in mainst ream languages (or even in
+research languages). To narrow this gap, at least to a modest extent, we introduce the fun
+procedure, which permits one to express algorithms in a styl e that is a step closer to one
+of the traditional programming paradigms, functional prog ramming. At the same time, we
+remain ﬁrmly based in logic, since a deﬁnition using funtranslates straightforwardly into
+a set of function-deﬁning axioms.
+Our ﬁrst example is correctness of a binary search algorithm whose domain is the binary
+search trees subset of the binary tree data type deﬁned in Cha pter 8 (and is the main moti-
+vation for deﬁning this subset). The binary-search function we deﬁne is very naturally
+expressed with conditional control and recursion, and thus can be elegantly expressed in a
+functional language—such as with fun.
+In Chapter 12, our second example of algorithm correctness, an exponentiation algo-
+rithm that requires substantially fewer multiplications t han the straightforward one we
+studied in Chapter 3, is more commonly expressed with iterat ive (looping) control struc-
+tures and assignment statements. Here we stick with a recurs ive form easily expressible
+withfun, but this deﬁnition could serve as a guide to programming the algorithm in an iter-
+ative, memory-updating form if that is preferred. We introd uce one additional proof tool in
+Chapter 12, strong induction, and a variant of it, measure in duction.
+For our third example of algorithm correctness, we consider the Euclidean algorithm for
+computing greatest common divisors in Chapter 13. In prepar ation, we deﬁne division on
+natural numbers and prove a few of its key properties. These o perations and the Euclidean
+algorithm itself are quite naturally expressed with recurs ion. Strong induction plays an
+important role here too.
+All three algorithms are also interesting for historical re asons. Which is the oldest?
+Which was the ﬁrst to be accompanied by a correctness proof? Y ou might be surprised
+by the answers, which we discuss in the chapter notes at the en d of Chapter 13.
+
+fpmics 2015/12/8 11:38 Page 566 #588

@@ -1,0 +1,19 @@
+load "utils/fmaps"
+load "utils/pair"
+module CRDTSpec {
+  domain (State T)
+  domain (Value V)
+  declare merge: (T) [T T] -> T
+  declare initial: (T) [] -> T  
+  declare apply-update: (T, V) [T V] -> T
+  define [s s1 s2 s3 v] := [?s ?s1 ?s2 ?s3 ?v]
+  define Merge-Commutative := (forall s1 s2 . (merge s1 s2) = (merge s2 s1))
+  define Merge-Associative := (forall s1 s2 s3 . (merge (merge s1 s2) s3) = (merge s1 (merge s2 s3)))
+  define Merge-Idempotent := (forall s . (merge s s) = s)
+  define Initial-Left-Identity := (forall s . (merge initial s) = s)
+  define Initial-Right-Identity := (forall s . (merge s initial) = s)
+  define Update-Monotonic := (forall s v . (merge s (apply-update s v)) = (apply-update s v))
+  define theory := 
+    (make-theory [] [Merge-Commutative Merge-Associative Merge-Idempotent 
+                     Initial-Left-Identity Initial-Right-Identity Update-Monotonic])
+} 

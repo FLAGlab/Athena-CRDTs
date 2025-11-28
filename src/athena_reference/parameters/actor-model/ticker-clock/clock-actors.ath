@@ -1,0 +1,807 @@
+# Clock System: a simple concrete instance of the abstract actors 
+# specification.
+
+load "progress.ath"
+load "monotonic-transition.ath"
+load "nat-less.ath"
+
+#------------------------------------------------------------------------------
+
+module Clock-Actors {
+open Progress
+
+(overload < N.<)
+(overload <= N.<=)
+define > := lambda (x:N y:N) (y < x)
+define >= := lambda (x:N y:N) (y <= x)
+
+datatype Name := Ticker | Clock
+# For a more general treatment, use a datatype with infinitely
+# many values, like 
+#  datatype Name := Zeroth | (Next Name)
+
+datatype TLS := local1 | local2 | local3
+datatype CLS := (local N)
+datatype TCLS := (ticker TLS) | (clock CLS)
+declare config: [(TP Name TCLS)] -> (Cfg (Actor Name TCLS))
+declare next: [TCLS (Step Name)] -> TCLS
+declare new-ls: [TCLS] -> TCLS
+declare unique-ids: [(Cfg (Actor Name TCLS))] -> Boolean
+declare before, after: 
+  [(TP Name TCLS) (Step Name) (Cfg (Actor Name TCLS)) TCLS] -> Boolean
+declare ready-to: [TCLS (Step Name)] -> Boolean
+declare tcls0: TCLS
+
+define [tls tls2] := [?tls:TLS ?tls2:TLS]
+define cls := ?cls:CLS
+
+assert (datatype-axioms "Name")
+assert (datatype-axioms "TLS")
+assert (datatype-axioms "CLS")
+assert (datatype-axioms "TCLS")
+
+define [t t1 t2] := [?t:N ?t1:N ?t2:N]  # time variables
+
+#------------------------------------------------------------------------------
+# Ticker can send continue messages to itself and tick messages to Clock
+
+module Ticker {
+
+ assert ready-to-definition :=
+  (fun
+   [(ls ready-to (send Ticker Ticker 'continue)) <==>
+      (ls = ticker local1)  
+    (ls ready-to (send Ticker Clock 'tick)) <==>
+      (ls = ticker local2)  
+    (ls ready-to (send Ticker id c)) <==> 
+      [false  when (~ (id = Ticker & c = 'continue) &
+                    ~ (id = Clock & c = 'tick))]
+    (ls ready-to (receive Ticker Ticker 'continue)) <==>
+      (ls = ticker local3)  
+    (ls ready-to (receive Ticker fr c)) <==>
+      [false  when (~ (fr = Ticker & c = 'continue))]
+    (ls ready-to (create Ticker id')) <==> false])
+
+ define not-ready-to-receive := 
+  (forall ls fr c . 
+    ls =/= ticker local3 ==> ~ ls ready-to (receive Ticker fr c))
+
+ conclude not-ready-to-receive 
+  pick-any ls fr c
+    assume A1 := (ls =/= ticker local3)
+      (!by-contradiction (~ ls ready-to (receive Ticker fr c))
+       assume A2 := (ls ready-to (receive Ticker fr c))
+         (!two-cases
+          assume (fr = Ticker & c = 'continue)
+            (!absurd (!chain-last
+		      [A2 ==> (ls ready-to (receive Ticker Ticker 'continue))
+			  [(fr = Ticker) (c = 'continue)]
+			  ==> (ls = ticker local3) [ready-to-definition]])
+		     A1)
+          assume (~ (fr = Ticker & c = 'continue))
+            let {C1 := (!by-contradiction (~ A2)
+                        (!chain [A2 ==> false [ready-to-definition]]))}
+            (!absurd A2 C1)))
+
+assert next-definition :=
+  (fun
+   [(next (ticker local1) step) =
+      [(ticker local2)  when (step = (send Ticker Ticker 'continue))
+       (ticker local1)  when (step =/= (send Ticker Ticker 'continue))]
+    (next (ticker local2) step) =
+      [(ticker local3)  when (step = (send Ticker Clock 'tick))
+       (ticker local2)  when (step =/= (send Ticker Clock 'tick))]
+    (next (ticker local3) step) =
+      [(ticker local1)  when (step = (receive Ticker Ticker 'continue))
+       (ticker local3)  when (step =/= (receive Ticker Ticker 'continue))]])
+
+define ticker-next-other :=
+  (forall step tls .
+    (focus step) =/= Ticker ==>  (next (ticker tls) step) = ticker tls)
+
+datatype-cases ticker-next-other {
+  (receive id1 fr c) =>
+      let {CI := (!constructor-injectivity receive);
+           ECS := (exclusive-constructors "Step")}
+      datatype-cases 
+          (forall ?tls . 
+            focus (receive id1 fr c) =/= Ticker
+	    ==> (next (ticker ?tls) (receive id1 fr c)) = ticker ?tls) {
+        local1 =>
+         assume A := (focus (receive id1 fr c) =/= Ticker)
+	  (!chain-last
+	   [true
+	      ==> ((receive id1 fr c) =/= (send Ticker Ticker 'continue))
+	      [ECS]
+	      ==> ((next (ticker local1) (receive id1 fr c)) = (ticker local1))
+	      [next-definition]])
+      | local2 =>
+         assume A := (focus (receive id1 fr c) =/= Ticker)
+	  (!chain-last
+	   [true
+	      ==> ((receive id1 fr c) =/= (send Ticker Clock 'tick))
+	      [ECS]
+	      ==> ((next (ticker local2) (receive id1 fr c)) = (ticker local2))
+	      [next-definition]])
+      | local3 =>
+         assume A := (focus (receive id1 fr c) =/= Ticker)
+	  (!chain-last
+	   [A ==> (id1 =/= Ticker)     [focus-definition]
+	      ==> ((receive id1 fr c) =/= (receive Ticker Ticker 'continue))
+	      [CI]
+	      ==> ((next (ticker local3) (receive id1 fr c))
+		   = (ticker local3))
+	      [next-definition]])
+      }
+| (send id1 to c) =>
+      let {CI := (!constructor-injectivity send);
+           ECS := (exclusive-constructors "Step")}
+      datatype-cases 
+          (forall ?tls . 
+            focus (send id1 to c) =/= Ticker 
+	    ==> (next (ticker ?tls) (send id1 to c)) = (ticker ?tls)) {
+        local1 =>
+         assume A := (focus (send id1 to c) =/= Ticker)
+	  (!chain-last
+	   [A ==> (id1 =/= Ticker)     [focus-definition]
+	      ==> ((send id1 to c) =/= (send Ticker Ticker 'continue))
+	      [CI]
+	      ==> ((next (ticker local1) (send id1 to c)) = (ticker local1))
+	      [next-definition]])
+      | local2 =>
+         assume A := (focus (send id1 to c) =/= Ticker)
+	  (!chain-last
+	   [A ==> (id1 =/= Ticker)     [focus-definition]
+	      ==> ((send id1 to c) =/= (send Ticker Clock 'tick))
+	      [CI]
+	      ==> ((next (ticker local2) (send id1 to c)) = (ticker local2))
+	      [next-definition]])
+      | local3 =>
+         assume A := (focus (send id1 to c) =/= Ticker)
+	  (!chain-last
+	   [true 
+	      ==> ((receive Ticker Ticker 'continue) =/= (send id1 to c))
+	      [ECS]
+	      ==> ((send id1 to c) =/= (receive Ticker Ticker 'continue))
+	      [sym]
+	      ==> ((next (ticker local3) (send id1 to c)) = (ticker local3))
+	      [next-definition]])
+      }
+| (create id1 id') =>
+      let {ECS := (exclusive-constructors "Step")}
+      datatype-cases 
+          (forall ?tls . 
+            focus (create id1 id') =/= Ticker 
+	     ==> (next (ticker ?tls) (create id1 id')) = (ticker ?tls)) {
+        local1 =>
+         assume A := (focus (create id1 id') =/= Ticker)
+	  (!chain-last
+	   [true
+	      ==> ((send Ticker Ticker 'continue) =/= (create id1 id'))
+	      [ECS]
+	      ==> ((create id1 id') =/= (send Ticker Ticker 'continue))
+	      [sym]
+	      ==> ((next (ticker local1) (create id1 id')) = (ticker local1))
+	      [next-definition]])
+      | local2 =>
+         assume A := (focus (create id1 id') =/= Ticker)
+	  (!chain-last
+	   [true
+	      ==> ((send Ticker Clock 'tick) =/= (create id1 id'))
+	      [ECS]
+	      ==> ((create id1 id') =/= (send Ticker Clock 'tick))
+	      [sym]
+	      ==> ((next (ticker local2) (create id1 id')) = (ticker local2))
+	      [next-definition]])
+      | local3 =>
+         assume A := (focus (create id1 id') =/= Ticker)
+	  (!chain-last
+	   [true
+	      ==> ((receive Ticker Ticker 'continue) =/= (create id1 id'))
+	      [ECS]
+	      ==> ((create id1 id') =/= (receive Ticker Ticker 'continue))
+	      [sym]
+	      ==> ((next (ticker local3) (create id1 id')) = (ticker local3))
+	      [next-definition]])
+      }
+}
+
+define next-ticker :=
+  (forall ls step . exists ls' . (next (ticker ls) step) = ticker ls')
+	  
+datatype-cases next-ticker {
+  local1 => pick-any step
+             (!two-cases
+              assume (step = (send Ticker Ticker 'continue))
+                (!chain-last [(next (ticker local1) step) 
+			      = (ticker local2)       [next-definition]
+			      ==> (exists ?ls' . 
+                                   (next (ticker local1) step) = ticker ?ls')
+			      [existence]])
+              assume (step =/= (send Ticker Ticker 'continue))
+                (!chain-last [(next (ticker local1) step) 
+			      = (ticker local1)       [next-definition]
+			      ==> (exists ?ls' . 
+                                   (next (ticker local1) step) = ticker ?ls')
+			      [existence]]))
+| local2 => pick-any step
+             (!two-cases
+              assume (step = (send Ticker Clock 'tick))
+                (!chain-last [(next (ticker local2) step) 
+			      = (ticker local3)       [next-definition]
+			      ==> (exists ?ls' . 
+				    (next (ticker local2) step) = ticker ?ls')
+			                              [existence]])
+              assume (step =/= (send Ticker Clock 'tick))
+                (!chain-last [(next (ticker local2) step) 
+			      = (ticker local2)       [next-definition]
+			      ==> (exists ?ls' . 
+				    (next (ticker local2) step) = ticker ?ls')
+			                              [existence]]))
+| local3 => pick-any step
+             (!two-cases
+              assume (step = (receive Ticker Ticker 'continue))
+                (!chain-last [(next (ticker local3) step) 
+			      = (ticker local1)       [next-definition]
+			      ==> (exists ?ls' . 
+                                    (next (ticker local3) step) = ticker ?ls')
+			                              [existence]])
+              assume (step =/= (receive Ticker Ticker 'continue))
+                (!chain-last [(next (ticker local3) step) 
+			      = (ticker local3)       [next-definition]
+			      ==> (exists ?ls' . 
+                                    (next (ticker local3) step) = ticker ?ls')
+			                              [existence]]))
+}
+} # close module Ticker
+
+#------------------------------------------------------------------------------
+# Clock holds a natural number, ?t, representing a time value. It
+# is the number of ticks it has received from Ticker.
+#
+# Upon receiving each tick from Ticker, Clock increments
+# its time.
+
+module Clock {
+assert ready-to-definition :=
+  (fun
+   [(ls ready-to (receive Clock fr c))
+       <==> (fr = Ticker & c = 'tick & exists t . ls = clock local t)
+    (ls ready-to (send Clock to c)) <==> false
+    (ls ready-to (create Clock id')) <==> (exists t . ls = clock local t)])
+assert next-definition :=
+  (fun
+   [(next (clock (local t)) (receive id fr c)) =
+      [(clock (local (S t))) when (id = Clock & fr = Ticker & c = 'tick)
+       (clock (local t))     when (~ (id = Clock & fr = Ticker & c = 'tick))]
+    (next (clock (local t)) (send id to c)) = (clock (local t))
+    (next (clock (local t)) (create id id')) = (clock (local t))])
+
+assert new-ls-def := ((new-ls (clock local zero)) = (ticker local1))
+} # close module Clock
+
+#------------------------------------------------------------------------------
+# A clock can be read with function Time.  There is a single axiom for
+# getting the time from a clock's local state.
+
+declare Time: [Name (Cfg (Actor Name TCLS))] -> N
+
+module Time {
+assert read := 
+  (forall id s t ls . 
+    (Time id (s ++ (actor id (clock (local t))))) = t)
+} # close module Time
+
+declare precedes: [TCLS TCLS] -> Boolean
+module precedes {
+assert  definition1 :=
+  (forall ls2 t1 .
+     (clock (local t1)) precedes ls2 <==>
+     exists t2 . ls2 = (clock (local t2)) & t1 <= t2)
+assert definition2 :=
+  (forall ls2 tls . (ticker tls) precedes ls2 <==>
+     exists tls2 . ls2 = (ticker tls2))
+
+define tcls := ?tcls: TCLS
+
+define reflexive := 
+  (forall tcls . tcls precedes tcls)
+
+datatype-cases reflexive {
+  (clock (local t)) =>
+  let {C := (!reflex (clock (local t)))}
+  (!chain-last
+   [true ==> (t <= t)      [N.Less=.reflexive]
+	 ==> (C & t <= t)  [augment]
+	 ==> (exists ?t . 
+              (clock (local t)) = (clock (local ?t)) & t <= ?t)
+	 [existence]
+	 ==> ((clock (local t)) precedes (clock (local t)))
+	 [definition1]])
+| (ticker tls) =>
+  let {C := (!reflex (ticker tls))}
+  (!chain-last
+   [C ==> (exists ?tls . (ticker tls) = (ticker ?tls))
+      [existence]
+      ==> ((ticker tls) precedes (ticker tls)) 
+      [definition2]])
+}
+
+define transitive :=
+  (forall ls1 ls2 ls3 .
+    ls1 precedes ls2 & ls2 precedes ls3 ==> 
+    ls1 precedes ls3)
+
+datatype-cases transitive {
+  (clock (local t1)) =>
+    conclude (forall ?ls2 ?ls3 .
+		     (clock (local t1)) precedes ?ls2 &
+		     ?ls2 precedes ?ls3 
+		     ==> (clock (local t1)) precedes ?ls3)
+      pick-any ls2 ls3
+        let {A1 := ((clock (local t1)) precedes ls2);
+             A2 := (ls2 precedes ls3)}
+        assume (A1 & A2)
+          let {B := (!chain-last
+		     [A1 ==> (exists ?t2 . 
+                               ls2 = (clock (local ?t2)) & t1 <= ?t2)
+			 [definition1]])}
+          pick-witness t2 for B B-w
+            let {C := (!chain-last
+		       [A2 ==> ((clock (local t2)) precedes ls3)
+			   [(ls2 = (clock (local t2)))]
+			   ==> (exists ?t3 .
+				 ls3 = (clock (local ?t3)) & t2 <= ?t3)
+			   [definition1]])}
+	    pick-witness t3 for C
+              (!chain-last
+	       [(t1 <= t2 & t2 <= t3)
+		==> (t1 <= t3)          [N.Less=.transitive]
+		==> (ls3 = (clock (local t3)) & t1 <= t3)  [augment]
+		==> (exists ?t3 . 
+		      ls3 = (clock (local ?t3)) & t1 <= ?t3) [existence]
+		==> ((clock (local t1)) precedes ls3)    [definition1]])
+| (ticker tls) =>
+    conclude (forall ?ls2 ?ls3 .
+      (ticker tls) precedes ?ls2 & ?ls2 precedes ?ls3
+      ==> (ticker tls) precedes ?ls3)
+    pick-any ls2 ls3 
+      let {A1 := ((ticker tls) precedes ls2);
+           A2 := (ls2 precedes ls3)}
+      assume (A1 & A2)
+        let {B := (!chain-last 
+		   [A1 ==> (exists ?tls2 . ls2 = (ticker ?tls2))
+		       [definition2]])}
+        pick-witness tls2 for B B-w
+           (!chain-last
+	    [A2 ==> ((ticker tls2) precedes ls3)  [B-w]
+		==> (exists ?tls3 . ls3 = (ticker ?tls3))
+		[definition2]
+		==> ((ticker tls) precedes ls3)
+		[definition2]])
+}
+
+define clock-next-higher :=
+  (forall step t . 
+    (clock (local t)) precedes (next (clock (local t)) step))
+
+datatype-cases clock-next-higher {
+  (receive id fr c) => 
+    pick-any t 
+      (!two-cases
+       assume A := (id = Clock & fr = Ticker & c = 'tick)
+         (!chain-last
+	  [((clock (local t)) precedes (next (clock (local t)) (receive id fr c)))
+	   <==> ((clock (local t)) precedes (clock (local (S t))))
+	   [A Clock.next-definition]
+	   <==> (exists ?t2 .
+		  (clock (local (S t))) = (clock (local ?t2)) & t <= ?t2)
+              	                [definition1]
+	   <== ((clock (local (S t))) = (clock (local (S t))) & t <= (S t))
+	   [existence]
+	   <== (t <= (S t))     [augment]
+	   <== true             [N.Less=.S3]])
+       assume A := (~ (id = Clock & fr = Ticker & c = 'tick))
+         let {C := (!chain-last
+		    [A
+		     ==> ((next (clock (local t)) (receive id fr c)) = (clock (local t)))
+		                [Clock.next-definition]])}
+	   (!chain-last
+	    [((clock (local t)) precedes (next (clock (local t)) (receive id fr c)))
+	     <== ((clock (local t)) precedes (clock (local t))) [C]
+	     <== true                             [reflexive]]))
+| (send id to c) =>
+    pick-any t
+      (!chain-last 
+       [((clock (local t)) precedes (next (clock (local t)) (send id to c)))
+	   <==> ((clock (local t)) precedes (clock (local t)))
+	   [Clock.next-definition]
+	   <== true [reflexive]])
+| (create id id') =>
+    pick-any t
+      (!chain-last 
+       [((clock (local t)) precedes (next (clock (local t)) (create id id')))
+	   <==> ((clock (local t)) precedes (clock (local t)))
+	   [Clock.next-definition]
+	   <== true [reflexive]])
+}
+
+define ticker-next-higher :=
+  (forall tls step . (ticker tls) precedes (next (ticker tls) step))
+
+datatype-cases ticker-next-higher {
+  local1 =>
+   pick-any step
+    (!two-cases
+     assume (step = (send Ticker Ticker 'continue))
+       (!chain-last
+        [(next (ticker local1) step)
+	 = (ticker local2) [Ticker.next-definition]
+	 ==> (exists ?ls . (next (ticker local1) step) = (ticker ?ls))
+	                   [existence]
+         ==> ((ticker local1) precedes (next (ticker local1) step))
+                           [definition2]])
+     assume (step =/= (send Ticker Ticker 'continue))
+       (!chain-last
+        [(next (ticker local1) step)
+	 = (ticker local1) [Ticker.next-definition]
+	 ==> (exists ?ls . (next (ticker local1) step) = (ticker ?ls))
+	                   [existence]
+         ==> ((ticker local1) precedes (next (ticker local1) step))
+                           [definition2]]))
+| local2 =>
+   pick-any step
+    (!two-cases 
+     assume (step = (send Ticker Clock 'tick))
+       (!chain-last
+	[(next (ticker local2) step)
+	 = (ticker local3) [Ticker.next-definition]
+	 ==> (exists ?ls . (next (ticker local2) step) = (ticker ?ls))
+                           [existence]
+         ==> ((ticker local2) precedes (next (ticker local2) step))
+                           [definition2]])
+     assume (step =/= (send Ticker Clock 'tick))
+       (!chain-last
+	[(next (ticker local2) step)
+	 = (ticker local2) [Ticker.next-definition]
+	 ==> (exists ?ls . (next (ticker local2) step) = (ticker ?ls))
+                           [existence]
+         ==> ((ticker local2) precedes (next (ticker local2) step))
+                           [definition2]]))
+| local3 =>
+   pick-any step
+    (!two-cases
+     assume (step = (receive Ticker Ticker 'continue))
+       (!chain-last
+	[(next (ticker local3) step)
+	 = (ticker local1) [Ticker.next-definition]
+	 ==> (exists ?ls . (next (ticker local3) step) = (ticker ?ls))
+                           [existence]
+         ==> ((ticker local3) precedes (next (ticker local3) step))
+                           [definition2]])
+     assume (step =/= (receive Ticker Ticker 'continue))
+       (!chain-last
+	[(next (ticker local3) step)
+	 = (ticker local3) [Ticker.next-definition]
+	 ==> (exists ?ls . (next (ticker local3) step) = (ticker ?ls))
+                           [existence]
+         ==> ((ticker local3) precedes (next (ticker local3) step))
+                           [definition2]]))
+}
+
+define next-higher :=
+  (forall tcls step . tcls precedes (next tcls step))
+
+datatype-cases next-higher {
+  (ticker ls) =>
+    pick-any step
+      (!chain-last
+       [true ==> ((ticker ls) precedes (next (ticker ls) step))
+	     [ticker-next-higher]])
+| (clock (local t)) =>
+    pick-any step
+      (!chain-last
+       [true 
+        ==> ((clock local t) precedes (next (clock local t) step))
+	             [clock-next-higher]])
+}
+
+} # close module precedes
+
+declare citp: [(TP Name TCLS) N] -> (TP Name TCLS)
+
+define CA := [itp citp  
+	      Actor-Cfg.LS0 Clock-Actors.tcls0  
+              Progress.next Clock-Actors.next 
+              Progress.ready-to Clock-Actors.ready-to
+              Progress.new-ls Clock-Actors.new-ls
+              Progress.unique-ids Clock-Actors.unique-ids
+              Progress.config Clock-Actors.config
+	      Progress.before Clock-Actors.before
+	      Progress.after Clock-Actors.after]
+
+module Progress {
+ define Theory := 
+  (theory-clone [Progress.Theory 'Clock CA] 
+		 'Clock-Actors.Progress.Theory)
+ define Theory1 := 
+  (theory-clone [Theory 'Clone1 [sender Ticker  receiver Ticker]]
+		 'Clock-Actors.Progress.Theory1)
+ define Theory2 := 
+  (theory-clone [Theory 'Clone2 [sender Ticker  receiver Clock]]
+		 'Clock-Actors.Progress.Theory2)
+}
+
+} # close module Clock-Actors
+
+module Monotonicity {
+open Monotonic-Transition
+
+define CA' := (join [R Clock-Actors.precedes
+ 		     before Clock-Actors.before
+ 		     after Clock-Actors.after] Clock-Actors.CA)
+
+define CM-Theory := 
+  (theory-clone [Monotonic-Transition.Theory 'Clock CA'] 
+		'Clock-Monotonicity.CM-Theory)
+
+define Reflexive := Clock-Actors.precedes.reflexive
+define Transitive := Clock-Actors.precedes.transitive
+
+open Clock-Actors
+
+#---------------------------------------------------------------------
+define clock-monotonicity-lemma :=
+  (forall ?T:(TP Name TCLS) ?T0:(TP Name TCLS) 
+          ?s0:(Cfg (Actor Name TCLS)) ?id ?ls0:TCLS .
+    (forall ?ls:TCLS ?step . ?ls precedes (Clock-Actors.next ?ls ?step))
+    ==>
+    ((unique-ids (config ?T0)) &
+     (config ?T0) = ?s0 ++ (actor ?id ?ls0) &
+     ?T0 -->>* ?T
+     ==>
+     exists ?s:(Cfg (Actor Name TCLS)) ?ls:TCLS .
+       config ?T = ?s ++ (actor ?id ?ls) & ?ls0 precedes ?ls))
+
+define proof :=
+ method (theorem adapt)
+  let {given := lambda (P) (get-property P adapt CM-Theory);
+       lemma := method (P) (!property P adapt CM-Theory);          
+       chain := method (L) (!chain-help given L 'none);
+       chain-last := method (L) (!chain-help given L 'last);
+       [unique-ids config] := (adapt [unique-ids config])}
+  conclude (adapt theorem)
+   pick-any T T0 s0 id:Name ls0:TCLS
+    let {next-higher := 
+                (forall ?ls:TCLS ?step .
+                  ?ls precedes (Clock-Actors.next ?ls ?step))}
+    assume next-higher
+      let {goal0 := ((unique-ids config T0) &
+                     config T0 = s0 ++ (actor id ls0) &
+                     T0 -->>* T
+                     ==>
+                     exists ?s ?ls .
+                      config T = ?s ++ (actor id ?ls) & 
+                      ls0 precedes ?ls);
+           CAM := (!lemma ['Clock actor-monotonicity]);
+           lemma1 := (!chain-last [next-higher ==> goal0 [CAM]]);
+           A0 := (unique-ids config T0);
+           A1 := (config T0 = s0 ++ (actor id ls0));
+	   A2 := (T0 -->>* T)}
+      assume A := (A0 & A1 & A2)
+        let {goal := (exists ?s:(Cfg (Actor Name TCLS)) ?ls:TCLS .
+                       config T = 
+                          ?s ++ (actor id ?ls) &
+                       ls0 precedes ?ls)}
+        (!chain-last
+	 [A ==> goal [lemma1]])
+               
+(evolve CM-Theory [[clock-monotonicity-lemma] proof])
+
+#---------------------------------------------------------------------
+define clock-monotonicity :=
+       (forall ?T ?T0 ?s0 ?t0 .
+	 (unique-ids config ?T0) &
+         config ?T0 = ?s0 ++ (actor Clock (clock local ?t0)) &
+         ?T0 -->>* ?T 
+       	 ==>
+       	 exists ?s ?t .
+           config ?T = ?s ++ (actor Clock (clock local ?t)) &
+       	   ?t >= ?t0)
+
+define proof :=
+ method (theorem adapt)
+  let {given := lambda (P) (get-property P adapt CM-Theory);
+       lemma := method (P) (!property P adapt CM-Theory);          
+       chain := method (L) (!chain-help given L 'none);
+       chain-last := method (L) (!chain-help given L 'last);
+       [unique-ids config] := (adapt [unique-ids config])}
+  conclude (adapt theorem)
+   pick-any T T0 s0 t0
+    let {CML := (!lemma clock-monotonicity-lemma);
+         C := 
+         (!chain-last
+	  [(forall ?ls ?step . 
+             ?ls precedes (Clock-Actors.next ?ls ?step))
+           ==>     
+	   ((unique-ids config T0) &
+	    config T0 = s0 ++ (actor Clock (clock local t0)) &
+	    T0 -->>* T
+	    ==>
+	    (exists ?s:(Cfg (Actor Name TCLS)) ?ls:TCLS .
+             (config T) = ?s ++ (actor Clock ?ls) & 
+             (clock local t0) precedes ?ls)) [CML]])}
+    assume A := ((unique-ids config T0) &
+	 	 config T0 = s0 ++ (actor Clock (clock local t0)) &
+		 T0 -->>* T)
+     let {D := (!chain-last 
+		[A ==> (exists ?s:(Cfg (Actor Name TCLS)) ?ls:TCLS .
+			 config T = ?s ++ (actor Clock ?ls) & 
+			 (clock local t0) precedes ?ls)  [C]])}
+     pick-witnesses s ls for D D-w
+       let {D-w1 := (config T = s ++ (actor Clock ls));
+            D-w2 := ((clock local t0) precedes ls);
+            E := (!chain-last
+		  [D-w2 ==> (exists ?t . ls = (clock local ?t) & t0 <= ?t)
+			[precedes.definition1]])}
+       pick-witness t for E E-w
+         let {E-w1 := (ls = (clock local t));
+	      E-w2 := (t0 <= t)}
+         (!chain-last
+	  [D-w1 ==> (config T = (s ++ (actor Clock (clock local t)))) [E-w1]
+		==> (config T = (s ++ (actor Clock (clock local t))) & E-w2)
+		                                                 [augment]
+	        ==> (exists ?s ?t .
+                      config T = (?s ++ (actor Clock (clock local ?t))) &
+		      t0 <= ?t)                     [existence]])
+
+(evolve CM-Theory [[clock-monotonicity] proof])
+
+#---------------------------------------------------------------------
+define clock-monotonicity-1 :=
+  (forall ?T ?T0 ?s0 ?t0 ?s ?ls .
+    (unique-ids config ?T0) &
+    (config ?T0) = ?s0 ++ (actor Clock (clock local ?t0)) &
+    ?T0 -->>* ?T &
+    config ?T = ?s ++ (actor Clock ?ls)
+    ==>
+    exists ?t . ?ls = (clock local ?t) & ?t >= ?t0)
+
+define proof :=
+ method (theorem adapt)
+  let {given := lambda (P) (get-property P adapt CM-Theory);
+       lemma := method (P) (!property P adapt CM-Theory);          
+       chain := method (L) (!chain-help given L 'none);
+       chain-last := method (L) (!chain-help given L 'last);
+       [unique-ids config] := (adapt [unique-ids config])}
+  conclude (adapt theorem)
+   pick-any T:(TP Name TCLS) T0:(TP Name TCLS) s0 t0 s ls
+    let {A1 := (unique-ids config T0);
+	 A2 := ((config T0) = s0 ++ (actor Clock (clock local t0)));
+	 A3 := (T0 -->>* T);
+	 A4 := (config T = s ++ (actor Clock ls))}
+    assume (A1 & A2 & A3 & A4)
+      let {C1 := (!chain-last
+		  [(A1 & A2 & A3)
+		   ==> (exists ?s1 ?t .
+                         config T = ?s1 ++ (actor Clock (clock local ?t)) &
+			 ?t >= t0)	   [clock-monotonicity]]);
+           UIP := (!lemma
+		   ['Clock Transition-Path-Relation.unique-ids-persistence]);
+           C2 := (!chain-last
+		  [(A1 & A3) 
+		   ==> (unique-ids config T)  [UIP]]);
+           UI1 := (!lemma ['Clock unique-ids1])}
+      pick-witnesses s1 t1 for C1 C1-w
+        let {C1-w1 := (config T = s1 ++ (actor Clock (clock local t1)));
+             C1-w2 := (t1 >= t0);
+             _ := (!reflex Clock)}
+        (!chain-last
+	 [(C2 & A4 & C1-w1 & Clock = Clock)
+	  ==> (ls = (clock local t1))                        [UI1]
+	  ==> (ls = (clock local t1) & C1-w2)                [augment]
+	  ==> (exists ?t . ls = (clock local ?t) & ?t >= t0) [existence]])
+
+(evolve CM-Theory [[clock-monotonicity-1] proof])
+
+#---------------------------------------------------------------------
+define ticker-monotonicity :=
+       (forall ?T ?T0 ?s0 ?ls0 .
+	  (unique-ids config ?T0) &
+          config ?T0 = ?s0 ++ (actor Ticker (ticker ?ls0)) &
+          ?T0 -->>* ?T 
+       	  ==>
+       	  exists ?s ?ls .
+            config ?T = ?s ++ (actor Ticker (ticker ?ls)))
+
+define proof :=
+ method (theorem adapt)
+  let {given := lambda (P) (get-property P adapt CM-Theory);
+       lemma := method (P) (!property P adapt CM-Theory);          
+       chain := method (L) (!chain-help given L 'none);
+       chain-last := method (L) (!chain-help given L 'last);
+       [unique-ids config] := (adapt [unique-ids config])}
+  conclude (adapt theorem)
+   pick-any T T0 s0 ls0
+    let {CML := (!lemma clock-monotonicity-lemma);
+         C := 
+        (!chain-last
+	 [(forall ?ls ?step . ?ls precedes (Clock-Actors.next ?ls ?step))
+          ==>     
+	  ((unique-ids config T0) &
+	   config T0 = s0 ++ (actor Ticker (ticker ls0)) &
+	   T0 -->>* T
+	   ==>
+	   exists ?s:(Cfg (Actor Name TCLS)) ?ls:TCLS .
+             config T = ?s ++ (actor Ticker ?ls) & 
+             (ticker ls0) precedes ?ls) [CML]])}
+    assume A := ((unique-ids config T0) &
+		 config T0 = s0 ++ (actor Ticker (ticker ls0)) &
+		 T0 -->>* T)
+     let {D := (!chain-last 
+		[A ==> (exists ?s:(Cfg (Actor Name TCLS)) ?ls:TCLS .
+			 config T = ?s ++ (actor Ticker ?ls) & 
+			 (ticker ls0) precedes ?ls)  [C]])}
+     pick-witnesses s ls for D D-w
+       let {D-w1 := (config T = s ++ (actor Ticker ls));
+            D-w2 := ((ticker ls0) precedes ls);
+            E := (!chain-last
+		  [D-w2 ==> (exists ?ls' . ls = (ticker ?ls'))
+			[precedes.definition2]])}
+       pick-witness ls' for E E-w
+         (!chain-last
+	  [D-w1 ==> (config T = (s ++ (actor Ticker (ticker ls')))) [E-w]
+	        ==> (exists ?s ?ls .
+                      config T = (?s ++ (actor Ticker (ticker ?ls))))
+                                          [existence]])
+
+(evolve CM-Theory [[ticker-monotonicity] proof])
+
+#---------------------------------------------------------------------
+define ticker-monotonicity-1 :=
+  (forall ?T ?T0 ?s0 ?ls0 ?s ?ls .
+    (unique-ids config ?T0) &
+    config ?T0 = ?s0 ++ (actor Ticker (ticker ?ls0)) &
+    ?T0 -->>* ?T &
+    config ?T = ?s ++ (actor Ticker ?ls)
+    ==>
+    exists ?ls' . ?ls = (ticker ?ls'))
+
+define proof :=
+ method (theorem adapt)
+  let {given := lambda (P) (get-property P adapt CM-Theory);
+       lemma := method (P) (!property P adapt CM-Theory);          
+       chain := method (L) (!chain-help given L 'none);
+       chain-last := method (L) (!chain-help given L 'last);
+       [unique-ids config] := (adapt [unique-ids config])}
+  conclude (adapt theorem)
+   pick-any T:(TP Name TCLS) T0:(TP Name TCLS) s0 ls0 s ls
+    let {A1 := (unique-ids (config T0));
+	 A2 := ((config T0) = s0 ++ (actor Ticker (ticker ls0)));
+	 A3 := (T0 -->>* T);
+	 A4 := ((config T) = s ++ (actor Ticker ls))}
+    assume (A1 & A2 & A3 & A4)
+      let {TM := (!lemma ticker-monotonicity);
+           C1 := (!chain-last
+		  [(A1 & A2 & A3)
+		   ==> (exists ?s1 ?ls1 .
+                         config T = ?s1 ++ (actor Ticker (ticker ?ls1)))
+			     [TM]]);
+           UIP := (!lemma
+		   ['Clock Transition-Path-Relation.unique-ids-persistence]);
+           C2 := (!chain-last
+		  [(A1 & A3) ==> (unique-ids config T)  [UIP]]);
+           UI1 := (!lemma ['Clock unique-ids1])}
+      pick-witnesses s1 ls1 for C1 C1-w
+        let {C1-w1 := (config T = s1 ++ (actor Ticker (ticker ls1)));
+             _ := (!reflex Ticker)}
+        (!chain-last
+	 [(C2 & A4 & C1-w1 & Ticker = Ticker)
+	  ==> (ls = (ticker ls1))                [UI1]
+	  ==> (exists ?ls . ls = (ticker ?ls))  [existence]])
+
+(evolve CM-Theory [[ticker-monotonicity-1] proof])
+
+} # close module Monotonicity
+
+

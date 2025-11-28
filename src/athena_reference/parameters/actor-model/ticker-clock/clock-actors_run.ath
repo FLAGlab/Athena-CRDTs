@@ -1,0 +1,223 @@
+# Exercising the clock system: a sample sequence of transitions.
+
+load "clock-actors.ath"
+
+open Clock-Actors
+open Clock-Actors.Progress
+assert (theory-axioms Theory)
+(!property ['Clock trans-create] no-renaming Theory)
+(!property ['Clock trans-receive] no-renaming Theory)
+(!property ['Clock trans-send] no-renaming Theory)
+
+#--------------------------------------------------------------------------
+define T0 := Initial
+define T1 := (T0 then (create Clock Ticker))
+define T2 := (T1 then (send Ticker Ticker 'continue))
+define T3 := (T2 then (send Ticker Clock 'tick))
+define T4 := (T3 then (receive Clock Ticker 'tick))
+define T5 := (T4 then (receive Ticker Ticker 'continue))
+define T6 := (T5 then (send Ticker Ticker 'continue))
+define T7 := (T6 then (send Ticker Clock 'tick))
+define T8 := (T7 then (receive Ticker Ticker 'continue))
+define T9 := (T8 then (send Ticker Ticker 'continue))
+define T10 := (T9 then (send Ticker Clock 'tick))
+define T11 := (T10 then (receive Clock Ticker 'tick))
+
+# Thus, we have
+(T11 equal? (Initial then (create Clock Ticker)
+                     then (send Ticker Ticker 'continue)
+                     then (send Ticker Clock 'tick)
+                     then (receive Clock Ticker 'tick)
+                     then (receive Ticker Ticker 'continue)
+                     then (send Ticker Ticker 'continue)
+                     then (send Ticker Clock 'tick)
+                     then (receive Ticker Ticker 'continue)
+                     then (send Ticker Ticker 'continue)
+                     then (send Ticker Clock 'tick)
+                     then (receive Clock Ticker 'tick)))
+
+declare s0: (Cfg (Actor Name TCLS));
+
+define M := (One (message' Ticker tcls0 Clock 'tick))
+define CM := (One (message' Ticker tcls0 Ticker 'continue))
+
+define T0->T11 := 
+    (config T0 = s0 ++ (actor Clock (clock local zero)) &
+     (count Ticker config T0) = zero & 
+     (clock (local zero)) ready-to (create Clock Ticker)
+     ==> config T11 = 
+           s0 ++ (actor Clock (clock local (S (S zero)))) ++
+	   (actor Ticker (ticker local3)) ++ M ++ CM)
+
+# The following function takes a transition T and returns a method
+# that can compute a justification in an implication chain (for
+# applying a transition implication in a link in the chain).
+
+define trans :=
+  lambda (T)
+    method (premise goal)
+     let {given := lambda (P) 
+	            (get-property P no-renaming Theory);
+	  chain-last := method (L) (!chain-help given L 'last);
+	  ++A := (given ['Clock ['++ Associative]]);
+	  ++C := (given ['Clock ['++ Commutative]])}
+      match T {
+        (T00 then (send Ticker Ticker 'continue)) => 
+           let {R := (!chain-last 
+		      [(ticker local1 = ticker local1)
+		       ==> ((ticker local1) ready-to (send Ticker Ticker 'continue))
+			    [Ticker.ready-to-definition]])}
+	     (!chain-last 
+	      [(premise & R) ==> goal [(given ['Clock trans-send])]])
+      | (T00 then (send Ticker Clock 'tick)) => 
+             let {R := (!chain-last
+			[(ticker local2 = ticker local2)
+			 ==> (ticker local2 ready-to (send Ticker Clock 'tick))
+			                  [Ticker.ready-to-definition]])}
+	     (!chain-last 
+	      [(premise & R) ==> goal [(given ['Clock trans-send])]])
+      | (T00 then (receive Ticker Ticker 'continue)) =>
+          match premise {
+            (= (config T0) 
+	       (++ s (++ (One (actor' Ticker (ticker local3))) CM))) =>
+              let {R := (!chain-last
+			 [(ticker local3 = ticker local3) 
+			  ==> ((ticker local3) ready-to (receive Ticker Ticker 'continue))
+			       [Ticker.ready-to-definition]])}
+                (!chain-last
+		 [(premise & R) ==> goal [(given ['Clock trans-receive])]])
+          }
+      | (T00 then (receive Clock Ticker 'tick)) =>
+           match premise {
+            (= (config T0) 
+	       (++ s (++ (One (actor' Clock (clock (local t)))) M))) =>
+            let {R := (!chain-last
+		       [(clock local t = clock local t)
+			==> (exists ?t' . clock local t = clock local ?t')
+			     [existence]
+			==> (Ticker = Ticker & 'tick = 'tick &
+			     (exists ?t' . clock local t = clock local ?t'))
+			     [augment]
+		        ==> ((clock local t) ready-to (receive Clock Ticker 'tick))
+			     [Clock.ready-to-definition]])}
+                (!chain-last
+		 [(premise & R) ==> goal [(given ['Clock trans-receive])]])
+          }
+       }
+
+conclude T0->T11
+  let {given := lambda (P) 
+                 (get-property P no-renaming Theory);
+       chain := method (L) (!chain-help given L 'none);
+       ++A := (given ['Clock ['++ Associative]]);
+       ++C := (given ['Clock ['++ Commutative]]);
+       A1 := ((config T0) = 
+                s0 ++ (actor Clock (clock local zero)));
+       A2 := ((count Ticker config T0) = zero);
+       A3 := ((clock local zero) ready-to (create Clock Ticker))}
+    (!chain
+     [(A1 & A2 & A3)
+       ==> (config T1 
+	    = s0 ++ (actor Clock 
+		  	   (Clock-Actors.next (clock local zero) (create Clock Ticker))) ++
+	      (actor Ticker (Clock-Actors.new-ls (clock local zero))))
+                                     [(given ['Clock trans-create])]
+	    = ((s0 ++ (actor Clock (clock local zero))) ++
+	       (actor Ticker (ticker local1)))
+                                     [Clock.new-ls-def Clock.next-definition ++A]
+       ==> (config T2 
+            = (s0 ++ (actor Clock (clock local zero))) ++
+              (actor Ticker (Clock-Actors.next (ticker local1) (send Ticker Ticker 'continue))) ++ CM)
+                                     [(trans T2)]
+            = ((s0 ++ (actor Clock (clock local zero))) ++
+	       (actor Ticker (ticker local2)) ++ CM)
+                                     [Ticker.next-definition]
+            = ((s0 ++ (actor Clock (clock local zero)) ++ CM) ++ 
+	       (actor Ticker (ticker local2)))
+                                     [++A ++C]
+       ==> (config T3
+	    = (s0 ++ (actor Clock (clock local zero)) ++ CM) ++
+	       (actor Ticker (Clock-Actors.next (ticker local2) (send Ticker Clock 'tick))) ++ M)
+                                     [(trans T3)]
+	    = ((s0 ++ (actor Clock (clock local zero)) ++ CM) ++
+	       (actor Ticker (ticker local3)) ++ M)
+                                     [Ticker.next-definition]
+	    = ((s0 ++ CM ++ (actor Ticker (ticker local3))) ++
+	       (actor Clock (clock local zero)) ++ M)
+                                     [++A ++C]
+       ==> (config T4
+	    = (s0 ++ CM ++ (actor Ticker (ticker local3))) ++
+	      (actor Clock (Clock-Actors.next (clock local zero) (receive Clock Ticker 'tick))))
+                                     [(trans T4)]
+	    = ((s0 ++ CM ++ (actor Ticker (ticker local3))) ++
+	       (actor Clock (clock local (S zero))))
+                                     [Clock.next-definition]
+	    = ((s0 ++ (actor Clock (clock local (S zero)))) ++
+	       (actor Ticker (ticker local3)) ++ CM)
+                                     [++A ++C]
+       ==> (config T5
+	    = (s0 ++ (actor Clock (clock local (S zero)))) ++
+	      (actor Ticker (Clock-Actors.next (ticker local3) (receive Ticker Ticker 'continue))))
+                                     [(trans T5)]
+	    = ((s0 ++ (actor Clock (clock local (S zero)))) ++
+	       (actor Ticker (ticker local1)))
+                                     [Ticker.next-definition]
+       ==> (config T6
+	    = (s0 ++ (actor Clock (clock local (S zero)))) ++
+	      (actor Ticker (Clock-Actors.next (ticker local1) (send Ticker Ticker 'continue))) ++ CM)
+                                     [(trans T6)]
+	    = ((s0 ++ (actor Clock (clock local (S zero)))) ++
+	       (actor Ticker (ticker local2)) ++ CM)
+                                     [Ticker.next-definition]
+	    = ((s0 ++ (actor Clock (clock local (S zero))) ++ CM) ++
+	       (actor Ticker (ticker local2)))
+                                     [++A ++C]
+       ==> (config T7
+	    = (s0 ++ (actor Clock (clock local (S zero))) ++ CM) ++
+	      (actor Ticker (Clock-Actors.next (ticker local2) (send Ticker Clock 'tick))) ++ M)
+                                     [(trans T7)]
+	    = ((s0 ++ (actor Clock (clock local (S zero))) ++ CM) ++
+	       (actor Ticker (ticker local3)) ++ M)
+                                     [Ticker.next-definition]
+	    = ((s0 ++ (actor Clock (clock local (S zero))) ++ M) ++
+	       (actor Ticker (ticker local3)) ++ CM)
+                                     [++A ++C]
+       ==> (config T8
+	    = (s0 ++ (actor Clock (clock local (S zero))) ++ M) ++
+	       (actor Ticker (Clock-Actors.next (ticker local3) (receive Ticker Ticker 'continue))))
+                                     [(trans T8)]
+	    = ((s0 ++ (actor Clock (clock local (S zero))) ++ M) ++
+	       (actor Ticker (ticker local1)))
+                                     [Ticker.next-definition]
+       ==> (config T9
+	    = (s0 ++ (actor Clock (clock local (S zero))) ++ M) ++
+	      (actor Ticker (Clock-Actors.next (ticker local1) (send Ticker Ticker 'continue))) ++ CM)
+                                     [(trans T9)]
+	    = ((s0 ++ (actor Clock (clock local (S zero))) ++ M) ++
+	       (actor Ticker (ticker local2)) ++ CM)
+                                     [Ticker.next-definition]
+	    = ((s0 ++ (actor Clock (clock local (S zero))) ++ M ++ CM) ++
+	       (actor Ticker (ticker local2)))
+                                     [++A ++C]
+       ==> (config T10
+	    = (s0 ++ (actor Clock (clock local (S zero))) ++ M ++ CM) ++
+	      (actor Ticker (Clock-Actors.next (ticker local2) (send Ticker Clock 'tick))) ++ M)
+                                     [(trans T10)]
+	    = ((s0 ++ (actor Clock (clock local (S zero))) ++ M ++ CM) ++
+	       (actor Ticker (ticker local3)) ++ M)
+                                     [Ticker.next-definition]
+	    = ((s0 ++ M ++ CM ++ (actor Ticker (ticker local3))) ++
+	       (actor Clock (clock local (S zero))) ++ M)
+                                     [++A ++C]
+       ==> (config T11
+	    = (s0 ++ M ++ CM ++ (actor Ticker (ticker local3))) ++
+	      (actor Clock (Clock-Actors.next (clock local (S zero)) (receive Clock Ticker 'tick))))
+                                     [(trans T11)]
+	    = ((s0 ++ M ++ CM ++ (actor Ticker (ticker local3))) ++
+	       (actor Clock (clock local (S (S zero)))))
+                                     [Clock.next-definition]
+            = (s0 ++ (actor Clock (clock local (S (S zero)))) ++
+	       (actor Ticker (ticker local3)) ++ M ++ CM)
+                                     [++A ++C]])
+
+

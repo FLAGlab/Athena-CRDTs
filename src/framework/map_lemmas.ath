@@ -1,0 +1,48 @@
+load "utils/fmaps"
+open FMap
+module MapLemmas {
+assert update-commute-different-keys :=
+  (forall ?k1 ?k2 ?v1 ?v2 ?m:(Map 'S 'T) .
+    (?k1 =/= ?k2) ==>
+    (update (pair ?k1 ?v1) (update (pair ?k2 ?v2) ?m)) =
+    (update (pair ?k2 ?v2) (update (pair ?k1 ?v1) ?m)))
+define get-after-set-same :=
+  (forall ?k ?v ?m:(Map 'S 'T) .
+    ((update (pair ?k ?v) ?m) at ?k) = (SOME ?v))
+conclude get-after-set-same
+  pick-any k v m:(Map 'S 'T)
+  (!chain [((update (pair k v) m) at k)
+       = (SOME v)    [apply-axioms]])
+define get-after-set-different :=
+  (forall ?k1 ?k2 ?v ?m:(Map 'S 'T) .
+    (?k1 =/= ?k2) ==>
+    ((update (pair ?k1 ?v) ?m) at ?k2) = (?m at ?k2))
+conclude get-after-set-different
+  pick-any k1 k2 v m:(Map 'S 'T)
+  assume (k1 =/= k2)
+    (!chain [((update (pair k1 v) m) at k2)
+         = (m at k2)    [apply-axioms]])
+assert update-same-key-same-value :=
+  (forall ?k ?v ?m:(Map 'S 'T) .
+    (update (pair ?k ?v) (update (pair ?k ?v) ?m)) =
+    (update (pair ?k ?v) ?m))
+assert update-same-key-shadow :=
+  (forall ?k ?v1 ?v2 ?m:(Map 'S 'T) .
+    (update (pair ?k ?v2) (update (pair ?k ?v1) ?m)) =
+    (update (pair ?k ?v2) ?m))
+define empty-map-lookup :=
+  (forall ?k .
+    (empty-map:(Map 'S 'T) at ?k) = NONE)
+conclude empty-map-lookup
+  pick-any k
+  (!chain [(empty-map:(Map 'S 'T) at k)
+       = NONE    [apply-axioms]])
+define update-empty-creates-singleton :=
+  (forall ?k ?v .
+    (update (pair ?k ?v) empty-map:(Map 'S 'T)) at ?k = (SOME ?v))
+conclude update-empty-creates-singleton
+  pick-any k v
+  (!chain [((update (pair k v) empty-map:(Map 'S 'T)) at k)
+       = (SOME v)    [apply-axioms]])
+} 
+open MapLemmas

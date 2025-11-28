@@ -1,0 +1,522 @@
+fpmics 2015/12/8 11:38 Page 479 #501
+9Integer representations and proof mappings
+It may seem trivial to advance from natural numbers to intege rs: just attach a sign, positive
+or negative, to a natural number, and deﬁne addition, subtra ction (this time, the customary
+deﬁnition instead of the special one introduced for natural numbers in Section 8.2), and
+multiplication for these signed numbers. As we will see, how ever, there are complications.
+The main problem we encounter in some proofs is the large numb er of cases that must be
+considered when the signs of several integer variables are t aken into account. The best way
+around this difﬁculty seems to be to ﬁnesse it by ﬁrst doing so me proofs using an entirely
+different representation of integers, as a pair of natural numbers , and completing the proofs
+with the aid of mappings back and forth between the signed and pair representations. The
+key technique illustrated—multiple representations and m appings between them—is well
+worth study, since it serves as a valuable approach to proof i n many other contexts.
+The chapter concludes with a brief treatment of formal power series with integer coefﬁ-
+cients. Addition of such power series has some of the same pro perties as integer addition,
+such as commutativity and associativity, an observation we will use in Chapter 14 as a
+starting point for discussion of abstract structures.
+9.1 Declarations and axioms
+We begin by deﬁning the integers as a datatype named Zand introduce a module Zto hold
+further declarations, axioms, and theorems.
+datatype Z := (pos N) | (neg N)
+set-precedence (pos neg) (plus (get-precedence *) 1)
+assert (tail (datatype-axioms "Z"))
+module Z {
+  openN
+  declare zero, one: Z
+  assert zero-definition := (zero = pos Top.zero)
+  assert zero-property := (zero = neg Top.zero)
+  assert one-definition := (one = pos N.one)
+  define [a b c] := [?a:Z ?b:Z ?c:Z]
+  Note that we omit asserting the ﬁrst of the three sentences re turned by
+  (datatype-axioms "Z") , since we want to treat (neg zero) as equal to (pos zero) .
+  Next, we introduce integer addition, with axioms in terms of natural number addition and
+  ordering ( +from chapter 3 and <from chapter 8), and subtraction ( -, from Section 8.2):
+  define [a b c] := [?a:Z ?b:Z ?c:Z]
+  declare +: [Z Z] -> Z
+
+fpmics 2015/12/8 11:38 Page 480 #502
+480 CHAPTER 9. INTEGER REPRESENTATIONS AND PROOF MAPPINGS
+module Plus {
+  overload + N.+
+  define [x y] := [?x:N ?y:N]
+  assert* axioms :=
+  [(pos x + pos y = pos (x + y)) #pos-pos
+  ( x < y ==> pos x + neg y = neg (y - x)) #pos-neg-case1
+  (˜x < y ==> pos x + neg y = pos (x - y)) #pos-neg-case2
+  ( x < y ==> neg x + pos y = pos (y - x)) #neg-pos-case1
+  (˜x < y ==> neg x + pos y = neg (x - y)) #pos-neg-case2
+  (neg x + neg y = neg (x + y))] #neg-neg
+  define [pos-pos pos-neg-case1 pos-neg-case2
+  neg-pos-case1 neg-pos-case2 neg-neg] := axioms
+}# close module Plus
+Next come negation and subtraction:
+declare Negate: [Z] -> Z [120]
+module Negate {
+  define x := ?x:N
+  assert positive := (forall x . Negate pos x = neg x)
+  assert negative := (forall x . Negate neg x = pos x)
+}# close module Negate
+declare -: [Z Z] -> Z
+module Minus {
+  assert definition := (forall a b . a - b = a + Negate b)
+}# close module Minus
+.2 First proofs of integer properties
+This brings us to our ﬁrst proof about integer operations:
+extend-module Plus {
+  openMinus
+  overload - N.-
+  define Right-Inverse := (forall a . a + Negate a = zero)
+  datatype-cases Right-Inverse {
+    (pos x) =>
+    conclude (pos x + Negate pos x = zero)
+
+fpmics 2015/12/8 11:38 Page 481 #503
+9.2. FIRST PROOFS OF INTEGER PROPERTIES 481
+let{_ := (!chain-> [true ==> (˜x < x) [Less.irreflexive]])}
+  (!chain [(pos x + Negate pos x)
+  --> (pos x + neg x) [Negate.positive]
+  --> (pos (x - x)) [pos-neg-case2]
+  --> (pos Top.zero) [N.Minus.second-equal]
+  <-- zero [zero-definition]])
+  | (neg x) =>
+  conclude (neg x + Negate neg x = zero)
+  let{_ := (!chain-> [true ==> (˜x < x) [Less.irreflexive]])}
+    (!chain [(neg x + Negate neg x)
+    --> (neg x + pos x) [Negate.negative]
+    --> (neg (x - x)) [neg-pos-case2]
+    --> (neg Top.zero) [N.Minus.second-equal]
+    <-- zero [zero-property]])
+  }
+  Proofs that Z.zero is a right and left identity for Z.Plus proceed in a similar way:
+  define Right-Identity := (forall a . a + zero = a)
+  define Left-Identity := (forall a . zero + a = a)
+  datatype-cases Right-Identity {
+    (pos x) =>
+    conclude (pos x + zero = pos x)
+    (!chain [(pos x + zero)
+    --> (pos x + pos Top.zero) [zero-definition]
+    --> (pos (x + Top.zero)) [pos-pos]
+    --> (pos x) [N.Plus.right-zero]])
+    | (neg x) =>
+    conclude (neg x + zero = neg x)
+    let{_ := (!chain-> [true ==> (˜x < Top.zero) [Less.not-zero]])}
+      (!chain [(neg x + zero)
+      --> (neg x + pos Top.zero) [zero-definition]
+      --> (neg (x - Top.zero)) [neg-pos-case2]
+      --> (neg x) [N.Minus.zero-right]])
+    }
+    datatype-cases Left-Identity {
+      (pos x) =>
+      conclude (zero + pos x = pos x)
+      (!chain [(zero + pos x)
+      --> (pos Top.zero + pos x) [zero-definition]
+      --> (pos (Top.zero + x)) [pos-pos]
+      --> (pos x) [N.Plus.left-zero]])
+      | (neg x) =>
+      conclude (zero + neg x = neg x)
+      (!chain [(zero + neg x)
+      --> (neg Top.zero + neg x) [zero-property]
+      --> (neg (Top.zero + x)) [neg-neg]
+
+fpmics 2015/12/8 11:38 Page 482 #504
+482 CHAPTER 9. INTEGER REPRESENTATIONS AND PROOF MAPPINGS
+--> (neg x) [N.Plus.left-zero]])
+}
+}# close module Plus
+9.3 Another integer representation
+When we consider associativity of addition,
+extend-module Plus {
+  define associative := (forall a b c . (a + b) + c = a + (b + c))
+}# close module Plus
+the presence of the third variable increases the number of si gn combinations to consider
+from four to eight, and most of those require subcasing based on the ordering relation
+between variables. For proofs of those subcases, we would ne ed several lemmas about
+reassociating subtraction terms, making the overall proof exercise very long and tedious.
+Instead, we can simplify the task considerably by turning to a different integer represen-
+tation, as a pair of natural numbers, or actually as an equivalence class of pairs of natural
+numbers . For example 3 can be represented as {(3, 0),(4, 1),(5, 2),...}, the class of all natu-
+ral number pairs in which the ﬁrst is 3 greater than the second , while −5 can be represented
+as{(0, 5),(1, 6),(2, 7),...}, the class of all natural number pairs in which the second is 5
+greater than the ﬁrst.
+The advantage of this representation is that addition can be performed without checking
+signs; we just add corresponding components of the pairs:1
+structure NN := (nn N N)
+module NN {
+  overload + N.+
+  define [a b c] := [?a:NN ?b:NN ?c:NN]
+  declare +/quotesingle.Var: [NN NN] -> NN [110]
+  module Plus {
+    define [a1 a2 b1 b2] := [?a1:N ?a2:N ?b1:N ?b2:N]
+    assert definition :=
+    (forall a1 a2 b1 b2 .
+    (nn a1 a2) + /quotesingle.Var(nn b1 b2) = (nn (a1 + b1) (a2 + b2)))
+    Note that we use structure rather than datatype to avoid the injective property that datatype-axioms
+    includes.
+
+fpmics 2015/12/8 11:38 Page 483 #505
+9.4. MAPPINGS BETWEEN THE SIGNED AND PAIR REPRESENTATIONS 483
+So, for example, adding 3 and −5, represented as (say) (3, 0)and(1, 6), yields (4, 6), one
+of the pairs representing −2.
+Proving associativity of addition in this representation i s easy, it just being a matter of
+applying the deﬁnition and invoking associativity of natur al number addition:
+define associative := (forall a b c . (a + /quotesingle.Varb) +/quotesingle.Varc = a + /quotesingle.Var(b +/quotesingle.Varc))
+datatype-cases associative {
+  (nn a1 a2) =>
+  datatype-cases
+    (forall b c . ((nn a1 a2) + /quotesingle.Varb) +/quotesingle.Varc =
+    (nn a1 a2) + /quotesingle.Var(b +/quotesingle.Varc)) {
+    (nn b1 b2) =>
+    datatype-cases
+      (forall c . ((nn a1 a2) + /quotesingle.Var(nn b1 b2)) + /quotesingle.Varc =
+      (nn a1 a2) + /quotesingle.Var((nn b1 b2) + /quotesingle.Varc)) {
+      (nn c1 c2) =>
+      (!chain
+      [(((nn a1 a2) + /quotesingle.Var(nn b1 b2)) + /quotesingle.Var(nn c1 c2))
+      --> ((nn a1 + b1 a2 + b2) + /quotesingle.Var(nn c1 c2)) [definition]
+      --> (nn (a1 + b1) + c1 (a2 + b2) + c2) [definition]
+      --> (nn a1 + (b1 + c1) a2 + (b2 + c2)) [N.Plus.associative]
+      <-- ((nn a1 a2) + /quotesingle.Var(nn b1 + c1 b2 + c2)) [definition]
+      <-- ((nn a1 a2) + /quotesingle.Var((nn b1 b2) + /quotesingle.Var(nn c1 c2)))
+      [definition]])
+    }
+  }
+}
+}# close module Plus
+}# close module NN
+Of course, this doesn’t automatically grant us associativi ty of addition as deﬁned in signed
+representation. To get that, we must ﬁrst prove that we can fa ithfully map back and forth
+between the two representations, and that proof itself will turn out to be somewhat involved,
+in that it still requires an extensive case analysis. Howeve r, once proved correct, the map-
+pings back and forth will be useful for proving many other int eger properties besides asso-
+ciativity, and the ideas involved are applicable in many oth er situations.
+.4 Mappings between the signed and pair representations
+We declare and axiomatize the mappings as follows:
+declare Z->NN: [Z] -> NN
+declare NN->Z: [NN] -> Z
+module Z-NN {
+  overload (+ N.+) (- N.-)
+
+fpmics 2015/12/8 11:38 Page 484 #506
+484 CHAPTER 9. INTEGER REPRESENTATIONS AND PROOF MAPPINGS
+define [x y] := [?x:N ?y:N]
+assert to-pos := (forall x . Z->NN pos x = nn x Top.zero)
+assert to-neg := (forall x . Z->NN neg x = nn Top.zero x)
+assert from-pos :=
+(forall x y .˜x < y ==> NN->Z (nn x y) = pos (x - y))
+assert from-neg :=
+(forall x y . x < y ==> NN->Z (nn x y) = neg (y - x))
+Next we show an inverse relationship between the two mapping s:
+define inverse := (forall a . NN->Z Z->NN a = a)
+datatype-cases inverse {
+  (pos x) => {
+  (!chain-> [true ==> (˜x < Top.zero) [N.Less.not-zero]]);
+  (!chain [(NN->Z Z->NN pos x)
+  --> (NN->Z (nn x Top.zero)) [to-pos]
+  --> (pos (x - Top.zero)) [from-pos]
+  --> (pos x) [N.Minus.zero-right]])
+}
+| (neg x) =>
+(!two-cases
+  assume (x = Top.zero)
+    let{_ := (!chain-> [true ==> (˜Top.zero < Top.zero)
+      [N.Less.irreflexive]])}
+      (!chain [(NN->Z Z->NN neg x)
+      --> (NN->Z (nn Top.zero x)) [to-neg]
+      --> (NN->Z (nn Top.zero Top.zero)) [(x = Top.zero)]
+      --> (pos (Top.zero - Top.zero)) [from-pos]
+      --> (pos Top.zero) [N.Minus.zero-right]
+      <-- zero [zero-definition]
+      --> (neg Top.zero) [zero-property]
+      <-- (neg x) [(x = Top.zero)]])
+      assume (˜x = Top.zero)
+        let{A := (!chain->
+          [true ==> (Top.zero <= x) [N.Less=.zero<=]
+          ==> (Top.zero < x | Top.zero = x)
+          [N.Less=.definition]])}
+          (!cases A
+            assume (Top.zero < x)
+              (!chain [(NN->Z Z->NN neg x)
+              --> (NN->Z (nn Top.zero x)) [to-neg]
+              --> (neg (x - Top.zero)) [from-neg]
+              --> (neg x) [N.Minus.zero-right]])
+              assume (Top.zero = x)
+                (!from-complements (NN->Z Z->NN neg x = neg x)
+                (!sym (Top.zero = x)) (x =/= Top.zero))))
+              }# datatype-cases
+            }# close module Z-NN
+
+fpmics 2015/12/8 11:38 Page 485 #507
+9.5. ADDITIVE HOMOMORPHISM PROPERTY 485
+9.5 Additive homomorphism property
+The next step is to show that Z->NN is what mathematicians call an additive-
+homomorphism —a mapping from domain to another that preserves the meaning of addi-
+tion:
+(forall ?a ?b . Z->NN (?a:Z + ?b:Z) = (Z->NN ?a) + /quotesingle.Var(Z->NN ?b))
+Before we can prove this property, we need to formally state a nd assert the equivalence
+of arbitrary nnvalues to ones we consider to be canonical representatives. (Recall the notion
+of canonical terms discussed in Section 3.10.) It is natural to choose as canonical those
+pairs in which at least one of the members is 0.
+module NN-equivalence {
+  overload - N.-
+  define [x y] := [?x:N ?y:N]
+  assert case1 :=
+  (forall x y . x < y ==> (nn x y) = nn Top.zero (y - x))
+  assert case2 :=
+  (forall x y .˜x < y ==> (nn x y) = nn (x - y) Top.zero)
+}# close module NN-equivalence
+Now we can prove the additive-homomorphism property. The pr oof is quite long, due
+to the extensive case analysis required, but each case is str aightforward. The following is
+just a proof sketch, since it uses force in all cases except the ﬁrst; in Exercise 9.7 you are
+asked to complete the proof by replacing all uses of force with actual proofs.
+extend-module Z-NN {
+  define +/quotesingle.Var:= NN.+ /quotesingle.Var
+  define additive-homomorphism :=
+  (forall a b . Z->NN (a + b) = (Z->NN a) + /quotesingle.Var(Z->NN b))
+  datatype-cases additive-homomorphism {
+    (pos x) =>
+    datatype-cases
+      (forall ?b .
+      (Z->NN (pos x + ?b)) = (Z->NN (pos x)) + /quotesingle.Var(Z->NN ?b)) {
+      (pos y) =>
+      (!combine-equations
+      (!chain [(Z->NN (pos x + pos y))
+      --> (Z->NN (pos (x + y))) [Plus.pos-pos]
+      --> (nn (x + y) Top.zero) [to-pos]])
+      (!chain [((Z->NN pos x) + /quotesingle.Var(Z->NN pos y))
+      --> ((nn x Top.zero) NN.+ /quotesingle.Var(nn y Top.zero)) [to-pos]
+
+fpmics 2015/12/8 11:38 Page 486 #508
+486 CHAPTER 9. INTEGER REPRESENTATIONS AND PROOF MAPPINGS
+--> (nn (x + y) (Top.zero + Top.zero)) [NN.Plus.definition]
+--> (nn (x + y) Top.zero) [N.Plus.right-zero]]))
+| (neg y) =>
+(!two-cases
+  assume (x < y)
+    (!force(Z->NN ((pos x) + (neg y)) =
+    (Z->NN pos x) + /quotesingle.Var(Z->NN neg y)))
+    assume (˜x < y)
+      (!force(Z->NN ((pos x) + (neg y)) =
+      (Z->NN pos x) + /quotesingle.Var(Z->NN neg y))))
+    }
+    | (neg x) =>
+    datatype-cases
+      (forall ?b . Z->NN (neg x + ?b) =
+      (Z->NN neg x) + /quotesingle.Var(Z->NN ?b)) {
+      (pos y) =>
+      (!two-cases
+        assume (x < y)
+          let{_ := (!chain-> [(x < y) ==> (˜y < x)
+            [N.Less.asymmetric]])}
+            (!force(Z->NN (neg x + pos y) =
+            (Z->NN neg x) + /quotesingle.Var(Z->NN pos y)))
+            assume (˜x < y)
+              let{A := (!chain->
+                [(˜x < y)
+                ==> (y <= x) [N.Less=.trichotomy2]
+                ==> (y < x | y = x)
+                [N.Less=.definition]])}
+                (!cases A
+                  assume (y < x)
+                    (!force(Z->NN (neg x + pos y) =
+                    (Z->NN neg x) + /quotesingle.Var(Z->NN pos y)))
+                    assume (y = x)
+                      let{_ := (!chain-> [true ==> (˜x < x)
+                        [N.Less.irreflexive]])}
+                        (!force(Z->NN (neg x + pos y) =
+                        (Z->NN neg x) + /quotesingle.Var(Z->NN pos y)))))
+                        | (neg y) =>
+                        (!force(Z->NN (neg x + neg y) =
+                        (Z->NN neg x) + /quotesingle.Var(Z->NN neg y)))
+                      }
+                    }
+                  }# close module Z-NN
+
+fpmics 2015/12/8 11:38 Page 487 #509
+9.6. ASSOCIATIVITY AND COMMUTATIVITY OF INTEGER ADDITION 487
+9.6 Associativity and commutativity of integer addition
+Finally, we are ready to prove the associativity of addition in the signed representation. The
+key ingredients are the inverse and additive-homomorphism properties of our mappings,
+and the reader will no doubt be happy to see that the proof is st rictly by equational chaining;
+no further case analysis is required!
+extend-module Plus {
+  define +/quotesingle.Var:= NN.+ /quotesingle.Var
+  conclude associative
+  pick-any a:Z b:Z c:Z
+    let{f:(OP1) := Z->NN;
+      g:(OP1) := NN->Z;
+      f-application :=
+      conclude ((f ((a + b) + c)) = (f (a + (b + c))))
+      (!chain
+      [(f ((a + b) + c))
+      --> ((f (a + b)) + /quotesingle.Var(f c)) [Z-NN.additive-homomorphism]
+      --> ((f a + /quotesingle.Varf b) +/quotesingle.Varf c) [Z-NN.additive-homomorphism]
+      --> (f a + /quotesingle.Var(f b +/quotesingle.Varf c)) [NN.Plus.associative]
+      <-- (f a + /quotesingle.Var(f (b + c))) [Z-NN.additive-homomorphism]
+      <-- (f (a + (b + c))) [Z-NN.additive-homomorphism]])}
+      conclude (((a + b) + c) = a + (b + c))
+      (!chain [((a + b) + c)
+      <-- (g f ((a + b) + c)) [Z-NN.inverse]
+      --> (g f (a + (b + c))) [f-application]
+      --> (a + (b + c)) [Z-NN.inverse]])
+    }# close module Plus
+    Now consider commutativity of integer addition:
+    extend-module Plus {
+      define [a b] := [?a:Z ?b:Z]
+      define commutative := (forall a b . a + b = b + a)
+    }# close module Plus
+    Exercise 9.1: ProveZ.Plus.commutative , following the same strategy as with associativ-
+    ity: deﬁne and prove commutativity in the NNrepresentation, then map the result to the Z
+    representation using the additive homomorphism and invers e properties.
+
+fpmics 2015/12/8 11:38 Page 488 #510
+488 CHAPTER 9. INTEGER REPRESENTATIONS AND PROOF MAPPINGS
+Exercise 9.2: ProveZ.Plus.commutative by working directly in the signed representation
+(which is more feasible than it would be for associativity, s ince there are not so many cases
+to consider).
+A few more properties of integer addition and subtraction ar e proved in the additional
+exercises. Of course, there are many other basic properties to consider, especially when
+multiplication is introduced, but we defer such further dev elopment until chapter 14. There
+we will bring into play axioms, theorems and proofs at the mor e abstract level of algebraic
+structures such as monoid, group, ring, and integral domain . Then, among many other
+potential applications, we will be able to derive integer pr operties as instances of the more
+abstract properties.
+9.7 Power series
+A formal power-series Pis an inﬁnite sum of the form
+(P x)=/summationdisplay
+i≥0pixi=p0+p1x1+p2x2+p3x3+ ···
+Addition of two such power series PandQis deﬁned in terms of addition of their corre-
+sponding coefﬁcients: if
+(Q x)=/summationdisplay
+i≥0qixi=q0+q1x1+q2x2+q3x3+ ···
+then the sum R=P+Qis the power series
+(R x)=/summationdisplay
+i≥0rixi=r0+r1x1+r2x2+r3x3+ ···
+where ri=pi+qi.
+We can regard a power series Pas being deﬁned by its coefﬁcients p0,p1,p2,p3,...,
+so that the monomials xiare, in effect, just place holders. By treating such an inﬁni te
+sequence of coefﬁcients as a function on natural numbers, wr iting(p i)instead of pi, we
+have a representation that we can work with entirely in terms of functions. Thus, to add
+two power series represented by coefﬁcient functions pandq, we simply form the function
+rsuch that (r i)=(p i)+(q i)for all i∈N.
+Because of the “for all i∈N,” this formulation doesn’t actually give us an algorithm
+for computing the sum of two power series. On the other hand, s ince we canformally
+reason about such universal quantiﬁcations, we can use this means to precisely deﬁne the
+meaning of sums and other arithmetic operations on power ser ies. Such a non-algorithmic
+speciﬁcation can be quite useful as a standard against which to judge correctness when we
+consider special cases of power series where we can do arithm etic algorithmically—such
+
+fpmics 2015/12/8 11:38 Page 489 #511
+9.7. POWER SERIES 489
+as polynomials, which can be regarded as power series in whic h there are only a ﬁnite
+number of nonzero coefﬁcients.
+So let us proceed to deﬁne a bit of power series arithmetic in t erms of this representa-
+tion. As a technical matter, we introduce an Apply function, so that we can quantify over
+functions pwhile remaining in ﬁrst order logic: instead of (p i)we write (Apply p i). For
+concreteness, we assume the coefﬁcients of our power series are integers.
+module ZPS {
+  domain (Fun N Z)
+  declare zero: (Fun N Z)
+  declare Apply: [(Fun N Z) N] -> Z
+  define +/quotesingle.Var:= Z.+
+  define zero/quotesingle.Var:= Z.zero
+  define [p q r i] := [?p:(Fun N Z) ?q:(Fun N Z) ?r:(Fun N Z) ?i:N]
+  assert equality :=
+  (forall p q . (p = q <==> (forall i . (Apply p i) = (Apply q i))))
+  assert zero-definition := (forall i . (Apply zero i) = zero /quotesingle.Var)
+  Next, we deﬁne addition:
+  declare +: [(Fun N Z) (Fun N Z)] -> (Fun N Z)
+  module Plus {
+    assert definition :=
+    (forall p q i . (Apply (p + q) i) = (Apply p i) + /quotesingle.Var(Apply q i))
+    For our ﬁrst power series theorems, we have
+    define right-identity := (forall p . p + zero = p)
+    define left-identity := (forall p . zero + p = p)
+    conclude right-identity
+    pick-any p
+      let{lemma :=
+        pick-any i
+          (!chain
+          [(Apply (p + zero) i)
+          = ((Apply p i) + /quotesingle.Var(Apply zero i)) [definition]
+          = ((Apply p i) + /quotesingle.Varzero/quotesingle.Var) [zero-definition]
+          = (Apply p i) [Z.Plus.Right-Identity]])}
+          (!chain-> [lemma ==> (p + zero = p) [equality]])
+          Exercise 9.3: ProveZPS.Plus.left-identity .
+
+fpmics 2015/12/8 11:38 Page 490 #512
+490 CHAPTER 9. INTEGER REPRESENTATIONS AND PROOF MAPPINGS
+We also leave as exercises the proofs of the following theore ms:
+define commutative := (forall p q . p + q = q + p)
+define associative := (forall p q r . (p + q) + r = p + (q + r))
+Exercise 9.4: ProveZPS.Plus.commutative .
+Exercise 9.5: ProveZPS.Plus.associative
+After closing the nested module Plus, but remaining nested in ZPS, we deﬁne negation
+and subtraction:
+declare Negate: [(Fun N Z)] -> (Fun N Z)
+module Negate {
+  assert definition :=
+  (forall p i . (Apply (Negate p) i) = (Z.Negate (Apply p i)))
+}# close module Negate
+declare -: [(Fun N Z) (Fun N Z)] -> (Fun N Z)
+module Minus {
+  assert definition := (forall p q . p - q = p + Negate q)
+}# close module Minus
+The next theorems show we have additive inverses:
+extend-module Plus {
+  define Plus-definition := definition
+  openNegate
+  openMinus
+  define right-inverse := (forall p . p + (Negate p) = zero)
+  define left-inverse := (forall p . (Negate p) + p = zero)
+  conclude right-inverse
+  pick-any p
+    let{lemma :=
+      pick-any i
+        (!chain
+        [(Apply (p + (Negate p)) i)
+        = ((Apply p i) + /quotesingle.Var(Apply (Negate p) i)) [Plus-definition]
+        = ((Apply p i) + 'Z.Negate (Apply p i)) [Negate.definition]
+        = zero/quotesingle.Var [Z.Plus.Right-Inverse]
+        = (Apply zero i) [zero-definition]])}
+        (!chain-> [lemma ==> ((p + (Negate p)) = zero) [equality]])
+      }# close module Plus
+    }# close module ZPS
+
+fpmics 2015/12/8 11:38 Page 491 #513
+9.8. ADDITIONAL EXERCISES 491
+9.8 Additional exercises
+Exercise 9.6: ProveZPS.Plus.left-inverse .
+*Exercise 9.7: Complete the proof of Z-ZNN.additive-homorphism (section 9.5) by
+replacing all uses of force with actual proofs.
+Exercise 9.8: Prove the following property:
+extend-module Z {
+  extend-module Plus {
+    define Left-Inverse := (forall a . (Negate a) + a = zero)
+  }# close module Plus
+}# close module N
+In the proof, use the commutativity of addition (introduced asZ.Plus.commutative in
+Exercise 9.1); assert it if you haven’t done the proof).
+Exercise 9.9: Give another proof of Z.Plus.Left-Inverse , this time without using com-
+mutativity of addition.
+Exercise 9.10: Prove the following property:
+extend-module Z {
+  extend-module Plus {
+    define Double-Negation := (forall a . Negate Negate a = a)
+  }# close module Plus
+}# close module Z
+Exercise 9.11: Prove the following property:
+extend-module Z {
+  extend-module Plus {
+    define Unique-Negation := (forall a b . a + b = zero ==> Negate a = b)
+  }# close module Plus
+}# close module Z
+Exercise 9.12: Prove the following property:
+extend-module Z {
+  extend-module Plus {
+    define Neg-Plus := (forall a b . Negate (a + b) = Negate a + Negate b)
+  }# close module Plus
+}# close module Z
+
+fpmics 2015/12/8 11:38 Page 492 #514
+492 CHAPTER 9. INTEGER REPRESENTATIONS AND PROOF MAPPINGS

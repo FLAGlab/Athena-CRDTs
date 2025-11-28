@@ -1,0 +1,752 @@
+fpmics 2015/12/8 11:38 Page 849 #871
+ALogic programming and Prolog
+THIS APPENDIX contains a brief discussion of logic programming and Prolog . We
+present an Athena implementation of a Prolog interpreter fo r deﬁnite clauses, and
+we also discuss Athena’s integration with external Prolog s ystems such as SWI Prolog. We
+provide a rudimentary overview of the central concepts of lo gic programming, at least as
+they manifest themselves in Athena, but due to space limitat ions, the treatment here cannot
+be exhaustive. For in-depth introductions to these subject s, consult a textbook [14], [58],
+[42], [46], [76].
+A.1 Basics of logic programming
+The key notion in logic programming is that of a deﬁnite Horn clause .
+In the present context a deﬁnite Horn clause can be understoo d as an Athena sentence
+of the following kinds:
+1. A factof the form
+(forall x1···xn.p)
+where n≥0 and pis an atomic sentence whose free variables are exactly x1,...,xn; or
+2. a rule, i.e., a conditional of the form
+(forall x1···xn.p1&···&pk==>pk+1)
+where k>0 and x1,...,xnare all and only the free variables that occur in the vari-
+ouspi. We refer to pk+1as the conclusion or head of the rule and to p1,...,pkas the
+antecedents . (We may also collectively refer to the entire conjunction o fp1,...,pkas
+theantecedent of the rule. This is also known as the body of the rule in logic program-
+ming terminology.)
+Facts can also be viewed as rules with the trivial body true, and we will occasionally treat
+them as such, so the distinction between facts and rules is no t theoretically necessary.
+A (deﬁnite) logic program is simply a ﬁnite set of deﬁnite Horn clauses, i.e., a ﬁnite
+collection of facts and rules. A (deﬁnite) Prolog program, b y contrast, is a listof deﬁnite
+Horn clauses, i.e., a logic program where the order in which t he clauses are listed is sig-
+niﬁcant. We will see shortly why clause order is signiﬁcant i n Prolog. In addition to clause
+order, the order in which one lists the atoms of a rule’s body i s also signiﬁcant in Prolog
+(whereas in the world of pure logic that order is entirely imm aterial, given that conjunction
+is commutative).
+The rules and facts of a logic program collectivelly express a declarative body of infor-
+mation: they state what is (or what might be) the case in a given domain. The programs
+are called deﬁnite because, viewed as theories (as sets of ﬁr st-order logic sentences)
+
+fpmics 2015/12/8 11:38 Page 850 #872
+850 APPENDIX A. LOGIC PROGRAMMING AND PROLOG
+they always have unique minimal models, namely, the so-call edleast Herbrand models .
+Roughly speaking, the least Herbrand model of a logic progra mPis the set of sentences
+obtained by starting with the facts in Pand then adding all possible consequences thereof,
+possibly inﬁnitely many, as dictated by the rules in P, where a sentence counts as “a pos-
+sible consequence” only if it involves ground terms that can be formed with symbols that
+occur in the program.1For example, suppose we have a domain D, a constant aof sortD, a
+unary function symbol ffromDtoD, and a unary relation symbol PonD(a function symbol
+fromDtoBoolean ). And suppose that Pconsists of the sole rule
+(forall x . P x ==> P f x) (1)
+and the sole fact (P a) . Then the least Herbrand model of this program would be the
+following inﬁnite set of sentences:
+{(P a) ,(P (f a)) ,(P (f (f a))) ,(P (f (f (f a)))) ,...}.
+The model is said to be the “least” or “smallest” Herbrand mod el in that it can be shown
+that it is contained in (it is a subset of) every Herbrand model of the program, i.e., it is
+contained in every set of facts over the Herbrand universe th at satisﬁes the program. If
+we allowed disjunction in the rule heads this property (the e xistence of a unique smallest
+model) would no longer hold.
+As a stylistic point, note that a rule such as (1) is typically written in the reverse direc-
+tion, as(forall x . P f x <== P x) , and the quantiﬁcation is also implicit, with the tacit
+understanding that all variables in the rule are universall y quantiﬁed. The backward direc-
+tion is more in keeping with the operational meaning of such a rule, which can be loosely
+put as follows:2to solve a goal of the same form as the head of the rule, solve th e subgoals
+comprising the body of the rule . To ﬁgure out whether a goal is “of the same form” as
+the head of a rule, we use uniﬁcation. If successful, this pro duces a substitution θ, and we
+then recursively proceed to solve the subgoals obtained by a pplying θto the atoms in the
+body of the rule. This process, which will be made fully preci se in section A.3, is called
+backchaining on the rule, and can be viewed as the inverse of modus ponens: i nstead of
+proceeeding from the antecedent(s) to the conclusion, we go from the conclusion to the
+antecedents. This algorithm must eventually be grounded (i t must terminate) in the facts of
+the program, or otherwise we might keep backchaining indeﬁn itely. A fact can be regarded
+as a rule with the trivial body true, so backchaining on a fact immediately terminates
+successfully, assuming that the goal is of the same form—uni ﬁes with—the (head of the)
+fact.
+1 The set of all such ground terms is called the Herbrand universe ofP. To ensure that this set is non-empty, it is
+typically assumed that the program contains at least one con stant symbol.
+2 As opposed to their declarative meaning, which is the usual meaning as dictated by the standard Tarskian
+semantics of ﬁrst-order logic.
+
+fpmics 2015/12/8 11:38 Page 851 #873
+A.1. BASICS OF LOGIC PROGRAMMING 851
+Deﬁnite programs can also be viewed as positive , insofar as they only express afﬁrma-
+tive information. They cannot express negative rules such a s “a man is a person who is not
+a woman.” It is possible to extend logic programming to allow for negative clauses of that
+form, called general clauses . Neither the semantics nor the computational interpretati on
+of such extensions are entirely satisfactory, and we do not d iscuss them here. Neverthe-
+less, negation is often useful in clause bodies. For instanc e, many conditional equations
+have negative conditions, and it is useful to encode these di rectly when we translate such
+equations into clausal form, as we do in section A.4. Full-bl own Prolog implementations
+do allow for negated subgoals via a mechanism known as (ﬁnite )negation as failure , and
+since Athena is integrated with such systems, one can work wi th general clauses via the
+existing translation, as described in section A.4.
+So how do we compute with a logic program P? By issuing queries , which are then
+automatically answered by a logic program engine. A simple q uery is just an atomic sen-
+tence, such as (father-of adam peter) or(parent-of ?X peter) . If the query is ground,
+like(father-of adam peter) , then it is basically asking whether or not the ground atom
+in question holds, so the answer will be a simple yes or no, res pectively indicating that the
+ground atom does or does not follow from P. If the query contains variables, like
+(parent-of ?X peter) , (2)
+then it can be understood as asking whether there are any valu es for these variables that
+make the atom true (according to the program), e.g., is there any value of ?Xthat makes (2)
+true according to person-database ? Therefore, a positive answer in this case will be a
+substitution from the query variables to appropriate terms, such as
+{?X:Person →adam}
+which renders the query a logical consequence of P.3This is largely where the power
+of logic programming stems from: the ability to not merely co nﬁrm or deny but to also
+discover objects that satisfy a given query.4As the queries become more complex, this
+abililty to discover objects that may be related in arbitrar ily complicated ways becomes
+increasingly useful. By contrast, a negative answer for a no n-ground query would indicate
+thatnosubstitution instance of the query follows logically from P.
+A query need not be a simple atom. It may be conjunctive, typic ally represented by a list
+of atoms. An example might be
+[(parent-of adam ?X) (parent-of ?X ?Y)] .
+3 More precisely, the sentence obtained by applying the subs titution to the query is a logical consequence of P.
+4 Such queries might look familiar to readers who have been ex posed to query languages like SQL or SPARQL.
+There is indeed a very close connection between logic progra mming and database (or knowledge base) queries,
+which is studied in the ﬁeld known as deductive databases [?].
+
+fpmics 2015/12/8 11:38 Page 852 #874
+852 APPENDIX A. LOGIC PROGRAMMING AND PROLOG
+A positive answer here will again be a substitution which, wh en applied to the query atoms,
+will yield instances that are logical consequences of P. In this case a substitution will give
+us a value for ?X, representing a child of adam,anda value for ?Y, representing a child of ?X.
+Thus, in one fell swoop we will retrieve both a child and a gran dchild of adam. As before,
+a negative answer will indicate that there is no (joint) grou nd instance of the query atoms
+that follows logically from P.
+There may well be multiple substitutions (indeed, potentia lly inﬁnitely many) resulting
+in ground logical consequences of P. Prolog engines can incrementally produce as many
+of these as desired, as will the interpreter implemented her e.
+In addition to the possibilities mentioned above, there is a nother alternative for what
+might happen when a user poses a query: non-termination. The query engine might get
+into an inﬁnite loop. This is where the aforementioned issue of clause and body orderings
+comes into the picture. Naive ways of expressing clauses and programs can easily send a
+Prolog system into an inﬁnite loop. It takes some experience to write logic programs in a
+way that avoids such pitfalls.
+A.2 Examples
+Let us look at some examples to get a feeling for what we can do w ith logic programming.
+Queries will be answered here by the interpreter that we pres ent in the next subsection. We
+will look at two domains, some genealogical relationships a nd a few arithmetic operations
+(addition and multiplication) on the natural numbers. We st art with the former:
+domain Person
+declare father-of, mother-of, parent-of, grandparent-of, ancest or-of:
+[Person Person] -> Boolean
+declare adam, eve, seth, peter, mary, paul, joe: Person
+define facts :=
+[(adam father-of seth)
+(eve mother-of seth)
+(seth father-of peter)
+(peter father-of paul)
+(mary mother-of paul)
+(paul father-of joe)]
+define rules :=
+(close [(x parent-of y <== x father-of y)
+(x parent-of y <== x mother-of y)
+(x grandparent-of z <== x parent-of y & y parent-of z)
+(x ancestor-of y <== x parent-of y)
+(x ancestor-of z <== x ancestor-of y & y parent-of z)])
+
+fpmics 2015/12/8 11:38 Page 853 #875
+A.2. EXAMPLES 853
+define person-database := (facts joined-with rules)
+We now answer a few queries against this program/database. T he main tool we use to
+answer queries is the binary procedure Prolog_Interpeter.solve , which takes a query
+(either an atom or a list thereof) and a list of deﬁnite clause s and returns either a substitution
+θsuch that the θ-instance of the query5is a logical consequence of the given clauses; or
+false if no such substitution can be found. If the query is a ground f act which holds, then
+the empty substitution is returned.
+We also use the ternary procedure Prolog_Interpeter.solve-N , whose ﬁrst two argu-
+ments are the same as Prolog_Interpeter.solve and the third argument is a non-negative
+integer Nindicating the desired number of solutions (substitutions ). If at least Nsatisfying
+substitutions can be found, they are returned in a list. If fe wer than Nsubstitutions can be
+found, they are also returned in a list. If no satisfying subs titutions can be found then the
+empty list is returned. Some examples:
+define (solve q) := (Prolog_Interpreter.solve q person-database )
+define (solve-N q N) := (Prolog_Interpreter.solve-N q person-dat abase N)
+set-precedence solve 80
+> (solve paul father-of joe)
+Substitution: {}
+> (solve paul mother-of joe)
+Term: false
+> (solve ?X father-of peter))
+Substitution: {?X:Person --> seth}
+> (solve seth father-of ?Y)
+Substitution: {?Y:Person --> peter}
+> (solve ?X father-of ?Y)
+Substitution:
+{?Y:Person --> seth
+?X:Person --> adam}
+> (solve-N (?X father-of ?Y) 10)
+List: [
+{?X:Person --> adam
+5 Meaning the sentence we obtain by applying θto the conjunction of all the query atoms.
+
+fpmics 2015/12/8 11:38 Page 854 #876
+854 APPENDIX A. LOGIC PROGRAMMING AND PROLOG
+?Y:Person --> seth}
+{?X:Person --> seth
+?Y:Person --> peter}
+{?X:Person --> peter
+?Y:Person --> paul}
+{?X:Person --> paul
+?Y:Person --> joe}]
+Note that the last result gives us four substitutions listin g all pairs of fathers and sons in
+the database.
+We continue with some more interesting queries that essenti ally require reasoning (using
+the rules):
+> (solve eve grandparent-of ?X)
+Substitution: {?X:Person --> peter}
+> (solve eve ancestor-of ?X)
+Substitution: {?X:Person --> seth}
+> (solve-N (eve ancestor-of ?X) 10)
+···
+The last query sends the system into an inﬁnite loop. The reas on is the last of the given
+rules, namely
+(x ancestor-of z <== x ancestor-of y & y parent-of z)
+The problem here is that we have listed (x ancestor-of y) , a recursive subgoal (recursive
+in the sense that its predicate is the same as the predicate in the head of the rule), as the
+ﬁrstsubgoal in the body of the rule, which means that backchainin g on this rule for certain
+goals will lead to an inﬁnite regress. This will become clear er in the next subsection. Once
+we reformulate the rule as
+(x ancestor-of z <== x parent-of y & y ancestor-of z)
+and reload, we get the following complete list of all of Eve’s ancestors:
+> (solve-N (eve ancestor-of ?X) 10)
+List: [{?X:Person --> seth}
+{?X:Person --> peter}
+{?X:Person --> paul}
+
+fpmics 2015/12/8 11:38 Page 855 #877
+A.2. EXAMPLES 855
+{?X:Person --> joe}]
+This was an example of a case where the order of the subgoals in the body of a rule is
+important. In the next section we will see an example illustr ating the importance of rule
+ordering.
+Let us now give dome deﬁnite clauses for addition and multipl ication on the natural
+numbers. First, we introduce ternary predicates plus-p andtimes-p such that
+(plus-p x y z)
+will be true iff zis the sum of xandy, and likewise for times-p :
+declare plus-p, times-p: [N N N] -> Boolean [[int->nat int->nat int- >nat]]
+We now deﬁne plus-p by the following deﬁnite clauses:
+define plus-clauses :=
+(close [(plus-p x zero x)
+((plus-p x (S y) (S z)) <== (plus-p x y z))])
+Compare this relational deﬁnition with a functional deﬁnit ion of natural-number addition
+in the style given in the text:
+assert* Plus-def := [(x + zero = x)
+(x + S y = S (x + y))]
+The similarities here are deeper than the differences. If we readplus-clauses back-
+wards, then the ﬁrst clause says that every instance of (plus-p x zero x) holds, i.e.,
+for anyx, the sum of xandzero isx, which is precisely the content of the ﬁrst equa-
+tion in the functional deﬁnition. The second clause says tha t to prove a goal of the form
+(plus-p x (S y) (S z)) , we ﬁrst need to prove the subgoal (plus-p x y z) . Thus, if the
+ﬁrst operand to the addition is any number xand the second operand is non-zero (of the
+form(S y) , then we know that the result will be non-zero, of the form (S z) , and the pre-
+cise value of zcan be computed by backchaining and solving the subgoal (plus-p x y z) .
+> (Prolog_Interpreter.solve (plus-p 1 2 ?RESULT) plus-cla uses)
+Substitution: {?RESULT:N --> (S (S (S zero)))}
+To increase readability, let us print out substitutions so t hat natural numbers are written as
+integers:
+define (transform-sub sub) :=
+(maplambda (v) [v --> (nat->int (sub v))]
+(supp sub))
+define (solve q program) :=
+
+fpmics 2015/12/8 11:38 Page 856 #878
+856 APPENDIX A. LOGIC PROGRAMMING AND PROLOG
+match(Prolog_Interpreter.solve q program) {
+(some-sub sub) => (transform-sub sub)
+| r => r}
+define (solve-N q program N) :=
+(map transform-sub (Prolog_Interpreter.solve-N q progra m N))
+The following queries begin to illustrate the ﬂexibility of logic programming:
+> (solve (plus-p 3 ?Y 10) plus-clauses)
+List: [[?Y --> 7]]
+This shows that logic programming is not unidirectional, me aning that it need not always
+go from ﬁxed inputs to an output. We can just as well ﬁx the outp ut and some inputs and
+solve for other inputs, or ﬁx only the output and solve for any inputs (as does the next
+query). Queries are viewed essentially as constraints, and the logic programming engine
+attempts to ﬁnd any or all values satisfying the constraints . In this particular example we
+used the addition clauses to essentially perform subtracti on: we asked what number ?Y
+must we add to 3 in order to obtain 10, and we got the answer 7, wh ich is of course the
+result of subtracting 3 from 10.
+The following query produces all ways in which two numbers ?Xand?Ycan add up to
+3:
+> (solve-N (plus-p ?X ?Y 3) plus-clauses 10)
+List: [[[?Y --> 0] [?X --> 3]]
+[[?Y --> 1] [?X --> 2]]
+[[?Y --> 2] [?X --> 1]]
+[[?Y --> 3] [?X --> 0]]]
+We can likewise deﬁne multiplication as follows:
+define times-clauses :=
+(close [(times-p x zero zero)
+((times-p x (S y) z) <== (times-p x y w) & (plus-p x w z))])
+define num-clauses := (plus-clauses joined-with times-clauses)
+> (solve (times-p 2 3 ?RES) num-clauses)
+List: [[?RES --> 6]]
+Reading the clauses backwards, the ﬁrst says that every goal of the form
+(times-p x zero zero)
+
+fpmics 2015/12/8 11:38 Page 857 #879
+A.3. IMPLEMENTING A PROLOG INTERPRETER 857
+holds, which is another way of saying that the product of any n umber with zero is zero.
+The second clause says that to solve a goal of the form (times-p x (S y) z) , we ﬁrst need
+to solve(times-p x y w) , and then solve (plus-p x w z) . In other words, letting wbe the
+product of xandy, the product zofxand(S y) is(x + w) , i.e.,(x + (x * y)) , which is
+precisely how an equational formulation would express this constraint. As before, however,
+we can not only compute products with these clauses but quoti ents too! For example, the
+following computes 12 divided by 4:
+> (solve (times-p 4 ?X 12) num-clauses)
+List: [[?X --> 3]]
+A.3 Implementing a Prolog interpreter
+A non-deterministic algorithm Afor answering a list of queries L=[q1···qn](or “solving
+the goals q1,...,qn”) with respect to a deﬁnite logic program Pcan be formulated as fol-
+lows. The algorithm takes as input not just the list of goals Land the program P, but also a
+substitution θ. The initial value of θwill be the empty substitution {}. AsAprogresses, this
+substitution will become increasingly specialized. The al gorithm, which will either return
+a substitution or else fail, is simple:
+1. If Lis empty ( n= 0), return θ.
+2. Otherwise let θ′be the substitution obtained by executing q1against Pand with respect
+toθ, and apply the algorithm recursively to [(θ′q2)···(θ′qn)],P, andθ′.
+The only undeﬁned operation here is that of “executing a quer yqagainst Pand wrt θ,”
+an operation that is supposed to return a substitution θ′. This is actually where the non-
+determinism comes in. We perform this operation by ﬁrst choo sing a (freshly renamed)
+ruleRinPwhose head uniﬁes with (θq)under some substitution σ(if there is no such
+rule we raise an exception and the whole algorithm halts in fa ilure); and then recursively
+applying Ato (a) the list of atoms comprising the body of R; (b) P, and (c) the composition
+ofσandθ. IfRis a fact then this second step can be omitted and we can simply return
+the composition of σandθ. Note that freshly renaming the rules ( α-renaming them, to be
+more precise) is quite important. Without such renaming one can get incorrect results.
+There are two sources of non-determinism here: the choice of R, and the choise of how
+to list the subgoals (atoms) in the body of R. By somehow making all the “right choices”
+along the way, this algorithm is guaranteed to arrive at a sol ution if one exists. In other
+words this algorithm is both sound , meaning that if it produces a substitution θthen all
+θ-instances of the input queries are logical consequences of P; and complete , meaning
+
+fpmics 2015/12/8 11:38 Page 858 #880
+858 APPENDIX A. LOGIC PROGRAMMING AND PROLOG
+that if there exists such a substitution at all, the algorith m will return one. Unfortunately,
+deterministic versions such as the one we are about to formul ate (the same algorithm used
+by Prolog systems), are incomplete, as satisfying substitu tions might only exist in parts of
+the search space that will never be explored by a ﬁxed search s trategy.
+To arrive at a deterministic algorithm, we arrange all possi ble computations of Ain one
+big search tree, called an SLD-tree [7], and ﬁx a strategy for exploring that tree. The nodes
+of the tree will be pairs (L,θ)consistiting of a list of goals (atoms) L=[q1···qn]and a
+substitution θ.
+Given a pair (L,θ), the SLD tree for (L,θ)is built recursively: the root of the tree is
+(L,θ), and its children are deﬁned as follows. If Lis empty then there are no children—the
+node is a leaf. Otherwise Lis of the form [q1···qn]forn>0. Let R1,...,Rkbe all and only
+those (freshly renamed) rules in Pwhose head uniﬁes with q1under some substitution θi,
+where R1,...,Rkare listed according to the order in which they appear in P.6(Ifk=0, i.e.,
+if there are no such matching rules, then the node is again a le af—there are no children.)
+Fori=1,...,k, letσibe the composition of θiwithθ. Then the node (L,θ)has exactly k
+children, namely
+(body(R1,σ1,L),σ1),...,(body(Rk,σk,L),σk),
+in that order, where body(Ri,σi,L)is deﬁned as
+[(σiAi
+1),...,(σiAi
+mi),(σiq2),...,(σiqn)]
+where Ai
+1,...,Ai
+miare the atoms that appear in the body (antecedent) of Ri, in the same left-
+to-right order in which they appear in Ri. We then proceed in the same fashion to construct
+the children of each of these children, and so on. This proces s need not terminate if the tree
+is inﬁnite.
+Thesolve-all algorithm given below works by building/exploring the SLD t ree for the
+pair consisting of the input list of queries and the empty sub stitution in a depth-ﬁrst manner,
+maintaining at all times what is essentially a stack of nodes to explore,
+[[L1θ1]···[L1θ1]],
+and starting off with the one-element stack
+[[L{}]]
+where Lis the input list of queries. The main loop, implemented by th e recursive procedure
+search , keeps popping the leftmost pair off the stack, building its children, and pushing
+these back on the stack. Note that the stack is encoded as the ( only) argument of search .
+By using higher-order procedures—essentially continuati ons—this algorithm not only
+returns a substitution if there is one, but also returns a thunk , i.e., a nullary procedure that
+6 Recall that Pis a list, not a set.
+
+fpmics 2015/12/8 11:38 Page 859 #881
+A.3. IMPLEMENTING A PROLOG INTERPRETER 859
+can be invoked later to obtain yet more satisfying substitut ions, if any exist. That thunk
+will continue exploring the SLD tree at the point where the pr ocedure left off last time,
+i.e., at the point where the last satisfying substitution wa s found. Calling that thunk will
+again result in a pair consisting of a new substitution and ye t another thunk, and so on.
+When there are no more substitutions to be found, a thunk will return the empty list []
+rather than a substitution-thunk pair. In this way it is poss ible to eventually obtain every
+satisfying substitution that is reachable at all by a depth- ﬁrst strategy, even if there are
+inﬁnitely many such substitutions.
+module Prolog_Interpreter {
+  define (restrict sub L) :=
+  let{V := (vars* L)}
+    (make-sub (list-zip V (sub V)))
+    define (conclusion-of P) :=
+    matchP {
+    (forall ( some-list _) (_ ==> p)) => p
+    | (forall ( some-list _) p) => p
+  }
+  define (match-conclusion-of p goal) :=
+  let{q := (rename p)}
+    match(goal unified-with conclusion-of q) {
+    (some-sub sub) => [q sub]
+    | _ => false
+  }
+  define (get-matches goal db) :=
+  (filter (map lambda (rule) (match-conclusion-of rule goal) db)
+  (unequal-to false))
+  define (subgoals-of clause) :=
+  matchclause {
+  (forall ( some-list _) (p ==> _)) => (get-conjuncts p)
+  | _ => []
+}
+define (make-new-goals previous-sub previous-goals) :=
+lambda (pair)
+matchpair {
+[clause sub] =>
+let{new-goals := (sub (join (subgoals-of clause) previous-go als))}
+  [new-goals (compose-subs sub previous-sub)]
+}
+define (solve-all queries db) :=
+letrec {search := lambda (L)
+matchL {
+
+fpmics 2015/12/8 11:38 Page 860 #882
+860 APPENDIX A. LOGIC PROGRAMMING AND PROLOG
+[] => []
+| (list-of [[] sub] rest) =>
+[(restrict sub queries) lambda () (search rest)]
+| (list-of [(list-of goal more-goals) sub] rest) =>
+match(get-matches goal db) {
+[] => (search rest)
+| rule-matches =>
+let{L/quotesingle.Var:= (map (make-new-goals sub more-goals)
+  rule-matches)}
+  (search (join L /quotesingle.Varrest))
+}}}
+(search [[queries empty-sub]])
+}# module Prolog_interpreter
+Givensolve-all , it is easy to implement a solve-N procedure that will attempt to retrieve
+Nsolutions, if Nsolutions exist, otherwise producing the maximum possible number K<
+Nof solutions:
+define (solve-N queries program N) :=
+let{queries := matchqueries {
+  (some-sent p) => [p]
+  | _ => queries}}
+  letrec {loop :=
+  lambda (i res thunk)
+  check{(greater? i N) => (rev res)
+  |else=>match(thunk) {
+  [] => (rev res)
+  | [sub thunk /quotesingle.Var] => (loop (i plus 1)
+  (add sub res)
+  thunk/quotesingle.Var)
+}
+}
+}
+match(solve-with-thunks queries program) {
+[] => []
+| [sub rest] => (loop 2 [sub] rest)
+}
+Note that the code on lines 2—4 ensures that the procedure wor ks when the ﬁrst input
+argument is either a list of atoms or a single atom by itself. W e can likewise implement a
+solve procedure that either returns a single substitution, if one can be found, or else returns
+false :
+define (solve queries program) :=
+match(solve-N queries program 1) {
+[] => false
+| (list-of sub _) => sub
+}
+
+fpmics 2015/12/8 11:38 Page 861 #883
+A.3. IMPLEMENTING A PROLOG INTERPRETER 861
+Bothsolve andsolve-N are parts of the Prolog_Interpreter module. Let us test the system
+on our earlier example:
+domain D
+declare a: D
+declare f: [D] -> D
+declare P: [D] -> Boolean
+define clauses := (close [(P a)
+(P f x <== P x)])
+openProlog_Interpreter
+> (solve (P a) clauses)
+Substitution: {}
+> (solve (P f ?X) clauses)
+Substitution: {?X:D --> a}
+> (solve-N (P f ?X) clauses 2)
+List: [{?X:D --> a}
+{?X:D --> (f a)}]
+> (solve-N (P f ?X) clauses 10)
+List: [{?X:D --> a}
+{?X:D --> (f a)}
+{?X:D --> (f (f a))}
+{?X:D --> (f (f (f a)))}
+{?X:D --> (f (f (f (f a))))}
+{?X:D --> (f (f (f (f (f a)))))}
+{?X:D --> (f (f (f (f (f (f a))))))}
+{?X:D --> (f (f (f (f (f (f (f a)))))))}
+{?X:D --> (f (f (f (f (f (f (f (f a))))))))}
+{?X:D --> (f (f (f (f (f (f (f (f (f a)))))))))}]
+It should be clear by now why rule ordering (as well as the orde ring of rule bodies) is
+important. Rules are tried in the textual order in which they are listed in a program (list of
+clauses), so a recursive rule might well send our depth-ﬁrst strategy into an inﬁnite loop if
+it is listed before other rules for the same predicate. For ex ample:
+define clauses /quotesingle.Var:= (close [(P f x <== P x)
+(P a)])
+> (solve (P f ?X) clauses /quotesingle.Var)
+···# infinite loop...
+
+fpmics 2015/12/8 11:38 Page 862 #884
+862 APPENDIX A. LOGIC PROGRAMMING AND PROLOG
+A.4 Integration with external Prolog systems
+The Prolog interpreter we have presented is adequate for sma ll problems and useful for
+instructive purposes, but it has two serious drawbacks. Fir st, it doesn’t handle negation.
+Second, and more important, the double layer of interpretat ion (interpreting Athena which
+is interpreting Prolog) incurs a severe efﬁciency penalty. The performance of this inter-
+preter on realistic problems would be unacceptable, as woul d indeed be the performance
+of any Prolog interpreter.
+The ﬁrst issue, negation, is not too serious; it would not be d ifﬁcult at all to modify our
+interpreter so as to implement ﬁnite negation as failure. Bu t efﬁciency is a more pressing
+concern. To get Prolog search to run fast, Prolog must be comp iled into machine code.
+For these reasons Athena is integrated with two state-of-th e-art Prolog systems, SWI
+Prolog and XSB, that can execute Prolog queries much more efﬁ ciently. The integration
+is seamless in that both queries and programs are expressed i n Athena notation, as is the
+output. The integration with XSB is quite tight in that XSB is started right when Athena
+starts, and thereafter the two programs communicate at the p rocess level. This has some
+efﬁciency advantages, as new knowledge (facts or rules) can be added incrementally. XSB
+is also a tabled Prolog system, which enables a whole class of interesting ap plications
+that are not otherwise possible. However, integration with XSB is only available on Linux,
+and not by default, so in what follows we only describe the con nection to SWI Prolog.
+That connection works on a per-query basis: to solve a given q uery (or list of queries)
+with respect to a given list of clauses, Athena prepares an eq uivalent Prolog program and
+query, invokes SWI Prolog from scratch on these inputs, and t hen translates the output back
+into Athena notation.7Because this approach involves some ﬁle IO and starting the swipl
+process from scratch, there is a ﬁxed runtime cost associate d with it.
+The main API is captured by three procedures in the module Prolog :
+1.(solve goal program );
+2.(solve-all goal program );
+3.(solve-all goal program N ).
+We describe each in turn.
+In a call of the form (solve goal program ),goal is either a single query (atom) or a list
+of queries, and program is a list of (general) Horn clauses. Disjunctions of literal s may also
+appear in the bodies of these clauses. A clause may be explici tly universally quantiﬁed, but
+7 SWI Prolog must be locally installed on your machine for thi s to work, and must be runnable from the command
+line with the command swipl .
+
+fpmics 2015/12/8 11:38 Page 863 #885
+A.4. INTEGRATION WITH EXTERNAL PROLOG SYSTEMS 863
+need not be. If it is not quantiﬁed, it is assumed that all vari ables in it are tacitly universally
+quantiﬁed. In fact program may contain completely arbitrary sentences, for instance, one
+may give the entire assumption base as the value of program , e.g., with a call of the form
+(solve goal(ab)) . The implementation of Prolog will automatically try to extract general
+Horn clauses from the given sentences, and will simply ignor e those sentences that it cannot
+convert into Horn clauses.
+The output is always a two-element list whose ﬁrst element is true orfalse , respectively
+indicating success or failure. When the ﬁrst element of the o utput list is true, the second
+element is a substitution, which, when applied to the query g oals, results in sentences that
+follow logically from the clauses. Some examples:
+domain D
+declare a,b,c: D
+declare P: [D] -> Boolean
+declare R: [D D] -> Boolean
+define program := [(P a) (P b) (a R b) (b R c)]
+> (Prolog.solve (P a) program)
+List: [true {}]
+> (Prolog.solve (P ?X) program)
+List: [true {?X:D --> a}]
+> (Prolog.solve (R ?X ?Y) program)
+List: [true
+{?Y:D --> c
+?X:D --> b}]
+> (Prolog.solve (R ?X ?X) program)
+List: [false {}]
+The arguments of solve-all are the same as those of solve , but the result is a list of all
+satisfying substitutions (assuming there is a ﬁnite number of them). Failure here is signiﬁed
+by an empty output list, which means that no substitutions co uld satisfy the goal(s).
+> (Prolog.solve-all (P ?X) program)
+List: [{?X:D --> a} {?X:D --> b}]
+> (Prolog.solve-all (R ?X ?X) program)
+List: []
+
+fpmics 2015/12/8 11:38 Page 864 #886
+864 APPENDIX A. LOGIC PROGRAMMING AND PROLOG
+Note that the goal(s) given to solve-all must contain at least one variable. If the goal(s)
+are all ground, use solve instead.
+Finally,solve-N takes an extra argument at the end, a positive integer Nindicating the
+number of desired solutions. However, this is implemented b y obtaining one substitution,
+then calling Prolog again with an explicit added constraint that rules out the ﬁrst substi-
+tution; then calling Prolog again with yet another constrai nt that rules out the ﬁrst two
+substitutions; and so on. This is not particularly efﬁcient . It may be more expedient to
+compute a list of all solutions (using solve-all ) and then simply take Nelements from
+that list. However, if there are inﬁnitely many solutions di scoverable by depth-ﬁrst search
+thensolve-all will diverge, so in that case solve-N is a more viable alternative.
+There are timed versions of the above three procedures that c an take a non-negative
+integer Mas a last argument, which will then force Prolog to quit after Sseconds have
+gone by, if it is not done by then:
+1.Prolog.solve-with-time-limit ;
+2.Prolog.solve-all-with-time-limit ; and
+3.Prolog.solve-N-with-time-limit .
+(For the last procedure, the time limit applies to each of the Nseparate calls, so if you want
+all solving to last no more than Mseconds, give a time limit of Mdivided by N.)
+The equality symbol, when it appears in clauses, has the usua l Prolog semantics (uniﬁa-
+bility). There are a number of predeﬁned Prolog symbols intr oduced in the Prolog module
+that can also be used in queries:
+• The binary polymorphic symbols Prolog.== andProlog.\== represent strict term iden-
+tity and inequality, respectively.
+• The binar symbols Prolog.arith-eq andProlog.arith-uneq represent numeric Prolog
+identity and inequality; they are polymorphic in both argum ent positions.
+• The ternary polymorphic symbols setof ,findall , andbagof represent the correspond-
+ing Prolog symbols. The results are collected into Athena li sts. For example:
+> (Prolog.solve (Prolog.findall ?X (P ?X) ?Result) program )
+List: [true
+{?Result:(List D) --> (a :: b :: nil:(List D))
+?X:D --> ?v53752:D}]
+As in Prolog, the ﬁrst argument can be an arbitrarily complex term containing variables
+to be solved for, e.g.:
+> (Prolog.solve (Prolog.findall (?X :: ?Y :: nil)
+(?X R ?Y)
+?Result)
+
+fpmics 2015/12/8 11:38 Page 865 #887
+A.4. INTEGRATION WITH EXTERNAL PROLOG SYSTEMS 865
+program)
+List: [true
+{?Result:(List (List D)) --> (:: (:: a (:: b nil:(List D)))
+(:: (:: b (:: c nil:(List D)))
+nil:(List (List D))))
+?Y:D --> ?v1663:D
+?X:D --> ?v1662:D}]
+Here the results were assembled into a list of two lists, esse ntially the pairs [a b] and
+[b c] , i.e., all and only the pairs of ground terms for which Rholds according to the
+given program.8
+• TheProlog module also introduces the symbols cut,fail,call, andonce, whose use
+should be clear to experienced Prolog programmers. They can be used to provide greater
+control over the Prolog search. The call predicate is particularly useful for metapro-
+gramming.
+• TheProlog.write symbol, with signature [Ide] -> Boolean , can be used to perform
+output from inside Prolog. This can be useful for debugging p urposes.
+We stress that the inputs and outputs of these procedures are given entirely at the Athena
+level. Thus, for instance, syntactic idiosyncracies of Pro log are immaterial: any legal
+Athena variables and function symbols may appear inside cla uses and queries, no matter
+how complicated, even if they are not legal Prolog syntax. To further facilitate output, one
+can specify “term transformers” that are automatically app lied to resulting substitutions in
+order to print their content in a more customized (and hopefu lly more legible) format. This
+is done by invoking the unary procedure Prolog.add-transformer as follows:
+(Prolog.add-transformer f)
+where fis a unary procedure that takes a term and produces a term. For instance, to print
+natural numbers as integer numerals we may say:
+(Prolog.add-transformer nat->int) .
+Multiple transformers can be speciﬁed in this way, and all of them will be applied to any
+substitution returned by any of the search procedures we hav e discussed so far.9Because a
+transformer may change the sort of a term, if there are any tra nsformers speciﬁed then the
+returned results are no longer substitutions but rather lis ts of triples of the form
+[v--> t]
+8 More precisely, according to the completion of the given pr ogram.
+9 However, the order in which these are applied is not guarant eed. If that is important then it might be better to
+specify one single transformer that performs all the necess ary conversions in the desired order.
+
+fpmics 2015/12/8 11:38 Page 866 #888
+866 APPENDIX A. LOGIC PROGRAMMING AND PROLOG
+where vis a query variable and tis a transformed term.
+Moreover, as mentioned earlier, the “program” that gets pas sed to these procedures may
+contain arbitrary Athena sentences. Athena will try to extr act appropriate Horn clauses
+from any sentences given as clauses.
+However, one thing that is not properly addressed by these pr ocedures are equations,
+both simple and conditional. Consider, for instance, the de ﬁning equations for addition on
+natural numbers:
+assert* Plus-def := [(x + zero = x)
+(x + S y = S (x + y))]
+These are universally quantiﬁed identities, so the naive ap proach of these procedures will
+translate them as facts, with the identity symbol =as the main predicate. But to properly
+capture the semantics of such equations in a logic programmi ng setting, one needs new
+predicate symbols and new clauses for those symbols, and som e of these clauses (the ones
+that correspond to recursive equations) will be proper rule s rather than facts. In this partic-
+ular case, for example, we would need to introduce a new terna ry relation symbol plus-p ,
+as we did above, and introduce new clauses that capture the co mputational content of the
+above equations:
+define plus-clauses :=
+(close [(plus-p x zero x)
+((plus-p x (S y) (S z)) <== (plus-p x y z))])
+As the equations get more complex, this can get cumbersome. A ccordingly, the Prolog
+module provides a unary procedure, auto-solve , that attempts to automate this process.
+  This procedure is unary so it only takes a goal, not a program; it will attempt to automat-
+  ically construct the right logic program for the given goal, by looking at the assumption
+  base and the form of the goal. Specially, the procedure takes a goal such as
+  (2 N.+ 3 = ?Result)
+  and automatically tries to:
+  . Determine the (transitive closure of all the) deﬁning equ ations of all function symbols
+  that appear in the goal.
+  . Introduce predicate symbols for all these symbols. Typic ally, the predicate symbol
+  introduced for a function symbol fisf_p.10
+  . Translate all deﬁning equations and conditional equatio ns for all of these symbols into
+  general Prolog clauses.
+  That can differ if there is an already existing symbol by th at name.
+
+fpmics 2015/12/8 11:38 Page 867 #889
+A.4. INTEGRATION WITH EXTERNAL PROLOG SYSTEMS 867
+4. Include any other (non-equational) clauses that may be ne cessary for some of these
+symbols.
+5. Transform the query itself into relational form.
+6. Solve the transformed query wrt to the Prolog program prod uced the previous steps.
+7. Output the results.
+For example, assuming we have deﬁned N.+andN.*with the usual recursive equations:
+define goal := (2 N.+ 3 = ?sum-of-2-and-3)
+> (Prolog.auto-solve goal)
+List: [true {?sum-of-2-and-3:N --> (S (S (S (S (S zero)))))} ]
+If we wish to display natural numbers as integer numerals:
+(Prolog.add-transformer nat->int)
+> (Prolog.auto-solve goal)
+List: [true [[?sum-of-2-and-3 --> 5]]]
+There is also a unary auto-solve-all and a binary auto-solve-N procedure, whose second
+argument is the desired number of solutions, e.g.:
+define goal := (2 N.* ?X = ?Y)
+> (Prolog.auto-solve-N goal 3)
+List: [[[?Y --> 0] [?X --> 0]]
+[[?Y --> 2] [?X --> 1]]
+[[?Y --> 4] [?X --> 2]]]
+We can inspect the functional-to-relational transformati on by asking to see the constructed
+clausal program for a given goal by using the procedure Prolog.defining-clauses :
+define goal := (2 N.* ?X = ?Y)
+> (Prolog.defining-clauses goal)
+List: [
+(n_+_p ?n zero ?n)
+(if (n_+_p ?n ?m ?v784)
+(n_+_p ?n
+(S ?m)
+(S ?v784)))
+(n_*_p ?x zero zero)
+
+fpmics 2015/12/8 11:38 Page 868 #890
+868 APPENDIX A. LOGIC PROGRAMMING AND PROLOG
+(if (and (n_*_p ?x ?y ?v785)
+(n_+_p ?v785 ?x ?v786))
+(n_*_p ?x
+(S ?y)
+?v786))
+]
+Here,n_+_p andn_*_p are the ternary predicate symbols that were automatically i ntroduced
+forN.+andN.*, respectively.
+As we have seen, of course, order is quite important, both for clauses and for body
+literals. The implementation of auto-solve and its two sibling procedures applies a few
+simple heuristics in order to determine the best possible or dering for clauses and goal lit-
+erals, but the heuristics are not perfect. If these procedur es fail to produce the expected
+results, it might be useful to look at the clause list produce d for a given goal, using
+Prolog.defining-clauses , possibly make some changes to it, and then apply Prolog.solve
+(orsolve-all , etc.) to the given goal and the modiﬁed clause list.
+We can do the same thing for a goal, i.e., we can inspect the cla uses that are automatically
+produced for it (via auto-solve , etc.), with the unary procedure Prolog.query-clauses :
+define goal := (2 N.* ?X = ?Y)
+> (Prolog.query-clauses goal)
+List: [
+(n_*_p (S (S zero))
+?X
+?v785)
+(= ?v785 ?Y)
+]
+Again, by applying these two procedures to a given goal, we ca n obtain and possibly
+rearrange clause lists for both the extracted program and th e goal itself, and then use
+Prolog.solve etc. to solve with respect to both.

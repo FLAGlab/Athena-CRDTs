@@ -1,0 +1,80 @@
+load "../../vc_core"
+
+# Simple playground to evaluate concrete vector clock scenarios
+
+module VCCorePlayground {
+
+open VCCore
+
+# Named actors for the examples
+
+define alice := (string->id "alice")
+define bob := (string->id "bob")
+define charlie := (string->id "charlie")
+
+define actors := (:: alice (:: bob (:: charlie nil)))
+
+# Helper to materialise a clock as a list of pairs
+
+define (clock-snapshot clock remaining) :=
+  match remaining {
+    nil => nil
+  | (actor :: rest) =>
+      ((pr actor (clock-get clock actor)) :: (clock-snapshot clock rest))
+  }
+
+# Concrete clocks ---------------------------------------------------------
+
+define clock-alice-1 := (clock-tick clock-empty alice)
+define clock-alice-2 := (clock-tick clock-alice-1 alice)
+define clock-bob-1 := (clock-tick clock-empty bob)
+
+define merged-alice-bob := (clock-join clock-alice-2 clock-bob-1)
+
+define alice-view := (clock-snapshot clock-alice-2 actors)
+define merged-view := (clock-snapshot merged-alice-bob actors)
+
+# Relations ---------------------------------------------------------------
+
+define happens-before-example :=
+  (clock-happens-before clock-alice-1 clock-alice-2)
+
+define merged-happens-before :=
+  (clock-happens-before clock-alice-2 merged-alice-bob)
+
+define concurrency-example :=
+  (clock-concurrent clock-alice-1 clock-bob-1)
+
+# Registry scenario ------------------------------------------------------
+
+define registry-propagation :=
+  (let ((r0 registry-empty)
+        (r1 (registry-tick r0 alice))
+        (r2 (registry-tick r1 alice))
+        (r3 (registry-merge r2 bob (registry-get r2 alice)))
+        (r4 (registry-tick r3 bob))
+        (r5 (registry-merge r4 charlie (registry-get r4 bob)))
+        (r6 (registry-tick r5 charlie)))
+    (registry-get r6 charlie))
+
+define registry-charlie-view := (clock-snapshot registry-propagation actors)
+
+define missing-actor := (string->id "dave")
+
+define missing-lookup := (clock-get clock-alice-2 missing-actor)
+
+define empty-lookup := (clock-get clock-empty alice)
+
+} # end module VCCorePlayground
+
+open VCCorePlayground
+
+(print "\nclock-empty alice => " (eval empty-lookup))
+(print "\nclock-alice-2 alice => " (eval (clock-get clock-alice-2 alice)))
+(print "\nclock-alice-2 bob => " (eval (clock-get clock-alice-2 bob)))
+(print "\nmerged view => " (eval merged-view))
+(print "\nhappens-before (alice1 -> alice2) => " (eval happens-before-example))
+(print "\nhappens-before (alice2 -> merged) => " (eval merged-happens-before))
+(print "\nconcurrency (alice1, bob1) => " (eval concurrency-example))
+(print "\nregistry charlie view => " (eval registry-charlie-view))
+(print "\nmissing actor lookup => " (eval missing-lookup))

@@ -1,0 +1,2934 @@
+fpmics 2015/12/8 11:38 Page 115 #137
+3Proving equalities
+IN THIS chapter we concentrate on equational proof , one of the most common and useful
+types of proof. Our ﬁrst examples will involve simple functi ons on natural numbers, like
+addition and multiplication. Later in the chapter we will wo rk with examples involving list
+functions like concatenation and reversal. For both natura l numbers and lists, the simplest
+examples involve only equality chaining, but for proofs of m ore interesting and useful
+properties we need some form of induction, corresponding to the way that natural numbers
+and lists are deﬁned as data types. Such an induction proof di vides into cases, but in all of
+the examples and exercises in this chapter, each proof case c an be completed with equality
+chaining.
+3.1 Numeric equations
+As we already saw in Section 2.7, we can deﬁne natural numbers in Athena as follows:
+datatype N := zero | (S N)
+This deﬁnition says that the values of sort Nare
+zero
+(S zero)
+(S (S zero))
+(S (S (S zero)))
+...
+In general, 0 is represented by zero and to obtain the natural number n+1 we apply the
+“successor function” Sto the natural number n. Put another way, the natural number nis
+obtained by an n-fold application of Stozero. Furthermore—and this is a crucial point—
+we deﬁne the values so obtained to be the only values that are natural numbers.1
+Recall from p. 32 that terms which contain no variables, like those in the sequence above,
+are called ground terms . Terms containing variables, such as (S ?n) , are called non-ground
+(or sometimes general ) terms.
+Suppose now we want to deﬁne and reason about the addition fun ctionPlus that takes
+two natural numbers as inputs and returns their sum. In Athen a, we ﬁrst declare the func-
+tion, specifying the number and sorts of its inputs (also cal ledarguments ) and the sort of
+its output (or “return value”), as follows:
+1 Roughly speaking, we are saying that any expression that pu rports to denote a natural number must have an
+equivalent expression just in terms of Sandzero . Later in the chapter we shall see how this fundamental prope rty
+is formalized, in conventional mathematical terms as well a s in Athena.
+
+fpmics 2015/12/8 11:38 Page 116 #138
+116 CHAPTER 3. PROVING EQUALITIES
+declare Plus: [N N] -> N [+]
+We can now write terms such as (Plus (S zero) zero) , or
+((S zero) Plus zero) (3.1)
+if we prefer inﬁx notation. In fact, by making sure that Sbinds tighter (has greater prece-
+dence) than Plus, e.g., by issuing the following directive:
+set-precedence S 350
+we can write term (3.1) even more simply as:
+(S zero Plus zero)
+And since the declaration above has also overloaded Athena’ s predeﬁned +operator to
+denotePlus when used with arguments of sort N, we can also write term (3.1) as
+(S zero + zero) .
+(Another way to permit use of +for arguments of sort Nis to declare the function using the
+identiﬁer +in the ﬁrst place, placing the declaration inside a module to avoid conﬂict with
+the predeﬁned +. That’s the way it’s done in the Athena library (in lib/main/nat-plus.ath )
+and will be done in this book after the further explanation of modules in Chapter 7.)
+So far these are strictly matters of syntax; they do not say an ything about the meaning
+of a term such as (S zero + zero) other than that its sort is N(and is thus one of the
+valueszero,(S zero) ,(S S zero) , . . .2). At this point, for all we know, it could be any
+natural number. To give Plus the intended meaning, we introduce the following universal ly-
+quantiﬁed equations in Athena,
+assert right-zero := (forall ?n . ?n + zero = ?n)
+assert right-nonzero := (forall ?n ?m . ?n + S ?m = S (?n + ?m))
+Since we deﬁned them with assert , these equations are also entered into Athena’s assump-
+tion base.
+Now, of course, the meaning of (S zero + zero) is determined by the equation that is
+just the special case of right-zero with the ground term (S zero) substituted for ?n. One
+way to say this in Athena, and thereby get the special-case eq uation into its assumption
+base, is
+(!instance right-zero [(S zero)])
+Recall that consecutive applications of a unary function s ymbol such as Sneed not be separated by parentheses,
+so we can write (S S S zero) rather than (S (S (S zero))) . We use this convention frequently.
+
+fpmics 2015/12/8 11:38 Page 117 #139
+3.2. EQUALITY CHAINING 117
+to which Athena responds:
+Theorem : (= (Plus (S zero)
+zero)
+(S zero))
+i.e., 1 + 0 = 1. Likewise:
+> (!instance right-nonzero [zero (S zero)])
+Theorem : (= (Plus zero
+(S (S zero)))
+(S (Plus zero
+(S zero))))
+In general, the ﬁrst argument to instance is a universally quantiﬁed sentence pthat is in
+the assumption base, and the second is a list Lof terms. If
+p=(forall v1···vn.q)
+andL=[t1···tk], where k≤n, theninstance produces the sentence
+(forall vk+1···vn.q′)
+where q′results from substituting tiforviinq,i=1,...,k.3In the ﬁrst case above, n=
+k=1, and in the second, n=k=2. In the following case n=2 and k=1, so the result
+still has one quantiﬁer:
+> (!instance right-nonzero [zero])
+Theorem : (forall ?v303:N
+(= (Plus zero
+(S ?v303:N))
+(S (Plus zero ?v303:N))))
+3.2 Equality chaining
+What about the meaning of Plus for larger ground term inputs, like
+(S S zero + S S zero) ?
+3 The substitutions are only for the freeoccurrences of the variables, i.e., those not bound by quant iﬁers within
+q′. Moreover, the substitutions are carried out in a safe manne r, i.e., so as to avoid variable capture. These points
+are explained more fully in Section 5.1.
+
+fpmics 2015/12/8 11:38 Page 118 #140
+118 CHAPTER 3. PROVING EQUALITIES
+In other words, can we now deduce that 2 +2=4? Yes, and here is one way of doing it in
+Athena:
+(!chain [(S S zero + S S zero)
+= (S (S S zero + S zero)) [right-nonzero]
+= (S S (S S zero + zero)) [right-nonzero]
+= (S S S S zero) [right-zero]
+])
+Here we’ve used chain , an Athena method4for proving equations by chaining together a
+sequence of terms connected by equalities. In general,
+(!chain [ t0=t1[p1] = t2[p2] =···=tn[pn]])
+attempts to derive the identity (t0=tn), provided each piis in the assumption base and
+each equation (ti−1=ti)follows from pi,5typically by virtue of one of the ﬁve funda-
+mental axioms of equality listed in Section 3.4, for i=1,...,n. Here n=3, the working
+assumptions used at each step are p1=p2=right-nonzero andp3=right-zero , and
+Athena responds with the theorem proved:
+Theorem : (= (Plus (S (S zero))
+(S (S zero)))
+(S (S (S (S zero)))))
+We refer to each list [pi]as the justiﬁcation list for the corresponding step (from ti−1to
+ti), and to each pias ajustiﬁer for the step.
+The interface of chain is actually a bit more ﬂexible than the above description sug -
+gests. For example, multiple sentences may appear inside th e square brackets (rather than
+a single pi), and the structure of these sentences can be fairly complex , e.g., each sentence
+may be a (universally quantifed) conditional equation or, say, a conjunction, rather than a
+simple equation. But before examining how equality chainin g works in general, we need
+to understand terms and sentences as tree structures.
+3.3 Terms and sentences as trees
+Terms and sentences are tree-structured objects, and in som e cases it makes sense to treat
+them as trees explicitly. Let us start with terms. A variable or a constant symbol can be
+4 Not a primitive method; chain is deﬁned in Athena’s library.
+5 Section ??will deﬁne more precisely what we mean by “follows from” in th e case of ﬁrst-order logic with
+equality, but an intuitive understanding of that relation i s sufﬁcient for now.
+
+fpmics 2015/12/8 11:38 Page 119 #141
+3.3. TERMS AND SENTENCES AS TREES 119
+viewed as a simple one-node tree (a leafnode), while an application of the form (f t1···tn)
+forn>0 can be viewed as a tree with the symbol fat the root and with the trees corre-
+sponding to t1,...,tnas its immediate subtrees, arranged from left to right in tha t order.
+For instance, the tree corresponding to the term (Plus (S zero) (Plus (S ?x) (S ?y)))
+can be depicted as follows:
+Plus
+S
+zeroPlus
+S
+?xS
+?y
+Thus, leaves stand for simple terms (variables and constant s), while internal nodes repre-
+sent compound terms—applications.
+A two-dimensional tree representation of a compound term tdepicts the essential syn-
+tactic structure of t, telling us exactly what function symbols are applied to wha t arguments
+and in what order, but without specifying how to write down tas a linear string. It does
+not tell us whether to use preﬁx, inﬁx, or postﬁx notation; ho w to separate the arguments
+from one another (with commas, periods, spaces, indentatio n, etc.); what characters to use
+for grouping the arguments of a single application together (parentheses, square brackets,
+etc.); and so on. Such notational details are decided by choo sing a particular concrete syn-
+taxfor terms. The concrete syntax that Athena uses to output ter ms is the preﬁx notation
+common in Lisp dialects. The same preﬁx notation is also avai lable for input, but one can
+also use inﬁx notation for binary function symbols, which of ten reduces notational clutter
+(especially in combination with precedence and associativ ity conventions). But tree repre-
+sentations, by dispensing with such details, are said to dep ict the abstract syntax of terms.
+We will have more to say about abstract syntax in Chapter 18.
+Every node in the tree representation of a term can be associa ted with a unique list of
+positive integers [ i1···im] indicating the path that must be traversed in order to get fr om
+the root of the tree to the node in question. That list represe nts the position of the node in
+the tree. As an example, Figure 3.1 shows the positions of eve ry node in the foregoing tree
+representation of (Plus (S ?x) (Plus ?x ?y)) . As you can see, the position of the Snode
+is [1], because we get to it by traveling down the ﬁrst (leftmo st) edge attached to the root;
+the position of ?xis [2 1], because we get to it by ﬁrst visiting the second child of the root,
+and then moving to the ﬁrst child of that node; and so on. The po sition of the root node is
+always the empty list [ ]. These integer sequences are someti mes called Dewey paths (or
+Dewey positions) because they are somewhat similar in their structure to the sequences of
+the Dewey decimal classiﬁcation system used by libraries to organize books.
+
+fpmics 2015/12/8 11:38 Page 120 #142
+120 CHAPTER 3. PROVING EQUALITIES
+The built-in procedure positions-and-subterms takes a term and produces a list of all
+positions in the term, each paired in a sublist with the subte rm at that position. For example,
+for the term in Figure 3.1,
+> (positions-and-subterms (Plus (S zero) (Plus ?x ?y)))
+List: [[[] (Plus (S zero) (Plus ?x ?y))]
+[[1] (S zero)]
+[[1 1] zero]
+[[2] (Plus ?x ?y)]
+[[2 1] ?x]
+[[2 2] ?y]]
+We use this procedure in an exercise in the next section, and t o help implement a basic
+form of equality chaining.
+The following is a useful procedure that takes a term tand a position I(as a list of positive
+integers), and returns the subterm of tthat is located at position Iin the tree representation
+oft. It is an error if Iis not a legal position for t, i.e., if thas no subterm at position I.
+define (subterm t I) :=
+matchI {
+[] => t
+| (list-of i rest) => (subterm (ith (children t) i)
+rest)
+}
+The primitive binary procedure ithtakes a list of n>0 values [V1···Vn]and an integer
+i∈ {1,...,n}and returns Vi.
+If we only want the node at a given position, we can use the foll owing procedure:
+define (subterm-node t I) := (root (subterm t I))
+> (subterm-node (?x + S S zero) [2 1])
+Symbol: S
+Plus
+S
+zeroPlus
+?x?y[]
+[1]
+[1 1][2]
+[2 2]
+[2 1]
+Figure 3.1
+The term(Plus (S zero) (Plus ?x ?y)) depicted as a tree structure. Nodes are annotated with their
+Dewey positions.
+
+fpmics 2015/12/8 11:38 Page 121 #143
+3.4. THE LOGIC BEHIND EQUALITY CHAINING 121
+forall
+?xnot
+=
+zero S
+?x[]
+[1] [2]
+[2 1]
+[2 1 1] [2 1 2]
+[2 1 2 1]
+Figure 3.2
+The sentence (forall ?x (not (= zero (S ?x)))) depicted as a tree. Nodes are annotated with their
+respective positions.
+Another useful procedure is replace-subterm , where(replace-subterm t I t′)returns the
+term obtained from tby replacing the subterm at position Ibyt′, provided that the result is
+well-sorted. We leave the deﬁnition of this procedure as an e xercise.
+Similar ideas apply to sentences. An atomic sentence is just a term t, so its tree repre-
+sentation is that of t. A sentence of the form (◦p1···pn), for◦ ∈ {not,and,or,if,iff}can
+be viewed as a tree with the sentential constructor ◦at the root and the trees correspond-
+ing to p1,...,pnas its immediate subtrees, listed from left to right in that o rder. Finally, a
+quantiﬁed sentence of the form (Q x p)can be viewed as a tree with the quantiﬁer Qat the
+root, the sole leaf xas its left subtree, and the tree corresponding to pas its right subtree.
+Node positions are deﬁned as they were for term trees. Thus, f or example, the sentence
+(forall ?x . zero =/= S ?x) , which in preﬁx notation is written as
+(forall ?x (not (= zero (S ?x)))) ,
+is represented by the tree shown in Figure 3.2, whose nodes ha ve been annotated
+with their corresponding positions. Procedures subsentence ,subsentence-node , and
+replace-subsentence can be implemented analogously to subterm ,subterm-node , and
+replace-subterm . See Exercise 3.38.
+3.4 The logic behind equality chaining
+For a ﬁrm foundation for reasoning about equalities we start with the basic equality axioms :
+1.Reﬂexivity Axiom: ∀x.x=x.
+2.Symmetry Axiom: ∀x y.x=y=⇒ y=x.
+
+fpmics 2015/12/8 11:38 Page 122 #144
+122 CHAPTER 3. PROVING EQUALITIES
+3.Transitivity Axiom: ∀x y z .x=y&y=z=⇒ x=z.
+4.Functional Substitution Axiom Schema For any function fofnarguments,
+(∀x1···xny1···yn.x1=y1&...&xn=yn=⇒(f x1···xn)=(f y1···yn).
+5.Relational Substitution Axiom Schema For any relation Rofnarguments,
+(∀x1···xny1···yn.x1=y1&...&xn=yn&(R x1···xn)=⇒(R y1···yn).
+Strictly speaking, the last two entries are axiom schemas , because they are indexed by f
+andR. Each schema has multiple axioms as instances, one for each f unction and relation
+symbol. Axiom schemas are captured in Athena with methods; w e will present the relevant
+methods shortly. For simplicity, we will refer to all ﬁve of t hese simply as “axioms” (rather
+than “axioms and axiom schemas”).
+Not all ﬁve are necessary, by the way. In fact we can get away wi th reﬂexivity and a
+variation of the relational substitution axiom schema know n as Leibniz’s law. Symmetry,
+transitity, and functional substitution would then become derivable as consequences. For
+practical purposes, however, it is more convenient to start out with all ﬁve of the above.
+Equational proofs in Athena are ultimately based on primiti ve methods corresponding
+to each of the ﬁve equality axioms, namely reflex ,sym,trans ,fcong (“functional congru-
+ence”), and rcong (“relational congruence”), as illustrated here:
+domain D
+declare a, b, c: D
+>conclude (a = a)
+(!reflex a)
+Theorem : (= a a)
+>conclude (a = b ==> b = a)
+assume h := (a = b)
+  (!sym h)
+Theorem : (if (= a b)
+(= b a))
+>conclude (a = b & b = c ==> a = c)
+assume (a = b & b = c)
+  (!tran (a = b) (b = c))
+Theorem : (if (and (= a b)
+(= b c))
+(= a c))
+declare f:[D D] -> D
+declare R:[D D] -> Boolean
+
+fpmics 2015/12/8 11:38 Page 123 #145
+3.4. THE LOGIC BEHIND EQUALITY CHAINING 123
+declare a1, a2, b1, b2: D
+>conclude (a1 = b1 & a2 = b2 ==> a1 f a2 = b1 f b2)
+assume (a1 = b1 & a2 = b2)
+  (!fcong (a1 f a2 = b1 f b2))
+Theorem : (if (and (= a1 b1)
+(= a2 b2))
+(= (f a1 a2)
+(f b1 b2)))
+>conclude (a1 = b1 & a2 = b2 & a1 R a2 ==> b1 R b2)
+assume (a1 = b1 & a2 = b2 & a1 R a2)
+  (!rcong (a1 R a2) (b1 R b2))
+Theorem : (if (and (= a1 b1)
+(and (= a2 b2)
+(R a1 a2)))
+(R b1 b2))
+The following is a more precise speciﬁcation of these method s:
+•reflex : A unary method that takes an arbitrary term tand produces the sentence (t=t),
+in any assumption base.
+•sym: A unary method that takes an equality (s=t)as an argument. If the sentence
+(s=t)is in the assumption base, then the conclusion (t=s)is produced.
+•tran: A binary method that takes two equalities of the form (t1=t2)and(t2=t3)
+as arguments. If both of these are in the assumption base, the conclusion (t1=t3)is
+produced.
+•fcong : A unary method that takes an equality of the form
+((f s1···sn) = ( f t1···tn)) (3.2)
+as an argument. If the assumption base contains the nequalities (si=ti),i=1,...,n,
+then (3.2) is returned as the conclusion.
+•rcong : A binary method that takes two atomic sentences of the form (R s 1···sn)and
+(R t1···tn)as arguments, where Ris a relation symbol of arity n. If the assumption
+base contains the ﬁrst sentence, (R s 1···sn), along with the nequalities (s1=t1),...,
+(sn=tn), then the second sentence (R t1···tn)is produced.
+It is not difﬁcult to see that the given axioms are trueunder the conventional interpreta-
+tion of the equality symbol as the identity relation. Theref ore, these ﬁve methods are sound
+— they can never take us from true premises to false conclusio ns. How about complete-
+ness? Are these methods sufﬁcient for deriving allidentities that follow from a given set
+of equations? In conjunction with instance , the answer is afﬁrmative. More precisely, if
+
+fpmics 2015/12/8 11:38 Page 124 #146
+124 CHAPTER 3. PROVING EQUALITIES
+we have a ﬁnite set Eof universally quantiﬁed equations and are presented with a new
+equation that follows from Eand we are asked to derive that equation from E, a proof
+could always be carried out using a combination of applicati ons ofinstance to derive sub-
+stitution instances of the various equations in E, along with applications of reflex ,sym,
+trans ,fcong , andrcong . Although we will not prove it here,6this is an important result
+which ensures that the six methods in question (the ﬁve equat ional methods along with
+instance ) constitute a complete inference system for equational log ic. Any equation that
+follows from Ecan be derived from it with a—potentially very long—sequenc e of applica-
+tions of these few methods. However, such proofs would be ope rating at a very low level of
+abstraction, not unlike programs written in machine langua ge, and nontrivial cases would
+require long and tedious proofs. Instead, from these basic i ngredients we can derive results
+that justify term rewriting , which is the kind of larger step in reasoning about equaliti es
+that is routinely used by the chain method. We begin with:
+Theorem 1: (First Substitution Theorem) If s=s′then for any function symbol fofn
+arguments and terms t1,...,tnof appropriate sorts,
+(f t1···tk−1s tk+1···tn)=(f t1···tk−1s′tk+1···tn).
+Proof: By the Reﬂexivity Axiom, ti=tiforifrom 1 to nexcept k. Together with s=s′,
+we derive the desired equation from the Functional Substitu tion Axiom. ✷
+Exercise 3.1: Athena’s primitive method fcong actually implements the First Substitution
+Theorem as well as the Substitution Axiom, implicitly invok ing the Reﬂexivity Axiom as
+needed. Thus it accepts the desired equation (of the form tha t appears in the conclusion of
+the First Substitution Theorem) and proves it, provided s=s′is already in the assumption
+base.fcong can be then applied again with the new equation (which is in th e assumption
+base), to prove an equation between larger terms. Continue t he following development:
+datatype N := zero | (S N)
+declare Plus:[N N] -> N
+declare g:[N N] -> N
+declare h:[N] -> N
+assert premise := (= (Plus (S zero) zero)
+(S (Plus zero zero)))
+using repeated applications of fcong to prove the following goal:
+It was ﬁrst proved by Birkhoff in 1935 [9].
+
+fpmics 2015/12/8 11:38 Page 125 #147
+3.4. THE LOGIC BEHIND EQUALITY CHAINING 125
+define goal :=
+(= (h (g zero
+(Plus (S zero)
+(Plus (S zero) zero))))
+(h (g zero
+(Plus (S zero)
+(S (Plus zero zero))))))
+Note: We are using preﬁx notation in this exercise to make it easier to see the terms as tree
+structures.
+The idea of repeated applications of the First Substitution Theorem seen in the exercise is
+generalized as follows.
+Theorem 2: (Second Substitution Theorem) Let tandube ground terms, I=[i1···im]be
+a position that is in both terms, and suppose tanduare identical except at I. Let abe the
+subterm at position Iintandbbe the subterm at position Iinu. Ifa=bthen t=u.
+Remark: Understanding the following proof requires some familiari ty with proof by
+induction, one of the important proof methods to be studied i n detail in this book (beginning
+in Section 3.8). You may wish to skip it and come back to it late r, accepting this theorem
+for now without proof. (In the meantime, just think in terms o f repeated applications of the
+First Substitution Theorem, or fcong , as in the last exercise).
+Proof: By induction on the length, m, ofI. For the basis case, m=0, we have I=[ ],
+hence t=aandu=b, so we already have t=uby the assumption that a=b. Other-
+wise, assume the result for positions of length m−1 and let t=(f t1···ti1···tn)and
+u=(g u 1···ui1···un), as depicted in Figure 3.3. By assumption f=gandti=uifor
+allifrom 1 to nexcept i1. But we also have ti1=ui1, by applying the induction hypothe-
+sis to these terms and position I′=[i2···im]. Then t=ufollows by the First Substitution
+Theorem. ✷
+The First and Second Substitution Theorems are based on an eq uation s=tbetween two
+terms, but we can derive an even more useful proof principle t hat starts with a universally
+quantiﬁed equation, implicitly using any instance of it as the basis of an application of the
+Second Theorem. It is best explained and justiﬁed using the n otions of rewrite rules and
+term rewriting , which are in turn based on the notions of substitutions and m atching that
+were described in Section 2.14.8 (it might help to review tha t section before continuing).
+Rewrite Rules Suppose now that pis a universally quantiﬁed equation of the following form:7
+p=(forall v1···vn.L=R), (3.3)
+7 The case of n=0, where pis just an unquantiﬁed equation, is allowed. Also, as we ment ioned earlier, instead of
+just(L=R)we could have a conditional equation (q==> L=R)as the body of the rule. Conditional equations
+
+fpmics 2015/12/8 11:38 Page 126 #148
+126 CHAPTER 3. PROVING EQUALITIES
+t
+f
+1 2
+t1 t2··· ··· i1
+ti1
+im
+an
+tnu
+g
+1 2
+u1 u2··· ··· i1
+ui1
+im
+bn
+un
+Figure 3.3
+Illustration of the Second Substitution Theorem.
+and such that the variables in the term Lare{v1,...,vn}and those in Rare a subset of
+{v1,...,vn}. We call such a sentence parewrite rule (or, less often, a rewriting rule ).
+Both of the axioms for Plus, namely right-zero andright-nonzero , are in the form of
+rewrite rules. If we were deﬁning addition on integers rathe r than natural numbers, and
+we had an integer constructor negate , then we might have an axiom like this:
+(forall ?x . ?x + negate ?x = zero)
+But if this sentence were written instead as
+(forall ?x . zero = ?x + negate ?x)
+it would not be a rewrite rule since the variable ?xappears on the right hand side of the
+equation but not on the left. Using such an equation for term r ewriting, as deﬁned next,
+would result in spurious variables being introduced into te rms.
+Many of the theorems that we derive, such as left-zero below, will also be in the form
+of rewrite rules and will thus be suitable for use by proof tec hniques that are based on
+rewriting, such as chaining.
+are discussed in Section 3.14, and the full generality of the forms of the justifying sentences allowed in the chain
+method is discussed in Chapter 6.
+
+fpmics 2015/12/8 11:38 Page 127 #149
+3.4. THE LOGIC BEHIND EQUALITY CHAINING 127
+t
+I
+(θL)u
+I
+(θR)
+Figure 3.4
+Illustration of the Rewriting Theorem.
+In fact most of our rewrite rules will be in a more structured f orm than what described
+above: they will usually be constructor-based rewrite rules. A constructor-based rewrite
+rule is of the same general form as (3.3) and adheres to the sam e variable restriction,
+but, in addition, the left-hand side Lis of the form (f s1···sn), where:
+a. each sicontains only variables and constructors;
+b.fis not a constructor (but rather a function symbol that we are deﬁning, such as
+Plus).
+Term Rewriting Letpbe a rewrite rule whose equation is (L=R). Further, suppose tanduare terms, I
+is a legal position for both tandu, the subterm t′oftatImatches Lwith substitution
+θ, and uis identical to texcept at I, where(θR)occurs instead. Then we say that t
+rewrites orreduces touusing p, and we call (θL)and(θR)theredex and the con-
+tractum , respectively. We write this relation as t→θu[p], or simply t→u[p] when θ
+is clear from the context or immaterial. The relation is depi cted in Figure 3.4. From this
+deﬁnition of rewriting we obtain:
+Theorem 3: (Rewriting Theorem) Let pbe a rewrite rule, and t→u[p]. Ifpthen t=u.
+Proof: The sentence pimplies(θL=θR), and therefore (t=u)follows by the Sec-
+ond Substitution Theorem. ✷
+All of this machinery is brought to bear in the following ﬁnit e proof principle:
+
+fpmics 2015/12/8 11:38 Page 128 #150
+128 CHAPTER 3. PROVING EQUALITIES
+Principle 3.1: (Single Rewriting Step) To prove an equation (t=u)using p, where
+p=(forall v1···vn.L=R)
+is a rewrite rule, search in tfor a position Iwith subterm t′such that t′matches L; i.e.,
+there is a substitution θsuch that t′is(θL). Ifuis identical to texcept at position I,
+where(θR)occurs instead of t′, then t→uusing p, from which (t=u)follows by the
+Rewriting Theorem. Otherwise (if any of these conditions fa il for position I), continue to
+the next position. If the search of all subterm positions of tfails, then perform the same
+search but with the roles of tandureversed. If successful, (u=t)is proved, from which
+(t=u)follows by the Symmetry Axiom.
+The basic equality chaining that Athena’s chain method does is based on the above
+principle, although chain supports multiple rewrite rules in one step (and multiple re dex-
+contractum pairs), as well as conditional rewrite rules and indeed more complex justifying
+sentences. If all of the individual steps of a chain method application
+(!chain [ t0=t1[p1] = t2[p2] =···=tn[pn]])
+are successful, it deduces the equation t0=tnby combining the individually deduced equa-
+tions together using n−1 applications of the Transitive Axiom.
+We close this section with a notational convention: for a lis t of sentences [ p1...pk], we
+write
+t→θu[p1...pk]
+(or simply t→u[p1...pk] when θis obvious or immaterial) iff t→θu[pi] for some p i,
+i∈ {1,...,k}. This is a natural extension of the notation t→θu[p]. We will use it whenever
+we want to indicate that a term rewrites to another term by vir tue of a collection of rewrite
+rules (say, a set of axioms deﬁning a function), without havi ng to to single out speciﬁcally
+which axiom is used for the rewrite step in question.
+Exercise 3.2: This exercise develops a simple example of the Single Rewrit ing Step prin-
+ciple, with
+t=(Plus (S zero) (Plus (S zero) zero))
+u=(Plus (S zero) (S (Plus zero zero)))
+and the rule (forall ?x (= (Plus (S ?x) ?y) (S (Plus ?x ?y)))) .
+(a) Show the list of all position and subterm pairs that would be produced if the procedure
+positions-and-subterms (see page 120) were applied to t. (Check your solution by
+actually running the procedure in an Athena session or with t he solution given in the
+online solutions.)
+
+fpmics 2015/12/8 11:38 Page 129 #151
+3.5. MORE EXAMPLES OF EQUALITY CHAINING 129
+(b) Find two distinct positions I1andI2intsuch that for both k=1, 2, the subterm t′atIk
+matches the left hand side (Plus (S ?x) ?y) .
+(c) For each of the two distinct positions I1andI2intfound in the previous exercise, show
+the substitution θiby which (Plus (S ?x) ?y) matches the corresponding subterm.
+(d) For which of I1andI2intdoes the Single Rewriting Step principle succeed in proving
+t=u? In that case, what term corresponds to (θR)?
+*Exercise 3.3: Deﬁne a method ground-rewrite for proving an equation between ground
+terms based on the Second Substitution Theorem. Let tandube ground terms, Ibe a legal
+position in both tandu,a=(subterm t I),b=(subterm u I), and assume (a=b)is in the
+assumption base. Then (!ground-rewrite t I u)should prove (t=u).Hint: The solution
+can be expressed as a recursive method, corresponding direc tly to the inductive proof given
+for the Second Substitution Theorem.
+*Exercise 3.4: Deﬁne a method ltr-rewrite (“left-to-right rewrite”) for proving an
+equation based on the Rewriting Theorem. (!ltr-rewrite t p u)should prove (t=u)if
+t→u[p].Hint: Base the search for a redex on procedure positions-and-subterms . Check
+for whether the left-hand side of the equation in pmatches a candidate redex using proce-
+dureunify (see page 100); when it does, derive the corresponding subst itution instance of p
+using the instance method. Then the ground-rewrite procedure of the preceding exercise
+can be used to complete the proof, if one exists for this redex .
+Exercise 3.5: Deﬁne a method rewrite for proving an equation based on the Single
+Rewriting Step principle. (!rewrite t p u)should prove (t=u)if either t→u[p] or
+u→t[p].
+Exercise 3.6: Deﬁne a method chain that implements equality chaining as described
+at the beginning of Section 3.2. While Athena’s chain method is quite a bit more
+powerful—it also supports implication chaining, multiste p-rewriting, and other exten-
+sions described later—the basic version that you can now imp lement in terms of rewrite
+should be able to handle all of the examples in this chapter (e xcept that examples of
+directional rewriting, introduced on page 134, would need t o be modiﬁed to use =, with
+define--> := =; define<-- := = ).
+.5 More examples of equality chaining
+Chaining equalities together to prove a new equality is one o f the most useful proof meth-
+ods in mathematics and computer science, as we shall see thro ughout this book. How-
+ever, proving equations like 2 +2=4 provides underwhelming evidence for this method’s
+importance, so let’s move on to examples that are a little mor e substantial.
+
+fpmics 2015/12/8 11:38 Page 130 #152
+130 CHAPTER 3. PROVING EQUALITIES
+In preparation, we note a couple of more general properties o fPlus. It will be convenient
+to deﬁne from the outset a few variables of sort Nso that we don’t have to keep typing
+question marks:
+define [x y z n m k] := [?x:N ?y:N ?z:N ?n:N ?m:N ?k:N]
+Variables are regular denotable values, so we can now use the se names to refer to the
+corresponding variables:
+> (x Plus S y)
+Term: (Plus ?x:N
+(S ?y:N))
+We can even use the deﬁned names as arguments to quantiﬁers:
+> (forall n m . n Plus m = m Plus n)
+Sentence: (forall ?n:N
+(forall ?m:N
+(= (Plus ?n:N ?m:N)
+(Plus ?m:N ?n:N))))
+We begin with the following property:
+define left-zero := (forall n . zero + n = n)
+which differs from right-zero in thatzero appears as the ﬁrst input to Plus rather than the
+second.
+Exercise 3.7: Although the chain method alone is inadequate to prove left-zero (we’ll
+later see exactly why this is so), chain can prove instances of it, with speciﬁc ground term
+values substituted for ?n. Prove each of the following equations using chain , together with
+one or both of right-zero andright-nonzero :
+(zero + zero = zero)
+(zero + S zero = S zero)
+(zero + S S zero = S S zero)
+Later in the chapter we will come back and prove left-zero , but for now, we assert it into
+the assumption base (treating it like an axiom):
+assert left-zero
+Similarly,
+
+fpmics 2015/12/8 11:38 Page 131 #153
+3.5. MORE EXAMPLES OF EQUALITY CHAINING 131
+assert left-nonzero := (forall m n . (S n) + m = S (n + m))
+Although there’s quite a bit more to say and prove about Plus, let’s continue on by
+introducing the multiplication function Times that takes two natural numbers as inputs and
+returns their product. First, the syntax:
+declare Times: [N N] -> N [*]
+Here, we have overloaded the symbol *to meanTimes when applied to Narguments. Next,
+the semantics:
+assert Times-zero := (forall x . x * zero = zero)
+assert Times-nonzero := (forall x y . x * S y = x * y + x)
+If we read (Sn)asn+1, the second axiom just says
+x·(y+1)=x·y+x.
+Note that *has a built-in precedence greater than that of +, so that, for example, (x*y+z)
+is parsed as ((x*y) + z). Let’s also introduce a name oneand give its meaning with an
+equation:
+declare one: N
+assert one-definition := (one = S zero)
+The proof of the following property:
+define Times-right-one := (forall x . x * one = x)
+provides another simple illustration of equality chaining :
+conclude Times-right-one
+pick-any x:N
+  (!chain
+  [(x * one)
+  = (x * S zero) [one-definition]
+  = (x * zero + x) [Times-nonzero]
+  = (zero + x) [Times-zero]
+  = x [left-zero]])
+  The main difference from the previous examples is that the eq ualities involved are not just
+  between ground terms; the terms include the (fresh) variabl e denoted by x, which represents
+  an arbitrary value of sort N, as indicated by the way it is introduced with Athena’s pick-any
+  proof step.
+
+fpmics 2015/12/8 11:38 Page 132 #154
+132 CHAPTER 3. PROVING EQUALITIES
+Exercise 3.8: How isTimes-right-one related to right-zero ?
+Here is one more property of Times , which for the moment we’ll treat as an axiom by
+asserting it into Athena’s assumption base:
+assert Times-associative := (forall x y z . (x * y) * z = x * (y * z))
+As a ﬁnal bit of preparation for more substantial examples of equational proof, let us
+deﬁne an exponentiation function, **. We set the precedence of **higher than that of *,
+which is predeﬁned to be 300.
+declare **: [N N] -> N [310]
+For semantics, we write:
+assert Power-right-zero := (forall x . x ** zero = one)
+assert Power-right-nonzero := (forall x n . x ** S n = x * x ** n)
+.6 A more substantial proof example
+Now recall the following result from elementary algebra:
+define Power-Square-theorem := (forall n x . (x * x) ** n = x ** (n + n))
+Before attempting to prove a new sentence like this, it’s a go od idea to write down a few
+speciﬁc instances of it to convince ourselves that it is vali d at least in those cases. For this
+theorem, instantiating only the variable nfor a few small values yields
+(forall x . (x * x) ** zero = x ** (zero + zero))
+(forall x . (x * x) ** S zero = x ** (S zero + S zero))
+(forall x . (x * x) ** S S zero = x ** (S S zero + S S zero))
+(forall x . (x * x) ** S S S zero = x ** (S S S zero + S S S zero))
+...
+While we could also try instantiating xso that we could check the resulting equations just
+with calculation, a better strategy is to bring proofs into p lay. Thus, before trying to prove
+Power-Square-theorem in its most general form, let’s see if we can prove it for some o f the
+above cases. For ?n=zero, the proof is simple:
+conclude Power-zero-case :=
+(forall x . (x * x) ** zero = x ** (zero + zero))
+pick-any x:N
+  (!chain [((x * x) ** zero)
+
+fpmics 2015/12/8 11:38 Page 133 #155
+3.6. A MORE SUBSTANTIAL PROOF EXAMPLE 133
+= one [Power-right-zero]
+= (x ** zero) [Power-right-zero]
+= (x ** (zero + zero)) [right-zero]])
+For?n=(S zero) , ﬁrst consider the following proof:
+conclude Power-one-case :=
+(forall x . (x * x) ** S zero = x ** (S zero + S zero))
+pick-any x:N
+  (!combine-equations
+  (!chain
+  [((x * x) ** S zero)
+  = ((x * x) * (x * x) ** zero) [Power-right-nonzero]
+  = ((x * x) * one) [Power-right-zero]
+  = (x * x) [Times-right-one]])
+  (!chain
+  [(x ** (S zero + S zero))
+  = (x ** (S (S zero + zero))) [right-nonzero]
+  = (x ** (S S zero)) [right-zero]
+  = (x * (x ** S zero)) [Power-right-nonzero]
+  = (x * (x * (x ** zero))) [Power-right-nonzero]
+  = (x * x * one) [Power-right-zero]
+  = (x * x) [Times-right-one]]))
+  The structure of this proof, combining twoapplications of the chain method, illustrates
+  a frequently useful variation of the equality chaining proo f technique. Instead of a single
+  chain of equations, we ﬁrst write a chain in which we start wit h the left-hand side of the
+  equation we want to prove, at each step using some axiom or oth er equation in a left-to-
+  right direction. That is, we match the equation’s left-hand side t o some subterm of the
+  current term, replacing it with the right hand side. Then we w ork in the same manner
+  starting with the right hand side, again usually using axiom s and other equations left-to-
+  right. Diagrammatically:
+  t0
+  ❫
+  t1
+  ❫
+  ❫
+  tn=um✢✢u1✢u0
+  If we can rewrite each side of the equation we are trying to pro ve down to the exactly
+  same term, then we can combine the two chain conclusions to ob tain the proof; the Athena
+
+fpmics 2015/12/8 11:38 Page 134 #156
+134 CHAPTER 3. PROVING EQUALITIES
+methodcombine-equations does just that:
+(!combine-equations ( t0=tn) (u0=um))
+proves(t0=u0)when both (t0=tn)and(u0=um)are in the assumption base and tnand
+umare identical terms.
+A variation in the form of the chain method allows the direction of rewriting to be
+indicated: Instead of an equality symbol between two terms, either-->or<--can be used.
+If-->is used, chain only attempts to rewrite left-to-right, i.e., ti→ti+1; and if <--is
+used, it only attempts to rewrite right-to-left: ( ti+1→ti). If=is speciﬁed, chain ﬁrst tries
+left-to-right; and if that fails, it then tries right-to-le ft.
+Note that in right-to-left rewriting, as deﬁned here, it is notthe equation within pi, say
+Li=Ri, that is reversed, which must be avoided since there might be variables in Lithat
+do not occur in Ri. (Recall the requirement that the variables of the right han d side of the
+equation must be a subset of those of the left.)
+For example, in the above proof of Power-one-case every equality symbol could be
+replaced by -->, and the proof of Power-zero-case could be written
+conclude (forall x . (x * x) ** zero = x ** (zero + zero))
+pick-any x:N
+  (!chain
+  [((x * x) ** zero)
+  --> one [Power-right-zero]
+  <-- (x ** zero) [Power-right-zero]
+  <-- (x ** (zero + zero)) [right-zero]])
+  Thus, in the original Power-zero-case proof, where =was used, chain tries to do the second
+  step using Power-right-zero left-to-right and fails, but it succeeds in using it right-t o-left,
+  and similarly for the third step.
+  A fair question at this point is, do we really need combine-equations ? Why not just
+  always write a single application of chain : for example, instead of
+  (!combine-equations
+  (!chain [ t0--> t1[p1] --> t2[p2] --> ···--> tn[pn]])
+  (!chain [ u0--> u1[q1] --> u2[q2] --> ···--> un[qm]]))
+  we could write a single chain in which we reverse the order of t he second sequence of
+  chain links:
+  (!chain [ t0--> t1[p1] --> t2[p2] --> ···--> tn[pn]
+  <-- um−1[qm] <-- ···<-- u1[q2] <-- u0[q1]])
+  Though possible, it is often more difﬁcult to ﬁnd the correct sequence of right-to-left proof
+  steps to get from the term tn(which must be identical to um) to the desired term u0than
+  it is to ﬁnd the separate chains working down to a common term u sing only (or primarily)
+
+fpmics 2015/12/8 11:38 Page 135 #157
+3.7. A BETTER PROOF 135
+left-to-right rewrites. In this book, we have a more importa nt goal than succinctness: we
+want to illustrate and promote good strategies for ﬁnding proofs and writing them down in
+a clear, easy-to-understand style. The strategy of rewriti ng both sides to a common term
+often leads to a successful proof more easily than trying to c onstruct one as a single chain
+of rewrites, and the proof is usually easier for someone else to read and understand.
+Thus, we will usually avoid writing equality proofs as a sing le chain, restricting it to
+those cases where (1) the proof can be done just with left-to- right rewriting anyway, or (2)
+only a few right-to-left rewriting steps are used, and they a re only applied to fairly simple
+terms, as in our proof above of the ?n=zero case. Otherwise, we will tend to write two
+chains and combine them, as in the ?n=(S zero) case.
+Exercise 3.9: Modify the given proof of the Power-one-case case to use a single applica-
+tion ofchain . Indicate the direction of each rewrite with -->or<--instead of just using =
+signs. Verify that the resulting proof works in an Athena ses sion.
+3.7 A better proof
+The proof given for Power-one-case , whether written with one chain application or two, is
+longer than it needs to be. It can be shortened by taking advan tage of the Power-zero-case
+theorem, as follows:
+conclude (forall x . (x * x) ** S zero = x ** (S zero + S zero))
+pick-any x:N
+  (!combine-equations
+  (!chain
+  [((x * x) ** S zero)
+  --> ((x * x) * ((x * x) ** zero)) [Power-right-nonzero]
+  --> ((x * x) * (x ** (zero + zero))) [Power-zero-case]
+  --> (x * x * x ** (zero + zero)) [Times-associative]])
+  (!chain
+  [(x ** (S zero + S zero))
+  --> (x ** (S (S zero + zero))) [right-nonzero]
+  --> (x ** (S (S (zero + zero)))) [left-nonzero]
+  --> (x * (x ** (S (zero + zero)))) [Power-right-nonzero]
+  --> (x * x * x ** (zero + zero)) [Power-right-nonzero]]))
+  With this change in proof approach, this proof is not just sho rter than the previous one;
+  it has a structure that can be generalized to prove the theore m for anyvalue of ?n. To see
+  this, note that the zero value that appears in the (S zero) value in the theorem itself and
+  throughout the proof never plays any role in the proof . (For example, neither right-zero ,
+  Times-zero-axiom , norPower-right-zero is ever used. We can take advantage of this
+  observation most easily if we encapsulate the proof in a method , as follows:
+
+fpmics 2015/12/8 11:38 Page 136 #158
+136 CHAPTER 3. PROVING EQUALITIES
+define Power-Square-step :=
+method (n)
+  conclude (forall x . (x * x) ** S n = x ** (S n + S n))
+  pick-any x:N
+    let{previous-result := (forall x . (x * x) ** n = x ** (n + n))}
+      (!combine-equations
+      (!chain [((x * x) ** S n)
+      --> ((x * x) * ((x * x) ** n)) [Power-right-nonzero]
+      --> ((x * x) * (x ** (n + n))) [previous-result]
+      --> (x * x * (x ** (n + n))) [Times-associative]])
+      (!chain [(x ** (S n + S n))
+      --> (x ** (S (S n + n))) [right-nonzero]
+      --> (x ** (S S (n + n))) [left-nonzero]
+      --> (x * (x ** (S (n + n)))) [Power-right-nonzero]
+      --> (x * x * (x ** (n + n))) [Power-right-nonzero]]))
+      This method deﬁnition does not itself prove a theorem, but a c all of it with a speciﬁc
+      natural number value of nproves our original theorem for the case (?n = S n) —provided
+      the original theorem for the case (?n = n) has already been proved and is therefore in the
+      assumption base , which is required for the appeal to previous-result in the body of the
+      method to succeed. Hence the name, Power-Square-step , indicating stepping the property
+        from one natural number to the next. Let’s also encapsulate t he previously given proof of
+        the(?n=zero) case in a method named Power-Square-base (which needs no argument):
+        define Power-Square-base :=
+        method ()
+          conclude (forall x . (x * x) ** zero = x ** (zero + zero))
+          pick-any x:N
+            (!chain
+            [((x * x) ** zero)
+            = one [Power-right-zero]
+            = (x ** zero) [Power-right-zero]
+            = (x ** (zero + zero)) [right-zero]])
+            Then the following sequence of calls could be extended to obt ain the proof for any value
+            ofn:
+            (!Power-Square-base)
+            (!Power-Square-step zero)
+            (!Power-Square-step (S zero))
+            (!Power-Square-step (S S zero))
+            (!Power-Square-step (S S S zero))
+            ...
+            Exercise 3.10: Enter the deﬁnitions of the Power-base andPower-step methods
+            in an Athena session and verify that the above sequence of cal ls does prove
+
+fpmics 2015/12/8 11:38 Page 137 #159
+3.8. THE PRINCIPLE OF MATHEMATICAL INDUCTION 137
+Power-Square-theorem for(?n=zero) ,(S zero) ,(S S zero) ,(S S S zero) and
+(S S S S zero) .
+3.8 The principle of mathematical induction
+At this point we have succeeded in proving a few special cases ofPower-Square-theorem ,
+and we can even imagine repeatedly invoking Power-Square-step to eventually obtain the
+proof for anygiven value of ?n. In Athena we could even program an iterative or recursive
+proof method that carries out all the proofs up to the desired natural number, which in
+fact we’ll do later, mainly as an illustration of Athena prog ramming language facilities.
+While that is probably enough to convince us of the validity o fPower-Square-theorem ,8
+we still don’t have a formal proof of it it in its general form w ith?nuniversally quantiﬁed.
+But we do now have the main ingredients of a proof, namely our Power-Square-base and
+Power-Square-step methods. To complete the job we now invoke the fundamental pr oof
+method known as the principle of mathematical induction . As we’ll see, this principle
+doesn’t just apply to sentences about natural numbers, but t he form it takes for the natural-
+number case is one of the most important and is just what we nee d here:
+Principle 3.2: (Mathematical Induction for Natural Numbers )
+To prove (∀n.P n)where nranges over the natural numbers, it sufﬁces to prove:
+1.Basis Case :(P0)
+2.Induction Step :(∀n.P n=⇒ P n+1)
+In the Induction Step, the antecedent assumption (P n)is called the induction hypothesis .
+This Principle of Mathematical Induction is embodied in Ath ena’sby-induction proof
+construct. We can use it to prove Power-Square-theorem as follows:
+by-induction Power-Square-theorem {
+  zero => (!Power-Square-base)
+  | (S n) => (!Power-Square-step n)
+}
+The keyword by-induction is followed by the sentence to be proved, corresponding to th e
+goal
+(∀n.P n),
+followed by clauses , enclosed in curly braces and separated by |, that express the cases
+that together are sufﬁcient to complete the proof. There are usually two clauses (there can
+In Section 3.13 we’ll see another way that can help to convin ce us that a conjecture pis true without quite
+having a proof for p: thefalsify procedure.
+
+fpmics 2015/12/8 11:38 Page 138 #160
+138 CHAPTER 3. PROVING EQUALITIES
+be more), one that expresses the Basis Case, corresponding t o(P0), and the other the
+Induction Step, corresponding to
+(∀n.P n=⇒ P n+1).
+Each clause is essentially a pair consisting of a constructo r pattern πithat expresses one of
+the cases of the inductive argument, and a corresponding sub proof Di. The arrow keyword
+=>separates πifrom Di. The subproof Diwill be evaluated in the original assumption
+base augmented with all appropriate inductive hypotheses . There may be zero inductive
+hypotheses if the pattern πicorresponds to a basis case.
+The Induction Step sentence for our example can be written in Athena’s notation as
+follows:
+(forall n .
+(forall x . (x * x) ** n = x ** (n + n))
+==> (forall x . (x * x) ** S n = x ** (S n + S n)))
+If we were trying to prove this sentence from scratch, withou t the beneﬁt of by-induction ,
+we could do it with a proof along the following lines:
+pick-any n:N
+  assume induction-hypothesis := (forall x . (x * x) ** n = x ** (n + n))
+    conclude (forall x . (x * x) ** S n = x ** (S n + S n))
+    (!Power-Square-step n)
+    But with by-induction it’s not necessary to write this much detail. Essentially, A thena
+    automatically takes care of the ﬁrst three steps for you: the pick-any ,assume , andconclude
+    parts. The pick-any identiﬁers will be all and only those identiﬁers that occur a s pat-
+    tern variables in πi. Those identiﬁers will be bound to freshly generated variab les of
+    the appropriate sorts throughout the evaluation of Di, obviating the need for an explicit
+    pick-any . And the inductive hypotheses will be automatically constr ucted and inserted
+      into the assumption base for you (temporarily, just while ev aluating the subproof Di), thus
+      obviating the need for an explicit assume . So all Dineeds to do is to derive the result
+      (P n+1).
+      Exercise 3.11: Verify in an Athena session that the above proof does prove th e Induction
+      Step, and that the by-induction call shown above does prove Power-Square-theorem .
+      We expressed Proof Principle 3.2 in informal notation, writ ing, e.g., (∀n.P n)instead
+      of using Athena notation. But what exactly is property P? Perhaps the best way to think of
+      it is as a unary procedure that takes a natural number term tand produces a sentence. We
+      can deﬁne such a procedure directly in Athena, and use it to dr ive the entire workﬂow of
+      writing an inductive proof, as described in the following sc hema:
+
+fpmics 2015/12/8 11:38 Page 139 #161
+3.8. THE PRINCIPLE OF MATHEMATICAL INDUCTION 139
+# Start by defining a unary ‘‘property procedure /quotesingle.Var/quotesingle.Var:
+define (P t) := ...
+# Then use it to define a goal which says that
+# every object has this property:
+define goal := (forall n:N (P n))
+# Finally, prove the goal by induction:
+by-induction goal
+  zero => conclude (P zero)
+  (!basis-case ...)
+  | (S k) => conclude (P (S k)) # Here the assumption base contains
+  (!induction-step ...) # the inductive hypothesis (P k).
+}
+wherebasis-case andinduction-step are methods that may take any number of argu-
+ments, depending on the situation at hand. For instance, in t his particular example we
+could deﬁne the following procedure:
+define (Power-Square-property e) :=
+(forall x . (x * x) ** e = x ** (e + e))
+We can apply this simple procedure to an arbitrary term tof sortNand get back a sentence
+essentially stating that Power-Square-theorem holds for t:
+> (Power-Square-property zero)
+Sentence: (forall ?x:N
+(= (** (Times ?x:N ?x:N)
+zero)
+(** ?x:N
+(Plus zero zero))))
+> (Power-Square-property (S zero))
+Sentence: (forall ?x:N
+(= (** (Times ?x:N ?x:N)
+(S zero))
+(** ?x:N
+(Plus (S zero)
+(S zero)))))
+> (Power-Square-property ?foo)
+Sentence: (forall ?x:N
+(= (** (Times ?x:N ?x:N)
+?foo:N)
+
+fpmics 2015/12/8 11:38 Page 140 #162
+140 CHAPTER 3. PROVING EQUALITIES
+(** ?x:N
+(Plus ?foo:N ?foo:N))))
+With this procedure we could deﬁne Power-Square-theorem succinctly as:
+define Power-Square-theorem := (forall n . Power-Square-propert y n)
+This deﬁnes Power-Square-theorem simply as the sentence which says
+(Power-Square-property n) holds for every natural number n.
+By having the Power-Square-property procedure available, we could write the inductive
+proof as:
+by-induction Power-Square-theorem {
+  zero => conclude (Power-Square-property zero)
+  (!Power-Square-base)
+  | (S n) => conclude (Power-Square-property (S n))
+  (!Power-Square-step n)
+}
+AndPower-Square-step itself could be written a little more elegantly as follows:
+define Power-Square-step :=
+method (n)
+  conclude (Power-Square-property (S n))
+  pick-any x:N
+    let{induction-hypothesis := (Power-Square-property n)}
+      (!combine-equations
+      (!chain [((x * x) ** S n)
+      --> ((x * x) * ((x * x) ** n)) [Power-right-nonzero]
+      --> ((x * x) * (x ** (n + n))) [induction-hypothesis]
+      --> (x * x * (x ** (n + n))) [Times-associative]])
+      (!chain [(x ** (S n + S n))
+      --> (x ** (S (S n + n))) [right-nonzero]
+      --> (x ** (S S (n + n))) [left-nonzero]
+      --> (x * (x ** (S (n + n)))) [Power-right-nonzero]
+      --> (x * x * (x ** (n + n))) [Power-right-nonzero]]))
+      But it isn’t necessary to follow this style of deﬁning proper ty procedures for each
+      inductive proof. Nor is it necessary to deﬁne proof methods l ikePower-Square-base and
+      Power-Square-step in order to use by-induction . We can simply write out the proofs of the
+      Basis Case and Induction Step inline . For a simpler example of this, let’s take a property
+      that we deﬁned earlier in the chapter:
+      define left-zero := (forall n . zero + n = n)
+
+fpmics 2015/12/8 11:38 Page 141 #163
+3.8. THE PRINCIPLE OF MATHEMATICAL INDUCTION 141
+There we asserted it into the assumption base, but now let us p rove it, using by-induction
+and inline proofs:
+by-induction left-zero {
+  zero => conclude (zero + zero = zero)
+  (!chain [(zero + zero) --> zero [right-zero]])
+  | (S n) => conclude (zero + S n = S n)
+  let{induction-hypothesis := (zero + n = n)}
+    (!chain [(zero + S n)
+    --> (S (zero + n)) [right-nonzero]
+    --> (S n) [induction-hypothesis]])
+  }
+  The principal advantage of writing the subproofs inline lik e this is that it requires less
+  preparation than deﬁning separate methods for the subproof s. As with ordinary program-
+  ming, however, when “proof code” gets larger it may be worth t he extra trouble to encapsu-
+  late it in methods. Then the proof of the Basis Case can be test ed even before attempting to
+  write down the proof of the Induction Step. Similarly, the pr oof of the Induction Step can be
+  separately tested, either with successive applications to zero,(S zero) ,(S S zero) , etc.,
+  or in the manner shown above for the Induction Step for Power-Square-theorem .9Similar
+  remarks apply to deﬁning procedures like Power-Square-property ; while not necessary,
+  they are often useful in making our proofs more structured.
+  .8.1 Different ways of understanding mathematical induct ion
+  With the above simple proof of left-zero at hand, let’s return to a point we alluded to
+  at the beginning of the chapter, namely that the only natural number values are those that
+  can be obtained by starting with zero and applying Ssome number of times. One way to
+  understand the Principle of Mathematical Induction for Nat ural Numbers is that it says
+  precisely the same thing. Why? Because:
+  . for any value nthat is obtained by starting with zero and applying Ssome number of
+  times, we can prove (P n)by starting with the Basis Case and applying the Induction
+  Step the same number of times, and
+  . the principle says that just proving the Basis Case and the Induction Step is sufﬁcient
+  to prove Pfor all natural numbers.
+  As another aid to intuition about mathematical induction pr inciples, consider what would
+  happen if we posited a natural number value called, say, unnatural , that we assume is not
+  equal to any of the values generated by zero andS. Consider then, once again, left-zero .
+  Is it still valid? We proved it, but our proof, using the Princ iple of Mathematical Induction,
+  Another, more general approach to testing partial proofs w ill be introduced in Section 4.7.
+
+fpmics 2015/12/8 11:38 Page 142 #164
+142 CHAPTER 3. PROVING EQUALITIES
+did not consider the possibility there could be natural numb ers other than those that could
+be generated from zero andS. And, without further information, we cannot conclude
+(zero + unnatural = unnatural)
+so the property isn’t necessarily valid. We might in fact hav e(zero + unnatural = zero)
+or(zero + unnatural = one) , or any other value besides unnatural , and that would inval-
+idateleft-zero .
+Exercise 3.12: Joe Certain claims that he can prove
+(zero + unnatural = unnatural)
+using the fact that Plus satisﬁes a commutative law:
+(forall ?m ?n . ?m + ?n = ?n + ?m)
+Thus:
+(!chain
+[(zero + unnatural)
+--> (unnatural + zero) [Plus-commutative]
+--> unnatural [right-zero]])
+What’s wrong with Joe’s “proof”? After all, one canprovePlus-commutative using math-
+ematical induction; see Exercise 3.21. In answering, assum e thatunnatural has somehow
+been declared, and in such a way that we don’t get a sort-check ing error with any of the
+terms in the above proof (i.e., your answer shouldn’t just be thatunnatural is an undeﬁned
+identiﬁer or there’s a sort error).
+Here is still another angle on mathematical induction, this time from the point of view
+of deﬁning datatypes like N. Recall that in Athena, Nis introduced with the following dec-
+laration:
+datatype N := zero | (S N)
+which can be read as “Sort Nconsists of all values, and only those values, recursively
+generated by the constructors zero andS.” The values in question are called canonical
+terms . We will have more to say about these in section 3.10, but in ge neral, a canonical
+term is deﬁned as a term that contains only constructors and/ or numerals of sort Intor
+Real and/or meta-identiﬁer constants of the form ’I.
+It is this datatype declaration on which by-induction ’s requirement for proof clauses
+is based: when the ﬁrst universally quantiﬁed variable of it s ﬁrst argument is of sort N,
+by-induction requires there be subsequent clauses that “cover” all possi ble values that can
+  be generated using constructors zero andS.
+
+fpmics 2015/12/8 11:38 Page 143 #165
+3.9. LIST EQUATIONS 143
+Exercise 3.13: In Athena, experiment with a declaration of a datatype N/quotesingle.Varthat differs from
+Nin having an additional value, unnatural :
+datatype N/quotesingle.Var:= zero /quotesingle.Var| unnatural | (S 'N)
+Which of the proofs in this chapter (to this point) would stil l work if Nis replaced by N/quotesingle.Var,
+zero byzero/quotesingle.Var, andSbyS/quotesingle.Var?
+3.9 List equations
+We now turn to a different class of equations, ones involving listsrather than natural num-
+bers. We will introduce lists as a data type with two construc tors,niland::, which are
+analogous to the natural number constructors zero andS, respectively. (The ::construc-
+tor is adopted from a similar usage in ML and is pronounced “co ns” in the tradition of
+lists deﬁned in Lisp, Scheme, and other functional programm ing languages.) We will see
+how useful functions on lists, such as join andreverse , can be precisely deﬁned with dec-
+larations and axioms, and how further properties can be prov ed from the axioms. Since
+the axioms and additional properties are all stated as unive rsally quantiﬁed equations, like
+those concerning natural numbers, we already have at hand th e necessary proof methods—
+equality chaining and induction. We will see that equation c haining works for lists exactly
+as for natural numbers, and induction just requires a minor a djustment to account for the
+difference in constructors.
+To begin, we introduce lists in Athena with a datatype declaration, ﬁrst in a form in
+which the list elements are natural numbers:
+datatype N-List := nil | (:: N N-List)
+Thus, the constructor niltakes no arguments and the constructor ::takes two: a natural
+number, and, recursively, an N-List . Here are a few ground terms of this sort:
+nil
+(one :: nil)
+(zero :: nil)
+(zero :: S zero :: S S zero :: S S S zero :: nil)
+(one :: zero :: nil)
+(one :: zero :: S one :: nil)
+We interpret nilas the empty list (that contains no elements) and (x::L)as the list whose
+ﬁrst element is xand whose remaining elements, if any, are those of list L. (Borrowing
+from Lisp terminology, we often say that (x::L)is the result of “consing” xonto L.) So
+the last example above has oneas its ﬁrst element, zero as its second element, and (S one)
+as its third and ﬁnal element.
+
+fpmics 2015/12/8 11:38 Page 144 #166
+144 CHAPTER 3. PROVING EQUALITIES
+This interpretation is reﬂected in the way we deﬁne the ﬁrst l ist function we will study,
+join, for concatenating two lists. By concatenation we mean that the result of (L1 join L2)
+is a list that begins with the elements of list L1, in the same order as in L1, followed by the
+elements of L2, in the same order as in L2.
+define [L L'L1 L2 L3] :=
+[?L:N-List ?L /quotesingle.Var:N-List ?L1:N-List ?L2:N-List ?L3:N-List]
+declare join: [N-List N-List] -> N-List [++]
+We deﬁned some handy variable names to avoid having to type va riables in their fully
+explicit form (preceded by question marks) in what follows, and we also introduced ++as
+an alias for the function symbol join.
+We want ::to bind tighter than ++(to make sure that (x::L1 ++ L2) is understood as
+the join of x::L1 andL2rather than the result of consing xonto the join of L1andL2), so
+we give a higher precedence to ::with the following directive:
+set-precedence :: 150
+We now introduce two axioms that deﬁne concatenation:
+assert left-empty := (forall L . nil ++ L = L)
+assert left-nonempty := (forall x L1 L2 . x::L1 ++ L2 = x::(L1 ++ L2))
+With the function deﬁnitions we’ve seen previously for natu ral number functions such as
+Plus andTimes , we were able to rely on a lot of previous experience. Lists, b y contrast, are
+likely not as familiar, so let’s make sure we understand how t hese axioms deﬁne join. The
+ﬁrst axiom states that the list produced by (nil ++ L) is identical to L.
+The second axiom can be read as follows: by consing xto a listL1and then joining the
+result with a list L2we get the same list that we would get by ﬁrst joining L1andL2and
+then consing xto the result. Figure 3.5 illustrates this relation. The lef t part of the diagram
+depicts the computation (x::L1++L2)and the right part (x::(L1++L2)). We see that
+the results are identical.
+Besides careful reading of the axioms and drawing such diagr ams, it’s also helpful to
+use the axioms to compute the function for a few ground term in puts, such as
+(one::zero::nil ++ one::zero::S one::nil)
+We can reduce such a ground term to a ground term involving onl y::andnilby applying
+thejoin axioms in a chain of equalities:
+> (!chain [(one::zero::nil ++ one::zero::S one::nil)
+= (one::(zero::nil ++ one::zero::S one::nil)) [left-none mpty]
+= (one::zero::(nil ++ one::zero::S one::nil)) [left-none mpty]
+= (one::zero::one::zero::S one::nil) [left-empty]])
+
+fpmics 2015/12/8 11:38 Page 145 #167
+3.9. LIST EQUATIONS 145
+x L1
+::
+xL1 L2
+join
+xL1L2L1 L2
+join
+L1L2 x
+::
+xL1L2
+Figure 3.5
+Illustration of the second axiom for list concatenation.
+to which Athena responds:
+Theorem : (= (join (:: one
+(:: zero nil))
+(:: one
+(:: zero
+(:: (S one)
+nil))))
+(:: one
+(:: zero
+(:: one
+(:: zero
+(:: (S one)
+nil))))))
+Carrying out such equality proofs and examining the results provides additional evidence
+that the axioms for join give it the meaning we informally prescribed for it. (A more
+direct computational way to obtain such evidence—without c onstructing proofs—will be
+introduced in Section 3.10.) But still another way to bolste r our conﬁdence is to state, as
+conjectures, more properties that we intuitively expect a l ist concatenation function to have.
+The simplest such property is one like the ﬁrst axiom, but wit hnilas the second argument:
+define right-empty := (forall L . L ++ nil = L)
+
+fpmics 2015/12/8 11:38 Page 146 #168
+146 CHAPTER 3. PROVING EQUALITIES
+Note the analogy with the natural number function Plus, withnilnow playing the role of
+zero: we had an axiom
+assertright-zero := (forall n . n + zero = n)
+and we later stated and proved
+defineleft-zero := (forall n . zero + n = n)
+If we can prove right-empty we will have completed the analogy (except that our list
+axiom and property have nilin the ﬁrst and second arguments of join, respectively, the
+reverse of what we had with zero forPlus).
+We cannot prove right-empty just by equality chaining, since neither of our axioms can
+be used to rewrite one side of its equation to the other. But as we did with Plus, let’s see
+what happens with a few ground term inputs to join when its second argument is nil. For
+example:
+(!chain [(one ::nil ++ nil)
+= (one::(nil ++ nil)) [left-nonempty]
+= (one::nil) [left-empty]])
+(!chain [(one::zero::nil ++ nil)
+= (one::(zero::nil ++ nil)) [left-nonempty]
+= (one::zero::(nil ++ nil)) [left-nonempty]
+= (one::zero::nil) [left-empty]])
+(!chain [(S one::one::zero::nil ++ nil)
+= (S one::(one::zero::nil ++ nil)) [left-nonempty]
+= (S one::one::(zero::nil ++ nil)) [left-nonempty]
+= (S one::one::zero::(nil ++ nil)) [left-nonempty]
+= (S one::one::zero::nil) [left-empty]])
+In each case, we verify that the result computed by join is the same as its ﬁrst argument,
+and we strongly suspect this must be true for lists of any leng th. But if we continued the
+pattern above, then to verify right-empty for a list of length nwe would need a calculation
+of length n. We can do better by noting that we can use the result for lengt hnin the proof
+for length n+1. The following proof method deﬁnitions and executions are analogous to
+those of Power-base andPower-step in Section 3.7, but are a little more complicated due
+to the extra argument for the list element in the ::constructor.
+define (join-nil-base) :=
+conclude (nil ++ nil = nil)
+(!chain [(nil ++ nil) = nil [left-empty]])
+define (join-nil-step IH x L) :=
+conclude (x::L ++ nil = x::L)
+(!chain [(x::L ++ nil)
+= (x::(L ++ nil)) [left-nonempty]
+
+fpmics 2015/12/8 11:38 Page 147 #169
+3.9. LIST EQUATIONS 147
+= (x :: L) [IH]])
+Now, for example,
+>define prop0 := (!join-nil-base)
+Theorem : (= (join nil nil)
+nil)
+Sentence prop0 defined.
+>define prop1 :=
+pick-any x
+  (!join-nil-step prop0 x nil)
+Theorem : (forall ?x:N
+(= (join (:: ?x:N nil)
+nil)
+(:: ?x:N nil)))
+Sentence prop1 defined.
+>define prop2 :=
+pick-any x:N y:N
+  (!join-nil-step prop1 x (y::nil))
+Theorem : (forall ?x:N
+(forall ?y:N
+(= (join (:: ?x:N
+(:: ?y:N nil))
+nil)
+(:: ?x:N
+(:: ?y:N nil)))))
+Sentence prop2 defined.
+>define prop3 :=
+pick-any x:N y:N z:N
+  (!join-nil-step prop2 x (y::z::nil))
+Theorem : (forall ?x:N
+(forall ?y:N
+(forall ?z:N
+(= (join (:: ?x:N
+(:: ?y:N
+(:: ?z:N nil)))
+nil)
+(:: ?x:N
+(:: ?y:N
+(:: ?z:N nil)))))))
+
+fpmics 2015/12/8 11:38 Page 148 #170
+148 CHAPTER 3. PROVING EQUALITIES
+Sentence prop3 defined.
+The pattern of these proofs suggests that we could prove right-empty in full generality
+by mathematical induction, perhaps by reformulating the pr operty in terms of the length
+of the ﬁrst-argument list, which is a natural number. In fact , however, we need no such
+reformulation; we can prove it directly. In Athena, the foll owing proof works:
+>by-induction right-empty {
+nil => (!join-nil-base)
+| (h::t) => let{induction-hypothesis := (t ++ nil = t)}
+(!join-nil-step induction-hypothesis h t)
+}
+Theorem : (forall ?L:N-List
+(= (join ?L:N-List nil)
+?L:N-List))
+or, writing the proofs of the niland::cases inline:
+by-induction right-empty {
+  nil => (!chain [(nil ++ nil) = nil [left-empty]])
+  | (Las(h::t)) =>
+  let{induction-hypothesis := (t ++ nil = t)}
+    conclude (h::t ++ nil = h::t)
+    (!chain [(h::t ++ nil)
+    = (h :: (t ++ nil)) [left-nonempty]
+    = L [induction-hypothesis]])
+  }
+Theorem : (forall ?L:N-List
+(= (join ?L:N-List nil)
+?L:N-List))
+The way that by-induction works for lists is based on the following:
+Principle 3.3: (Mathematical Induction for Lists of Natural Numbers )
+To prove (∀L.P L)where Lranges over lists of natural numbers, it sufﬁces to prove:
+1.Basis Case :(Pnil)
+2.Induction Step :(∀L.P L=⇒ ∀ x.P x::L)
+In the Induction Step, the antecedent assumption (P L)is called the induction hypothesis ,
+andxranges over natural numbers.
+So we have seen two ﬂavors of mathematical induction, for nat ural numbers and for lists
+of natural numbers. Both are supported in Athena by by-induction . The way by-induction
+adapts to different datatypes is through the information su pplied in datatype declarations
+
+fpmics 2015/12/8 11:38 Page 149 #171
+3.9. LIST EQUATIONS 149
+about constructors of the sort being declared. Thus, from
+datatype N-List := nil | (:: N N-List)
+by-induction deduces that it must expect clauses corresponding to two cas es, one corre-
+  sponding to niland one corresponding to ::. Thenilcase is called a basis case because
+  nilis a constructor that takes no argument of the sort being decl ared; there would be more
+  than one basis case if there were more such constructors. The ::case, since ::does take
+  an argument of the sort being declared, is called an induction step , andby-induction tem-
+  porarily assumes an appropriate induction hypothesis for t he duration of the proof given in
+  that clause.
+  Looking back at sort N, we see how the zero andSconstructors introduced in
+  datatype N := zero | (S N)
+  determine by-induction ’s operation in that case. In general, how its operation is de termined
+  by an arbitrary datatype declaration is described in Appendix B.3.
+  Exercise 3.14: Reformulate the inductive proof of right-empty in the property-procedure
+  style described in Section 3.8.
+  .9.1 Polymorphic datatypes
+  Before going on to further examples of proofs about list func tions, it should be noted that
+  none of the axioms, sample executions, or proofs so far have d epended in any way on the
+  sort of the list elements. In place of N, we could have used any sort, and everything other
+  than the actual values in ground terms would be the same. So fo r example if we deﬁned
+  datatype Boolean-List := nilb | (consb Boolean Boolean-List)
+  then we could repeat all of the development by replacing any Nground values with true
+  orfalse ; nothing else need change. But such repetition is something we should avoid if
+  possible; writing proofs is hard enough without having to re peat them over and over again
+  for different sorts! Fortunately, we can avoid it by issuing declarations and deﬁnitions with
+  sort parameters , such as:
+  datatype (List S) := nil | (:: S (List S))
+  set-precedence :: 150
+  and by deﬁning functions like join in terms of such parameterized sorts:
+  declare join: (S) [(List S) (List S)] -> (List S) [++]
+  assert left-empty := (forall L . nil ++ L = L)
+  assert left-nonempty := (forall x L1 L2 . x::L1 ++ L2 = x::(L1 ++ L2))
+
+fpmics 2015/12/8 11:38 Page 150 #172
+150 CHAPTER 3. PROVING EQUALITIES
+As a convenience, we deﬁne a few general (polymorphic) varia ble names:
+define [x y z x1 x2 h h1 h2] := [?x ?y ?z ?x1 ?x2 ?h ?h1 ?h2]
+and some speciﬁcally for polymorphic lists:
+define [L L'L1 L2 L3 t t1 t2] :=
+[?L:(List 'S1) ?L/quotesingle.Var:(List 'S2) ?L1:(List 'S3) ?L2:(List 'S4)
+?L3:(List 'S5) ?t:(List 'S6) ?t1:(List 'S7) ?t2:(List 'S8)]
+All of the proofs we previously did with N-List values could now be redone using (List N)
+values instead; e.g., one of the proofs on page 144:
+let{L := (one::zero::S one::nil)}
+  (!chain [(one::zero::nil ++ L)
+  = (one::(zero::nil ++ L)) [left-nonempty]
+  = (one::zero::(nil ++ L)) [left-nonempty]
+  = (one::zero::L) [left-empty]])
+  or the proof on page 148:
+  define right-empty := (forall L . L ++ nil = L)
+  by-induction right-empty {
+    nil => (!chain [(nil ++ nil) = nil [left-empty]])
+    | (las(h::t)) =>
+    let{induction-hypothesis := (t ++ nil = t)}
+      conclude (h::t ++ nil = h::t)
+      (!chain [(h::t ++ nil)
+      = (h :: (t ++ nil)) [left-nonempty]
+      = l [induction-hypothesis]])
+    }
+Theorem : (forall ?L:(List 'S)
+(= (join ?L:(List 'S)
+nil:(List 'S))
+?L:(List 'S)))
+The ﬁrst of these proofs involves ground terms of the list ele ment sort ( zero,one, etc.),
+and so would have to redone for lists of another sort ( Boolean , say, with true andfalse
+elements). But the second proof contains no occurrence of gr ound term elements, so it
+applies without change to (List Boolean) or(List S) for any sort S: once the theorem it
+proves is in the assumption base, the theorem can be used with (List S) values for any
+sortS. The same will be true for all of the example proofs and exerci ses that follow.
+For lists of values from a polymorphic sort S, we have the following more general math-
+ematical induction principle.
+Principle 3.4: (Mathematical Induction for Lists over sort S)
+
+fpmics 2015/12/8 11:38 Page 151 #173
+3.9. LIST EQUATIONS 151
+To prove (∀L.P L), where Lranges over lists of sort S, it sufﬁces to prove:
+1.Basis Case :(Pnil)
+2.Induction Step :(∀L.P L=⇒ ∀ x.P x::L)
+As before, the antecedent assumption (P L)in the Induction Step is called the induction
+hypothesis ; the variable xranges over sort S.
+Exercise 3.15: Our axioms for join deﬁne equations for terms in which niland::terms
+occur in the ﬁrst argument to join, and we proved right-empty for the case of nilin the
+second argument. Write an equation for the case of a ::term in the second argument. (An
+answer is given in Exercise 3.31, which asks you to prove the g iven equation.)
+By now we have seen several cases where a binary function obey s one or more axioms,
+such as identity element axioms ( zero is an identity element for Plus,oneis forTimes ,
+and now, nilis forjoin), and associative and commutative axioms (which of course w e
+are familiar with for both Plus andTimes for natural numbers, but which exercises in
+Section 3.17 ask you to conﬁrm with proofs). Such basic axiom s are so frequently useful in
+reasoning about speciﬁc applications of binary functions t hat when presented with a new
+binary function it is a good strategy to determine whether th ey hold for it or not. So let’s
+next consider whether our list join function is associative:
+define join-associative :=
+(forall L0 L1 L2 . (L0 ++ L1) ++ L2 = L0 ++ (L1 ++ L2))
+Intuitively, this relation should hold, as Figure 3.6 sugge sts. Note the similarity of this
+diagram to the one on page 767 depicting a relation between join and::, which can be
+regarded as a “mixed” associativity relation.
+In fact in the following proof of join-associative by induction we make several uses
+of that same relation, left-nonempty , between ++and:::
+by-induction join-associative {
+  nil =>
+  pick-any L1 L2
+    (!chain [((nil ++ L1) ++ L2)
+    --> (L1 ++ L2) [left-empty]
+    <-- (nil ++ (L1 ++ L2)) [left-empty]])
+    | (h::t) =>
+    let{induction-hypothesis :=
+      (forall L1 L2 . (t ++ L1) ++ L2 = t ++ (L1 ++ L2))}
+      conclude (forall L1 L2 . (h::t ++ L1) ++ L2 = h::t ++ (L1 ++ L2))
+      pick-any L1 L2
+        (!chain
+        [((h::t ++ L1) ++ L2)
+        --> ((h::(t ++ L1)) ++ L2) [left-nonempty]
+        --> (h::((t ++ L1) ++ L2)) [left-nonempty]
+        --> (h::(t ++ (L1 ++ L2))) [induction-hypothesis]
+
+fpmics 2015/12/8 11:38 Page 152 #174
+152 CHAPTER 3. PROVING EQUALITIES
+<-- (h::t ++ (L1 ++ L2)) [left-nonempty]])
+}
+We give additional examples of proofs of list theorems in Sec tion 3.11, but we ﬁrst step
+back to consider what we can do to assure that the axioms we are basing our proofs on are
+the proper starting points. The main tool we recommend for th is purpose is evaluation of
+ground terms , as discussed in the next section.
+L0 L1
+join
+L0L1 L2
+join
+L0L1L2L1 L2
+join
+L1L2 L0
+join
+L0L1L2
+Figure 3.6
+Illustration of the associativity of list concatenation.
+3.10 Evaluation of ground terms
+How do we know that the two axioms we have given for Plus succeed in capturing our
+intentions, namely, that they characterize Plus as the binary addition function on the natural
+numbers? Admittedly, these axioms are simple and it is argua ble that nothing more than
+a moment’s reﬂection is needed to grasp their meaning. Moreo ver, we are able to prove
+various results about Plus which we know to be true of the addition function, such as
+commutativity, associativity, etc. Nevertheless, it woul d be reassuring to obtain some more
+concrete evidence that the axioms indeed have the appropria te effect, e.g., that they ensure
+that applying Plus to 3 and 2 yields 5, applying it to 1 and 6 yields 7, and so on. In o ther
+
+fpmics 2015/12/8 11:38 Page 153 #175
+3.10. EV ALUATION OF GROUND TERMS 153
+words, it would be reassuring to be able to “test” the axioms o n various “inputs.” That
+is especially true right after we ﬁrst write down some equati onal axioms, before we have
+managed to derive any expected results from them.
+One way to do that is to write down proofs that derive the desir ed identities, as we did
+in Section 3.2. For instance, to test the axioms on inputs 3 an d 2, we may give a proof that
+derives the conclusion
+(S S S zero Plus S S zero = S S S S S zero)
+But having to write such a proof anew for each pair of inputs th at we wish to test is onerous.
+Instead, we can write a method that can take any two natural nu mbers (represented by
+canonical terms) and derive the corresponding identity. Th e following is such a method for
+Plus:
+define (derive-plus a b) :=
+matchb {
+zero => (!chain [(a + b) = a [right-zero]])
+| (S k) => match(!derive-plus a k) {
+((a Plus k) = sum) =>
+(!chain [(a + S k)
+= (S (a + k)) [right-nonzero]
+= (S sum) [(a + k = sum)]])
+}
+}
+The method works by checking the form of its second argument, b. If it iszero, then the
+axiomright-zero is used to derive the identity (a + zero = a) . Otherwise, if bis of the
+form(S k) for some canonical term k, then we recursively invoke the method on aandk.10
+Presumably that recursive call will result in a theorem of th e form((a Plus k) = sum) ,
+wheresumis a canonical term representing the sum of aandk. With that intermediate
+result, we can readily derive the appropriate identity for aand(S k) by chaining via
+right-nonzero . We can now test as many inputs as we like:
+> (!derive-plus (S zero) (S zero))
+Theorem : (= (Plus (S zero)
+(S zero))
+(S (S zero)))
+> (!derive-plus (S S S zero) (S S zero))
+Theorem : (= (Plus (S (S (S zero)))
+10 This recursive call corresponds to the recursion that is i mplicit in right-nonzero , manifested by the occur-
+rence of the symbol Plus on the right-hand side of the identity
+(?n Plus S ?m = S (?n Plus ?m)) .
+
+fpmics 2015/12/8 11:38 Page 154 #176
+154 CHAPTER 3. PROVING EQUALITIES
+(S (S zero)))
+(S (S (S (S (S zero))))))
+While this approach is an improvement over writing deductio ns from scratch, it has a
+serious drawback: it requires writing a new method (such as derive-plus ) for each new
+function symbol that we axiomatize with rewrite rules and th at we want to test; we would
+need to write similar methods for Times , forjoin, and so on.
+As an alternative, Athena provides a built-in unary procedu reeval that takes any term t,
+containing arbitrary function symbols, and attempts to red uce it to a normal form by using
+the various rewrite rules that have been asserted as axioms. Some examples:
+> (eval (S zero + S zero))
+Term: (S (S zero))
+>let{three := (S S S zero)}
+(eval (three + three))
+Term: (S (S (S (S (S (S zero))))))
+The built-in precedence of eval is very low, so when we apply eval to a complex term t
+it is not necessary to insert outer parentheses around t. Thus, the above examples could be
+written as follows:
+> (eval S zero + S zero)
+Term: (S (S zero))
+>let{three := (S S S zero)}
+(eval three + three)
+Term: (S (S (S (S (S (S zero))))))
+A few more examples:
+> (eval zero::nil ++ S zero::nil)
+Term: (:: zero
+(:: (S zero)
+nil:(List N)))
+>let{1|0|nil := (S zero :: zero :: nil);
+3*3|nil := ((S S S zero * S S S zero) :: nil)}
+(eval 1|0|nil ++ 3*3|nil)
+
+fpmics 2015/12/8 11:38 Page 155 #177
+3.11. TOP-DOWN PROOF DEVELOPMENT 155
+Term: (:: (S zero)
+(:: zero
+(:: (S (S (S (S (S (S (S (S (S zero)))))))))
+nil:(List N))))
+Note that eval is not guaranteed to terminate successfully. The failure of eval to produce
+a result does not necessarily mean that something is wrong wi th the underlying axioms. It
+could be that some of the relevant axioms were expressed in an unorthodox format that
+could not be handled by eval. Typically, however, if the mechanical evaluation of a grou nd
+datatype term fails or diverges, then some of the given deﬁni tions may warrant further
+scrutiny. The kinds of issues that arise with function deﬁni tions are discussed more fully
+in Section 3.15.
+3.11 Top-down proof development
+Another simple but extremely useful function on lists is reverse , which takes a list of any
+length and returns a list with the same elements but in the opp osite order. We deﬁne it from
+the start as parameterized by the sort of the list elements:
+declare reverse: (S)[(List S)] -> (List S) [120 [(alist->clist int- >nat)]]
+assert* reverse-axioms :=
+[(reverse nil = nil) /quotesingle.Varreverse-empty
+(reverse h::t = (reverse t) ++ h::nil) /quotesingle.Varreverse-nonempty]
+The precedence of reverse is set to 120, just a little over that of ++(join), which is 110,
+so that a term like
+(reverse x::y ++ L)
+is parsed as ((reverse x::y) ++ L) rather than (reverse (x::y ++ L)) . The other anno-
+tation in the reverse declaration,
+[(alist->clist int->nat)] ,
+is an example of input expansion : it allows reverse to accept as inputs Athena lists (in
+square-bracket notation), which are then converted to ::-list terms, which means that we
+can apply reverse directly to an expression like [1 2 3] . Another Athena facility that aids
+comprehension of results of function calls is output transformation , which we illustrate
+here by transforming the output of eval to convert ::-lists to more readable square-bracket
+lists:
+
+fpmics 2015/12/8 11:38 Page 156 #178
+156 CHAPTER 3. PROVING EQUALITIES
+transform-output eval [(clist->alist nat->int)]
+> (eval reverse [1 2 3 4 5 6])
+List: [6 5 4 3 2 1]
+Input expansion and output transformation are explained an d illustrated more fully in Sec-
+tion 3.12.
+As an aid to understanding the second axiom, reverse-nonempty , we diagram it as we
+have previous equations, in Figure 3.7.
+h t
+::
+ht
+reverse
+t′ht h nil
+reverse ::
+t′h
+join
+t′h
+Figure 3.7
+Illustrating the second reverse axiom (writing t′for(reverse t)).
+Exercise 3.16: Use the reverse andjoin axioms to prove that for any two-element list,
+reverse does produce a list with the same two elements in the opposite order; i.e.,
+define reverse-pair-property :=
+(forall x y . reverse x::y::nil = y::x::nil)
+As a further test of understanding of reverse , let’s see if we can prove the following:
+define reverse-reverse-property :=
+(forall L . reverse reverse L = L)
+We begin a proof by induction and note that the basis case, L = nil , is quite easy.
+
+fpmics 2015/12/8 11:38 Page 157 #179
+3.11. TOP-DOWN PROOF DEVELOPMENT 157
+by-induction reverse-reverse-property {
+  nil =>
+  conclude (reverse reverse nil = nil)
+  (!chain [(reverse reverse nil)
+  --> (reverse nil) [reverse-empty]
+  --> nil [reverse-empty]])
+  | (list as(x::p)) =>
+  ...
+}
+But when we set up the Induction Step and try to prove it, we run into a problem:
+by-induction reverse-reverse-property {
+  nil =>
+  conclude (reverse reverse nil = nil)
+  (!chain [(reverse reverse nil)
+  --> (reverse nil) [reverse-empty]
+  --> nil [reverse-empty]])
+  | (list as(h::t)) =>
+  conclude (reverse reverse list = list) {
+  let{induction-hypothesis := (reverse reverse t = t)}
+    (!chain [(reverse reverse h::t)
+    --> (reverse (reverse t ++ h::nil)) [reverse-nonempty]
+    --> ? [??]
+    Neither of the reverse axioms nor any of the join axioms or theorems or the induction
+    hypothesis can be applied. So at this point we have to try to se e if there is another property
+    ofreverse orjoin (or a relation between them) that, if we could prove it, could be used
+    here as a lemma to help complete the proof of reverse-reverse-property . This situation—
+    where we start working top-down from a goal property we want to prove to conjecturing
+    and proving other new properties as subgoals and then using t hem as lemmas—is actually
+    much more typical of the way proof development works in pract ice than the bottom-up
+    type of development we have previously illustrated in this c hapter.
+    The advantage of top-down proof development is that it is goa l-driven: the new proper-
+    ties that you conjecture and try to prove are motivated by the need to complete the proof
+    of some property that is itself a useful, or at least interest ing, goal. With bottom-up proof
+    development, by contrast, you must try to anticipate what pr operties will be needed and
+    invest effort in proving them even before you know for certai n that they will ever be used.
+    After all, there are inﬁnitely many possible theorems!
+    The advantage of a top-down strategy over a bottom-up one is n ot limited to proof activ-
+    ity; it shows up in many other disciplines. In software devel opment, for example, it is
+    widely accepted that a complex system should be programmed i n a modular manner, with
+    extensive use of subroutines, rather than as a monolithic pr ogram. The advantages of mod-
+    ularity are many, including ease of understanding, documen ting, and testing the code, all of
+
+fpmics 2015/12/8 11:38 Page 158 #180
+158 CHAPTER 3. PROVING EQUALITIES
+which are essential for its future maintenance. But while de sign and development of sub-
+routines could proceed either top-down or bottom-up, it is u sually much more productive
+to do it top-down, driven by the needs of the goal system at han d.
+There are also some disadvantages of top-down proof develop ment, which we will
+discuss later, but for now let’s get back to what we need to ﬁni sh the proof of
+reverse-reverse- property . When we left off, we were staring at
+(reverse (reverse t ++ h::nil))
+a term that we somehow need to prove equal to (h::t) . Intuitively, we know that the last
+element of (reverse t ++ h::nil) ish, and therefore hshould be the ﬁrst element of the
+reversed list. So the result is of the form (h :: ···), and thus if we can ﬁll in that ···with
+t, we’ll be done. But in fact, without the hon the end, (reverse t ++ h::nil) is just++’s
+ﬁrst argument, (reverse t) . And by the induction hypothesis, (reverse reverse t) ist,
+just what we need.
+To replace this intuitive argument with a real proof, we writ e the key step as a formal
+sentence and try to prove it:
+define reverse-join-1 :=
+(forall L x . reverse ((reverse L) ++ x::nil) = x::L)
+by-induction reverse-join-1 {
+  nil =>
+  pick-any x
+    (!chain [(reverse (reverse nil ++ x::nil))
+    --> (nil ++ x::nil) [reverse-empty]
+    --> (x::nil) [left-empty]])
+    | (h::t) =>
+    conclude (forall x . reverse (reverse h::t ++ x::nil) = x::h::t)
+    let{ih := (forall x . reverse (reverse t ++ x::nil) = x::t)}
+      pick-any x
+        (!chain
+        [(reverse (reverse h::t ++ x::nil))
+        --> (reverse ((reverse t ++ h::nil) ++ x::nil))
+        [reverse-nonempty]
+        --> ? [??]
+        ...])
+      }
+      Alas, we get stuck again, without any axiom or theorem that ca n be applied, and neither can
+      the induction hypothesis be applied (because of the extra join in the term we are trying to
+      rewrite). To continue, we could repeat our top-down strateg y, conjecturing another property
+      that might help us here, but that doesn’t look too promising s ince the term we are working
+      with now is even more complicated than the one we started with .
+      There is another possibility, though, and that is to step bac k and see if what we are trying
+      to prove can be simpliﬁed by generalizing it. Such a step may seem counter-intuitive—how
+
+fpmics 2015/12/8 11:38 Page 159 #181
+3.11. TOP-DOWN PROOF DEVELOPMENT 159
+can it be easier to prove something even more general than the property we are having difﬁ-
+culty with? But in fact, generalization often does help, especially in proofs by mathematical
+induction . The reason is simple: a more general property gives us a more general induction
+hypothesis . Being more general, the induction hypothesis is better abl e to be applied to
+advance the proof.
+We can make reverse-join-1 more general by replacing (reverse L) byLon the left-
+hand side of the equation and compensating by the opposite re placement on the right-hand-
+side (which is well-motivated by our intuitive belief in reverse-reverse-property , though
+we haven’t yet proved it!):
+define reverse-join-1 :=
+(forall L x . reverse (L ++ x::nil) = x::reverse L)
+Now, we have no difﬁculty in proving this more general conjec ture:
+by-induction reverse-join-1 {
+  nil =>
+  conclude (forall x . reverse (nil ++ x::nil) = x::reverse nil)
+  pick-any x
+    (!chain [(reverse (nil ++ x::nil))
+    --> (reverse x::nil) [left-empty]
+    --> (reverse nil ++ x::nil) [reverse-nonempty]
+    --> (nil ++ x::nil) [reverse-empty]
+    --> (x::nil) [left-empty]
+    <-- (x::reverse nil) [reverse-empty]])
+    | (list as(h::t)) =>
+    conclude (forall x . reverse (list ++ x::nil) = x::reverse list)
+    let{ih := (forall x . reverse (t ++ x::nil) = x::reverse t)}
+      pick-any x
+        (!chain [(reverse (h::t ++ x::nil))
+        --> (reverse h::(t ++ x::nil)) [left-nonempty]
+        --> (reverse (t ++ x::nil) ++ h::nil)
+        [reverse-nonempty]
+        --> (x::(reverse t) ++ h::nil) [ih]
+        --> (x::(reverse t ++ h::nil)) [left-nonempty]
+        <-- (x::(reverse h::t)) [reverse-nonempty]])
+      }
+      And, ﬁnally, with this lemma at hand, reverse-reverse-property can be easily derived:
+      by-induction reverse-reverse-property {
+        nil => conclude (reverse reverse nil = nil)
+        (!chain [(reverse reverse nil)
+        --> (reverse nil) [reverse-empty]
+        --> nil [reverse-empty]])
+        | (list as(h::t)) =>
+        conclude (reverse reverse list = list)
+        let{ih := (reverse reverse t = t)}
+          (!chain [(reverse reverse h::t)
+
+fpmics 2015/12/8 11:38 Page 160 #182
+160 CHAPTER 3. PROVING EQUALITIES
+--> (reverse (reverse t ++ h::nil)) [reverse-nonempty]
+--> (h::reverse reverse t) [reverse-join-1]
+--> (h::t) [ih]])
+}
+Thus we have succeeded with a top-down strategy, discoverin g and proving a lemma
+needed to help complete the proof of our original goal. In thi s case, it wasn’t too difﬁcult,
+but carrying out top-down proof development can be quite cha llenging in general—it is
+perhaps the most complex tool to learn in becoming proﬁcient in proving theorems, once
+the more mechanistic skills are mastered. It is worth reiter ating the key ideas that even this
+relatively simple proof exercise has illustrated.
+1. Start with the main goal and try to advance the proof by appl ying any previously proved
+axiom or theorem (or, in a proof by induction, the induction h ypothesis). But beware of
+going in circles! (See Exercise 3.32.)
+2. If you run out of properties that can be applied, make one up ! Form a conjecture, based
+not only on what’s needed to move the current proof along but a lso on the ultimate goal
+of the current proof. Of course, whatever you conjecture, yo u must show it is valid by
+separately ﬁnding a proof for it. (If the conjecture seems re ally particular to the current
+proof—and thus unlikely to be useful elsewhere—you might wa nt to include its proof
+inline, as a step within the current proof. But in most cases i t’s better to develop its
+proof separately, just as it’s often better in software deve lopment to code a nontrivial
+computation as a subroutine and call it, rather than putting it inline.)
+3. If you are having trouble proving your conjecture, step ba ck and see if you can general-
+ize it, say by replacing a non-variable subterm with a variab le, as we did in the second
+version of reverse-join-1 . That may make it easier to prove, and if you succeed, you
+will still be able to use this more general property as a lemma in proving the original
+goal.
+4. Although we succeeded in proving reverse-reverse-property after conjecturing and
+proving only one lemma, you will sometimes have to do this sev eral times in order to
+complete your original proof. The need for additional conje ctures can arise serially in
+the original proof or by deeper subgoaling within the proof o f a conjecture. But when
+we are successful in proving all of the needed lemmas, we have the satisfaction not only
+of achieving our original proof goal, but we have also signiﬁ cantly added to our arsenal
+of properties available for future proof efforts.
+In the cases where several new lemmas are required, we meet so me of the greatest chal-
+lenges in proof development. It is easy to get “lost” in a fore st of failed proof attempts,
+and in the confusion there is a danger of going in circles—con jecturing a property and
+
+fpmics 2015/12/8 11:38 Page 161 #183
+3.12. ⋆INPUT EXPANSION AND OUTPUT TRANSFORMATION 161
+“proving” it using the original goal property. This is one of the potential disadvantages
+of top-down proof development, but when the proofs are done w ith a proof system like
+Athena, such circularity is prevented—any sentence other t han an axiom must be proved
+before it can enter the assumption base, and it cannot be used in a proof unless it is already
+in the assumption base.
+Overcoming such challenges requires a great deal of creativ ity. And that level of creativ-
+ity usually comes only with a good deal of experience. Fortun ately, much useful experience
+can be gained by working on simpler proof problems, includin g ones that can be done with
+a purely bottom-up strategy, using only previously proved p roperties. Most of the addi-
+tional proof exercises in this chapter can be done bottom up, and contain hints about which
+previously proved properties are likely to be useful. The mo re of these exercises you do, the
+better you will be prepared for tackling more complex proofs , where creativity is required,
+such as ones we will encounter in later chapters.
+3.12 ⋆Input expansion and output transformation
+3.12.1 Converters
+It is tedious to write large natural numbers in canonical for m, solely in terms of Sandzero.
+Moreover, when evaluating ground terms containing large na tural numbers, it is difﬁcult
+to determine by visual inspection whether the input terms we re typed correctly, or whether
+the output is correct. For instance, multiplying 7 by 7 shoul d obviously result in 49, but if
+we type
+> (eval S S S S S S S zero Times S S S S S S S zero)
+and obtain the answer
+Term: (S (S (S (S (S (S (S (S (S (S (S (S (S (S (S (S
+(S (S (S (S (S (S (S (S (S (S (S (S (S (S (S (S
+(S (S (S (S (S (S (S (S (S (S (S (S (S (S (S (S
+(S zero))))))))))))))))))))))))))))))))))))))))))))) ))))
+it is not easy to verify that the answer is correct, or even tha t the inputs were what we
+intended.
+We can rectify this by using Athena’s built-in integer numer als as shorthands for natural
+numbers: 0 for zero, 1 for(S zero) , 2 for(S S zero) , and so on. We can easily write
+procedures to convert back and forth between these two repre sentations. For instance, the
+following will convert any canonical natural number term to the corresponding integer
+numeral:
+1define (nat->int n) :=
+2matchn {
+3 zero => 0
+
+fpmics 2015/12/8 11:38 Page 162 #184
+162 CHAPTER 3. PROVING EQUALITIES
+4| (S k) => (plus (nat->int k) 1)
+5| _ => n
+6}
+Observe the last match clause on line 5: if the input nis neither zero nor a term with
+the successor symbol Sat the top, then it is returned unchanged as the output. This i s an
+important point, as we will explain shortly.
+Likewise, we can write a procedure that converts non-negati ve integer numerals into
+canonical natural number terms:
+define (int->nat n) :=
+check{
+(numeral? n) => check{(less? n 1) => zero
+|else=> (S (int->nat (minus n 1)))}
+|else=> n
+}
+Thus:
+> (int->nat 0)
+Term: zero
+> (int->nat 3)
+Term: (S (S (S zero)))
+> (nat->int zero)
+Term: 0
+> (nat->int S S zero)
+Term: 2
+> (nat->int S S S S S S S zero)
+Term: 7
+With conversion procedures like these, the inputs and outpu ts to the evaluator can become
+much more readable and writable:
+> (eval (int->nat 2) Times (int->nat 3))
+Term: (S (S (S (S (S (S zero))))))
+> (eval (int->nat 7) Times (int->nat 7))
+Term: (S (S (S (S (S (S (S (S (S (S (S (S (S (S (S (S
+(S (S (S (S (S (S (S (S (S (S (S (S (S (S (S (S
+
+fpmics 2015/12/8 11:38 Page 163 #185
+3.12. ⋆INPUT EXPANSION AND OUTPUT TRANSFORMATION 163
+(S (S (S (S (S (S (S (S (S (S (S (S (S (S (S (S
+(S zero))))))))))))))))))))))))))))))))))))))))))))) ))))
+To make the output more readable as well, we can pass it throug h thenat->int ﬁlter:
+> (nat->int eval (int->nat 7) Times (int->nat 7))
+Term: 49
+We can write similar converters for other sorts. For instanc e, instead of writing out lists
+in the long form required by ::andnil, we can use Athena’s bracket notation for lists,
+converting Athena lists to ::lists on the ﬂy with procedures such as the following:
+define (alist->clist L) :=
+matchL {
+[] => nil
+| (list-of x rest) => (x :: (alist->clist rest))
+| _ => L
+}
+This procedure converts any Athena list ( alist ) of homogeneously sorted terms11into the
+corresponding ::-built list ( clist for “cons list”), for example:
+> (alist->clist [true false true])
+Term: (:: true
+(:: false
+(:: true
+nil)))
+> (alist->clist [1 2])
+Term: (:: 1
+(:: 2
+nil))
+A similar conversion can be performed in the reverse directi on:
+define (clist->alist L) :=
+matchL {
+nil => []
+| (x :: rest) => (add x (clist->alist rest))
+| _ => L
+}
+> (clist->alist 1::nil)
+That is, any Athena list of terms, all of which have the same sort. Clearly, we could not convert a list such as
+[/quotesingle.Vara zero true] into a::list, since it wouldn’t be well-sorted.
+
+fpmics 2015/12/8 11:38 Page 164 #186
+164 CHAPTER 3. PROVING EQUALITIES
+List: [1]
+> (clist->alist true::false::nil)
+List: [true false]
+Thus, we can now test the axioms for, say, join, as follows:
+define (test-join L1 L2) :=
+(clist->alist eval (alist->clist L1) join (alist->clist L 2))
+> (test-join [1 2] [3 4])
+List: [1 2 3 4]
+> (test-join [99] [])
+List: [99]
+Writing something like
+((int->nat 28) Plus (int->nat 356))
+is much better than writing the same term using function symb ols only, but having to
+explicitly insert the int->nat converters is tedious. What we would like to do is tweak
+Plus so that it automatically applies the int->nat converter to its inputs, by default. We
+can do that by redeﬁning Plus as the following procedure:12
+define (Plus s t) :=
+(make-term (string->symbol "Plus") [(int->nat s) (int->n at t)])
+We can now directly write:
+> (3 Plus 5)
+Term: (Plus (S (S (S zero)))
+(S (S (S (S (S zero))))))
+In fact, because int->nat leaves its argument unchanged if it is not an integer numeral , we
+can continue to apply Plus to canonical natural numbers as well, just as before:
+> (S zero Plus S S zero)
+Term: (Plus (S zero)
+(S (S zero)))
+12 Recall the deﬁnition of make-term from p. 103.
+
+fpmics 2015/12/8 11:38 Page 165 #187
+3.12. ⋆INPUT EXPANSION AND OUTPUT TRANSFORMATION 165
+More than that, we can freely mix both input formats, e.g., a c anonical natural-number
+term on the left and an integer numeral on the right, or vice ve rsa:
+> (3 Plus S zero)
+Term: (Plus (S (S (S zero)))
+(S zero))
+> (S zero Plus 3)
+Term: (Plus (S zero)
+(S (S (S zero))))
+That is why, incidentally, it is important for input convert ers to leave their arguments
+unchanged when they are not of a form that can be converted. Su ppose we had instead
+deﬁnedint->nat like this:
+define (int->nat n) :=
+check{ (less? n 1) => zero
+|else=> (S (int->nat (n minus 1)))
+}
+and then went on to (re)deﬁne Plus as before:
+define (Plus s t) :=
+(make-term (string->symbol "Plus") [(int->nat s) (int->n at t)])
+Then applications like (zero Plus 1) would generate errors, as this version of int->nat
+cannot handle inputs like zero:
+> (int->nat zero)
+standard input:2:13: Error: Wrong sort of term given asfirst argument
+to less?---a numeric term was expected, but the given term wa s of sort N.
+.12.2 Input expansion
+However, having to explictly redeﬁne Plus so as to make it apply int->nat to its arguments
+before constructing the output term is still somewhat incon venient. This is where Athena’s
+expand-input directive enters the picture. Instead of explicitly giving a deﬁnition like this:
+define (Plus s t) :=
+(make-term (string->symbol "Plus") [(int->nat s) (int->n at t)])
+we may instead say simply:
+
+fpmics 2015/12/8 11:38 Page 166 #188
+166 CHAPTER 3. PROVING EQUALITIES
+>expand-input Plus [int->nat int->nat]
+OK.
+> (3 plus 5)
+Term: (Plus (S (S (S zero)))
+(S (S (S (S (S zero))))))
+Whatexpand-input Plus [int->nat int->nat] effectively says is this: Redeﬁne Plus so
+that it automatically applies the input converters listed w ithin the square brackets to the
+corresponding arguments. In general, if a function symbol fhas arity n>0, then the effect
+of a directive
+expand-input f[C1···Cn]
+is this: Redeﬁne fso that it automatically applies converter Cito its ithargument. Each
+converter Cimust be an expression denoting a unary procedure. We must lis tnconverters
+iffhas arity n, otherwise we will get an error:
+>expand-input Plus [int->nat]
+standard input:1:1: Error: Input expansion error: wrong nu mber
+of converters (1) given for Plus; exactly 2 are required.
+Athena will also check that each converter is unary (expects exactly one argument as input).
+What if one of the arguments is not amenable to conversion, i. e., it need not or should
+not be converted? We can then list the identity procedure, id,13as the converter for that
+argument position. For example,
+expand-input f[C1idC3]
+would make fapply C1andC3to its ﬁrst and third arguments, respectively, leaving the
+second argument unchanged.
+As another example, here is how we would make join able to receive lists in bracket
+notation as well as cons-based ( ::-built) lists:
+expand-input join [alist->clist alist->clist]
+We can now write, for instance:
+> (eval [1 2 3] join [4 5 6])
+Term: (:: 1
+(:: 2
+13idis deﬁned at the top level as the identity procedure: lambda(x) x .
+
+fpmics 2015/12/8 11:38 Page 167 #189
+3.12. ⋆INPUT EXPANSION AND OUTPUT TRANSFORMATION 167
+(:: 3
+(:: 4
+(:: 5
+(:: 6
+nil:(List Int)))))))
+> (eval [true false] join [true])
+Term: (:: true
+(:: false
+(:: true
+nil:(List Boolean))))
+The following exercise explores how to make converters like alist->clist and
+clist->alist more versatile, by making them into higher order procedures . For example,
+we can make clist->alist into a higher-order procedure that takes a unary procedure fas
+an argument and returns a conventional converter that not on ly transforms a given ::-built
+list into an Athena list but also applies fto each element of the resulting list. Such convert-
+ers for lists and other datatypes will be used in Chapters 10 a nd 17 and can be applied in
+many other contexts to simplify input to term-processing pr ocedures and output from eval.
+Exercise 3.17: Sometimes when we write converters intended to take a struct urally com-
+plex value vand convert it to some other value, we want to dig a little deep er and transform
+not just the spine of v(viewing vas a tree) but also values that are hanging off v’s spine. For
+instance, let’s say we want to transform ::-built lists of natural numbers to Athena lists.
+Instead of just transforming something like (zero::(S zero)::nil) to[zero (S zero)]
+we might want to transform it instead to [0 1] . While we could always do this by applying
+two converters in two passes, devise a converter that can do i t in one pass. Your converter
+should be able to perform the following conversions in one pa ss:
+• Convert (/quotesingle.Varfoo::/quotesingle.Varbar::nil) to["foo""bar"] , i.e., convert applications of ::to applica-
+tions ofaddandalso convert meta-identiﬁers to strings.
+• Convert (zero::(S zero)::nil) to[0 1] , i.e., convert applications of ::to applications
+ofaddandnatural number terms to integers.
+• Convert
+((zero::nil)::((S zero)::(S S zero)::nil)::nil)
+to[[0] [1 2]] , i.e., convert both outer and inner applications of ::to applications of
+add, and also convert natural number terms to integers.
+Exercise 3.18: Write a second converter that works in the opposite directio n.
+
+fpmics 2015/12/8 11:38 Page 168 #190
+168 CHAPTER 3. PROVING EQUALITIES
+3.12.3 Output transformation
+Withexpand-input under our belt we can write input terms in succinct and readab le expres-
+sions, but as the preceding examples demonstrate, the outpu ts that we occasionally get
+back, especially from eval, can be unwieldy—unless we take explicit pains to pass them
+through some sort of converter that would, for example, conv ert cons-built lists to bracket
+notation or natural numbers to integers. The purpose of the d irectivetransform-output is
+to avoid having to do this explicitly. By issuing the directi ve:
+>transform-output eval [nat->int]
+OK.
+we instruct Athena to automatically redeﬁne eval so that its output is passed through
+nat->int :
+> (eval 12 Plus 8)
+Term: 20
+Multiple converters C1···Cncan be listed in a single transform-output directive:
+transform-output f[C1···Cn]
+and in that case every converter Ciwill be sequentially applied to the output of fin the
+speciﬁed order: i=1,...,n. For example:
+>transform-output eval [nat->int clist->alist]
+OK.
+> (eval [1 2 3] join [4 5 6])
+List: [1 2 3 4 5 6]
+In this case the output of eval is the term
+(:: 1
+(:: 2
+(:: 3
+(:: 4
+(:: 5
+(:: 6
+nil:(List Int)))))))
+and ﬁrst the output transformer nat->int is applied to it, leaving the result unchanged
+(since it is not a natural number), after which the second giv en transformer clist->alist
+
+fpmics 2015/12/8 11:38 Page 169 #191
+3.12. ⋆INPUT EXPANSION AND OUTPUT TRANSFORMATION 169
+is applied to it, giving the ﬁnal output [1 2 3 4 5 6] . Note that output transfomers are
+typically the inverses of input expanders.
+Input expansions and output transformations are powerful n otational tools and will be
+used widely in the rest of the book. Input expansions, in part icular, will be useful not just
+for testing and evaluation purposes, but in the bodies of pro ofs as well.
+Just as was the case with overload , both the expand-input andtransform-output direc-
+tives can be applied to function symbols as well as to procedu res. However, again just as
+with overloading, it must be kept in mind that if fis a function symbol then after a directive
+like
+expand-input f···
+takes effect, the name fwill no longer denote the corresponding function symbol. Ra ther, it
+will denote a procedure , namely, the procedure that accepts the same number of argum ents,
+applies the listed converters to them, and then applies what ever was previously denoted by
+fto the results. And as before, if need be the original functio n symbol that goes by the
+name fcan be retrieved through string->symbol (recall the discussion on p. 92).
+3.12.4 Combining input expansion and output transformatio n with overloading
+Overloading can be combined with input expansions and/or ou tput transformations. For
+instance, we could ﬁrst input-expand Plus so that it accepts integer numerals, and then
+overload +so that it can be used as an alias for the input-expanded versi on ofPlus:
+>expand-input Plus [int->nat int->nat]
+OK.
+>overload + Plus
+OK.
+> (?n + 5)
+Term: (Plus ?n:N
+(S (S (S (S (S zero))))))
+In some cases we need to pay attention to the order in which the se directives are carried
+out. Generally it is better practice to perform input expans ion ﬁrst and then overloading.
+3.12.5 Using declare with auxiliary information
+In the interest of brevity, it is possible to declare a function symbol and also to specify its
+precedence in one fell swoop, e.g.:
+
+fpmics 2015/12/8 11:38 Page 170 #192
+170 CHAPTER 3. PROVING EQUALITIES
+declare f: [N N] -> N [150]
+This has the same effect as the following sequence:
+declare f: [N N] -> N
+set-precedence f 150
+So the abbreviated form simply includes the information [150] after the range of the func-
+tion symbol. In addition to its precedence, we can also inclu de the associativity of the
+declared symbol, if we care to specify one:
+declare f: [N N] -> N [150 left-assoc ]
+This is equivalent to the following sequence:
+declare f: [N N] -> N
+set-precedence f 150
+left-assoc f
+We could also specify its associativity only, without bothe ring to specify a precedence:
+declare f: [N N] -> N [ left-assoc ]
+In addition to precedence and/or associativity, we can also specify a symbol or procedure
+to be overloaded as an alias for the newly declared symbol, e. g.:
+declare minus: [N N] -> N [200 -]
+This is equivalent to:
+declare minus: [N N] -> N
+set-precedence minus 200
+overload - minus
+If there is only overloading information included but no pre cedence and/or associativity,
+then the precedence and associativity of the newly declared symbol are set to be identical
+to those of the symbol or procedure that is being overloaded. For example:
+>declare minus: [N N] -> N [-]
+New symbol minus declared.
+> (equal? (get-precedence minus) (get-precedence -))
+Term: true
+
+fpmics 2015/12/8 11:38 Page 171 #193
+3.13. ⋆CONJECTURE FALSIFICATION 171
+A brand new name Ican appear inside the square brackets representing that whi ch is
+to be overloaded; if Iis not bound to anything then it will be introduced into the cu rrent
+environment as an alias for the function symbol being declar ed. For instance, assuming
+that the identiﬁer ˆ is unbound in the current environment, t he directive
+declare f: [N N] -> N [200 ˆ]
+will introduce ˆas an alias for f.
+Finally, we may also specify a list of input converters, whic h will be used to automati-
+cally carry out an expand-input directive on the new symbol. For instance, the following
+declaration introduces a new binary function symbol mult on natural numbers (intended to
+represent multiplication); it speciﬁes its precedence to b e 300; it overloads *so that it can
+be used as an alias for the new mult symbol; and it prescribes that int->nat be automati-
+cally applied to each of the two arguments of the new symbol:
+declare mult: [N N] -> N [300 * [int->nat int->nat]]
+By and large, the order in which these auxiliary pieces of inf ormation are listed inside the
+square brackets is immaterial, with one exception: if a list of input converters appears at
+all, it must appear last.
+.13 ⋆Conjecture falsiﬁcation
+Before we try to prove a conjecture p, it is often useful to ﬁrst try to falsify p by ﬁnding
+a counterexample to it. This falls under a class of technique s collectively known as model
+checking , ormodel building (although in some contexts these two terms can have more
+speciﬁc technical meanings). If we manage to ﬁnd a counterex ample, then any attempt
+to prove pwould be futile,14and therefore model checking can be quite a time saver.
+Moreover, the feedback provided by the model checker, given in the form of a speciﬁc
+counterexample to the conjecture, is often very valuable in helping us to debug and, in
+general, to better understand the theory or system we are dev eloping.
+Athena is integrated with a number of external systems that c an be used for model
+building/checking, most notably SMT and SAT solvers, but th ere is also a built-in model-
+checker that can be used when a theory is constructive, and sp eciﬁcally when the relevant
+axioms are rewrite rules of the kind that can be handled by eval. That model checker is
+perhaps the simplest to use and can be surprisingly effectiv e. At its simplest, to falsify a
+conjecture pwe call
+That is because Athena’s proofs are guaranteed to be sound , so we can never prove something that doesn’t
+follow logically from the assumption base, and if we ﬁnd a cou nterexample to pthen pdoes not follow from the
+assumption base.
+
+fpmics 2015/12/8 11:38 Page 172 #194
+172 CHAPTER 3. PROVING EQUALITIES
+(falsify p N)
+where Nis the desired quantiﬁer bound , namely, the number of values of the corresponding
+sort that we wish to examine (in connection with the truth val ue of p) at each quantiﬁer of
+p. To take a contrived but illustrating example, suppose that pis the conjecture that natural-
+number addition is commutative:
+(forall n m .n + m = m + n)
+Then the call (falsify p 10) will try to falsify pby examining 10 natural numbers at each
+quantiﬁer. In this case the procedure would essentially che ck whether addition is com-
+mutative on the ﬁrst 10 natural numbers, or more speciﬁcally , whether (n + m = m + n)
+evaluates to true when both nandmtake the successive values zero,(S zero) , . . . ,
+(S S S S S S S S S S zero) . This would result in 100 evaluations (10 ×10) of the body
+ofp, and of course in this case the falsiﬁcation would fail, sinc e commutativity does in fact
+hold:
+>define p := (forall n m . n + m = m + n)
+Sentence p defined.
+> (falsify p 10)
+Term:/quotesingle.Varfailure
+When falsiﬁcation fails within the given bound, the term /quotesingle.Varfailure is returned.
+When falsiﬁcation succeeds, it returns speciﬁc values for t he quantiﬁed variables that
+make the conjecture false. As another example, suppose we co njecture that list concatena-
+tion is commutative. Now this conjecture is clearly false, s o let’s see how falsify handles
+it:
+define p := (forall L1 L2 . L1 ++ L2 = L2 ++ L1)
+> (falsify p 10)
+List:
+[
+/quotesingle.Varsuccess
+|{?L1:(List Int) := (:: 1 nil:(List Int))
+?L2:(List Int) := (:: 2 nil:(List Int))
+}|
+]
+The result is now a pair (two-element list) whose ﬁrst elemen t is the term /quotesingle.Varsuccess and
+whose second element is a mapping from the quantiﬁed variabl es to appropriate values,
+
+fpmics 2015/12/8 11:38 Page 173 #195
+3.13. ⋆CONJECTURE FALSIFICATION 173
+namely, values that falsify the given conjecture. Indeed, w e see that the returned values
+do falsify the conjecture: Concatenating [1]with[2]gives[1 2] , whereas concatenating
+[2]with[1]gives[2 1] , and these two lists are certainly different (using square- bracket
+notation for lists, instead of ::andnil, for brevity). We can easily verify that this is a
+genuine counterexample with the aid of eval:
+define [t1 t2] := [(1::nil) (2::nil)]
+> (eval t1 ++ t2 = t2 ++ t1)
+Term: false
+Note that the given conjecture was polymorphic, but falsify automatically worked with
+a monomorphic variant of it. Typically Intis used to instantiate sort variables, but other
+domains or datatypes may also be used.
+Thefalsify procedure can work with both integers and reals, as well as me ta-identiﬁers.
+It has a native understanding of most of the primitive operat ions on these domains, such as
+addition, multiplication, etc. For example:
+define p := (forall ?x:Int ?y:Int . ?x Real.* ?y > ?x)
+> (falsify p 10)
+List: [ /quotesingle.Varsuccess |{?x:Int := 1, ?y:Int := 1}|]
+define p := (forall ?x:Int ?y:Int . ?x Real.* ?x >= ?x)
+> (falsify p 10)
+Term:/quotesingle.Varfailure
+> (falsify p 50)
+Term:/quotesingle.Varfailure
+> (falsify p 100)
+Term:/quotesingle.Varfailure
+The fact that a conjecture cannot be falsiﬁed within a given b ound does not mean that
+the conjecture is valid. It could simply be that counterexam ples emerge only outside the
+range of values that we have examined. That is, it could be tha t if we increase the bound we
+might be able to falsify the conjecture. A lot of errors, howe ver, tend to manifest themselves
+with fairly small input values; exceptionally large inputs are not typically needed to ﬁnd
+problems. So if we keep increasing the falsiﬁcation bound an d continue to fail to ﬁnd
+a counterexample, that can give us a good amount of conﬁdence in the conjecture. But
+
+fpmics 2015/12/8 11:38 Page 174 #196
+174 CHAPTER 3. PROVING EQUALITIES
+that kind of evidence will remain inductive, rather than ded uctive, and hence it can never
+establish with certainty that the conjecture is true. No mat ter how large the bound, no matter
+how extensively we have tested the conjecture, it is conceiv able that the conjecture is still
+false. Only deductive proof can ultimately assure us that th e conjecture actually holds.
+Of course, increasing the bound makes falsiﬁcation more exp ensive, since the number
+of tests that need to be carried out increases polynomially w ith the number of quantiﬁers
+in the conjecture, and speciﬁcally with the length of the lon gest sequence of consecutive
+quantiﬁers. If we have three consecutive quantiﬁers for ins tance, as we would, say, in a
+transitivity conjecture of the form
+(forall ?x ?y ?z . ?x R ?y & ?y R ?z ==> ?x R ?z)
+and we speciﬁcy a bound of 10, then falsify would need to carry out 1000 (103) tests. If
+we specify a bound of 100, we would need to carry out
+100×100×100=(102)3=106=1 million
+tests, and so on. Therefore, the more consecutive quantiﬁer s that a conjecture has, the lower
+the bound that is feasible. The recommended strategy is to st art with a low bound such as
+10, and to gradually increase that until the search becomes t oo expensive.
+Sometimes it makes little sense to ﬁx the same upper bound Nforevery quantiﬁed vari-
+able of the conjecture. Different quantiﬁer variables may i nstead call for different bounds.
+Recall, for instance, the following:
+define Power-Square-theorem := (forall n x . (x * x) ** n = x ** (n + n))
+If we were trying to discover counterexamples to this senten ce, we would not want to do
+so with a call like
+(falsify Power-Square-theorem 30)
+as we neither want nor need to raise x=20 to the n= 29thpower. Instead, we want to
+explore more values for x(the base) and (signiﬁcantly!) fewer values for n(the expo-
+nent). To accommodate this, the second argument to falsify need not be a single positive
+numeral. Rather, it can be a map from variables to numerals. I n this case we might want to
+try 10 values for xand 3 values for n:
+> (falsify Power-Square-theorem |{x := 10, n := 3}|)
+Term:/quotesingle.Varfailure
+We close with some brief remarks on the algorithm by which Ath ena selects the values
+with which to replace each quantiﬁed variable. Athena uses a fair enumeration algorithm,
+
+fpmics 2015/12/8 11:38 Page 175 #197
+3.14.⋆CONDITIONAL REWRITING AND ADDITIONAL FEATURES OF CHAINING 175
+meaning that, in the limit, every possible value of the relev ant sort is guaranteed to be gen-
+erated. With structurally complex sort values, however, su ch as abstract syntax trees (e.g.,
+expressions of a given grammar), two fair enumeration algor ithms can vary widely in their
+model checking effectiveness depending on how exactly they enumerate the values, e.g.,
+depending on whether deeper vs. bushier trees are favored (g enerated earlier). Athena’s
+default strategy tries to strike a reasonable balance under all sets of circumstances, but
+some degree of customization may be necessary in speciﬁc cas es. There is a global cell
+variable named breadth-factor that can be used to control the exact degree by which
+broader (bushier) terms are preferred to deeper terms. The m inimum possible value of that
+variable is 1, which will tend to strongly favor deep terms. A value of around 20 or 30 will
+usually strike a decent balance, whereas a value of 100 or 200 or more will strongly favor
+broader over deeper terms. For ultimate control on how exact ly to visit the values of a given
+sort, the user can provide an inﬁnite stream of values for a gi ven sort using the binary pro-
+cedureregister-sort-stream , which takes a sort name as its ﬁrst argument (represented
+as a string) and an inﬁnite stream of values as its second argu ment, represented as a lazy
+list in the style used in the library ﬁle dt-streams.ath .
+3.14 ⋆Conditional rewriting and additional features of chaining
+All examples of equational chaining that we have seen so far h ave been based on the
+deﬁnition of rewrite rules given on page 126, namely, as sent ences of the form
+(forall v1···vn.l=r)
+(where rdoes not contain any vithat does not occur in l). Rewrite rules of this simple form,
+however, are not sufﬁciently expressive. Many application s of equational proof require
+rewriting based on conditional rewrite rules . Such a rule is typically of the form
+(forall v1···vn.l1=r1&···&ln=rn==> l=r) (3.4)
+forn≥1, where any variable vjthat appears in rmust also appear either in lor in some
+liorri,i∈ {1,...,n}. In other words, the variables of the left-hand side ltogether with
+those of the antecedent form a superset of the variables in r. However, the antecedent
+may contain variables that do not occur in l. The nidentities (li=ri)are the conditions
+of the rule. The chain method actually allows for conditional rules of more compli cated
+sentential structure. Speciﬁcally, while the consequent m ust always be an identity (l=r),
+the antecedent need not be a conjunction of identities. It ma y be a disjunction, or a negation,
+or a conjunction of identities and/or negations of identiti es, and so on. So we may more
+generally write a conditional rewrite rule in the form
+(forall v1···vn.p==> l=r) (3.5)
+
+fpmics 2015/12/8 11:38 Page 176 #198
+176 CHAPTER 3. PROVING EQUALITIES
+where, again, the variables of land the (free) variables of pcomprise a superset of the
+variables of r. We say that pis the rule’s condition. If pis a conjunction, we may also
+collectively refer to the conjuncts of pas the conditions of the rule.
+Reduction with a conditional rule Rof the form (3.5) works just as it does with plain
+rewrite rules, but with one additional twist: We say that
+s→θt[R]
+if there is a subterm s′ofsthat matches lunder θandtis obtained from sby replacing s′
+with(θr). We require θto include in its support all the variables of landp.15Further, we
+now have an additional obligation to discharge before we can allow this reduction from sto
+t: we must ensure that the corresponding instance of the condi tionp, namely (θp), actually
+holds, i.e., is in the assumption base.16Using more conventional notation, we might deﬁne
+this relation through the following inference rule:
+(θp)
+s→θt[R]
+provided that there is a subterm s′ofsthat matches lunder θ,
+θincludes all variables of landpin its support, and tis
+obtained from sby replacing s′by(θr)
+It is not difﬁcult to see that the antecedent along with the pr ovisos spelled out in the aux-
+iliary condition of this inference rule ensure that (s=t)is derivable. First we can derive
+a substitution instance of Rby replacing each universally quantiﬁed variable viby(θvi),
+usinguspec orinstance ; that will give us the conditional:
+(θp) ==> θ(l=r). (3.6)
+We can then apply modus ponens to this and (θp)to obtain the identity (θ(l=r)), that is
+to say,(θl)=(θr). And from that point on (s=t)can be derived using the ﬁve primitive
+equational methods listed in Section 3.4.
+Thus, operationally, when Athena evaluates a chain step like
+s=t[R]
+where Ris a conditional rewrite rule of the form (3.5), it checks, in addition to all the other
+conditions listed above, that (θp)is in the assumption base.17However, it is fairly lenient
+about that check. For instance, if pis a complex conjunction with conjuncts p1,...,pn
+15 Therefore, (θr)will be applicable to all the variables of r, since these are a subset of the variables of land
+p.
+16 See page 98 for the deﬁnition of (θp).
+17 Of course it ﬁrst needs to discover an appropriate substit utionθ.
+
+fpmics 2015/12/8 11:38 Page 177 #199
+3.14.⋆CONDITIONAL REWRITING AND ADDITIONAL FEATURES OF CHAINING 177
+and if each (θpi)is in the assumption base, then the check will succeed even if (θp)
+itself—as a conjunction—is not in the assumption base. Like wise, if pis a disjunction with
+disjuncts p1,...,pnand at least one (θpi)is in the assumption base, then the check will
+succeed even if (θp)itself, as a disjunction, is not in the assumption base. Esse ntially,
+the implementation of chain attempts to derive the instantiated condition (θp)on the ﬂy.
+That derivation might boil down to a simple application of claim , if(θp)happens to be
+in the assumption base at the time. But it might be a little mor e involved, as illustrated by
+the two examples we just cited, that of a complex conjunctive or disjunctive condition. As
+another example, if the instantiated condition is a negated disjunction, then chain will try
+to derive at least one of the complemented disjuncts, after w hich it will derive the desired
+negation by applying a De Morgan law. Nevertheless, the atte mpted derivation of (θp)is
+guaranteed to terminate very quickly; the theorem proving t hatchain does to this end is
+very light. Therefore, by and large, it is the proof writer’s responsibility to ensure that when
+a conditional rewrite rule is used in a chain step, the relevant instantiated condition(s) are
+either in the assumption base at that point or else can be very easily derived from it.
+As an example, consider:
+1declare P, Q: [N] -> Boolean
+2
+3assert* CR := (P n & Q m ==> n * m = m)
+4
+5>pick-any a:N b:N
+6 assume (P a)
+7 assume (Q b)
+8 (!chain [(a * b) = b [CR]])
+9
+10Theorem : (forall ?a:N
+11 (forall ?b:N
+12 (if (P ?a:N)
+13 (if (Q ?b:N)
+14 (= (Times ?a:N ?b:N)
+15 ?b:N)))))
+Here, at the time when the conditional rule CRis used in a chain step, on line 8, the
+relevant instance of the antecedent, namely
+(P a & Q b)
+isnotin the assumption base.18However, both (P a) and(Q b) are individually in the
+assumption base, as hypotheses of the assume ’s on lines 6 and 7, therefore chain success-
+fully derives the required conjunction of the two atoms and l icenses the step.
+18 That this is the relevant instance was discovered by match ing the desired chain step(a * b = b) to the
+consequent of the rule, (n * m = m) , which resulted in the substitution {?n:N --> ?a:N ,?m:N --> ?b:N }. This
+matching is automatically done by chain .
+
+fpmics 2015/12/8 11:38 Page 178 #200
+178 CHAPTER 3. PROVING EQUALITIES
+We close this section with a brief discussion of some of the mo re advanced features of
+chain . We will illustrate each feature with the following three ru les:
+assert* R1 := (n * one = n)
+assert* R2 := (n * zero = zero)
+assert* comm := (n * m = m * n)
+The implementation of chain allows for:
+•Multiple redexes from a single rule in one step : A single rewrite rule can be used to
+rewrite multiple redexes in a starting term, all in one singl echain step. For example:
+> (!chain [(m * one + n * one)
+= (m + n) [R1]])
+Theorem : (= (Plus (Times ?m:N one)
+(Times ?n:N one))
+(Plus ?m:N ?n:N))
+HereR1was apllied both to (m * one) and to(n * one) in the starting term
+(m * one + n * one)
+resulting in (m + n) in one step.
+•Multiple redexes from multiple rules in one step : More generally yet, the justiﬁcation list
+for a given step may contain multiple rewrite rules, and each rule may be used to rewrite
+one or more subterms of the starting term. For example:
+> (!chain [(m * zero + n * one) =
+(zero + n) [R1 R2]])
+Theorem : (= (Plus (Times ?m:N zero)
+(Times ?n:N one))
+(Plus zero ?n:N))
+HereR2was used to rewrite the subterm (m * zero) andR1was used to rewrite the
+subterm (n * one) , resulting in (zero + n) . As can be seen, it is not necessary to list the
+justiﬁers in any particular order. The implementation will determine which rule applies
+to which subterms.
+•Multiple successive rewrites in one step : Not only can multiple rewrite rules be applied
+to disjoint subterms of the starting term in one step, but mul tiple rewrite steps in non-
+disjoint positions can also be taken in one step. For instanc e, consider going from the
+starting term
+s=(zero * m + one * n)
+
+fpmics 2015/12/8 11:38 Page 179 #201
+3.14.⋆CONDITIONAL REWRITING AND ADDITIONAL FEATURES OF CHAINING 179
+to
+t=(zero + n)
+It is impossible to do this using R1andR2alone, because neither is in fact applicable
+to any subterm of s. We ﬁrst need to apply the comm rule twice, in order to reverse each
+of the two complex subterms of s, resulting in (m * zero + n * one) , and then we can
+ﬁnally apply R1andR2to obtain t. But it is in fact possible to take all of these actions in
+one step, simply by listing all three rules as justiﬁers:
+> (!chain [(zero * m + one * n) =
+(zero + n) [R1 comm R2]])
+Theorem : (= (Plus (Times zero ?m:N)
+(Times one ?n:N))
+(Plus zero ?n:N))
+The implementation of chain will launch an equational proof search, using various
+heuristics, that will attempt to derive the destination ter mtfrom the starting term susing
+the given rules. Because the search must always terminate ve ry quickly, this feature can-
+not typically be used to ﬁnd long and deep chains of equationa l reasoning. Nevertheless,
+as the example illustrates, this can be a handy feature to hav e when we want to perform
+a few simple rewriting steps in one fell swoop.
+•Redundant rules : It is not necessary for every listed justiﬁer of a given step to be used or
+even usable in that step. We can always list irrelevant justi ﬁers, and Athena will ﬁgure
+out that they are irrelevant and ignore them. This can be help ful when we have given
+a single name to several rewrite rules, as a group, and we want to justify a chain step
+by appealing to these rules collectively. This is often done with lists of rewrite rules
+intended to deﬁne functions. For instance, instead of deﬁni ngTimes with two separate
+axioms, and giving each axiom its own name, as we did before:
+assert Times-zero := (forall x . x * zero = zero)
+assert Times-nonzero := (forall x y . x * S y = x * y + x)
+we might deﬁne it with a single list of axioms, and only give a n ame to that list, e.g.:
+assert* Times-definition :=
+[(x * zero = zero)
+(x * S y = x * y + x)]
+This simply inserts every sentence in the given list into the assumption base,19and gives
+the name Times-definition to the entire list.
+19 After universally quantifying each sentence over all of i ts free variables; that is the effect of using assert*
+instead of assert .
+
+fpmics 2015/12/8 11:38 Page 180 #202
+180 CHAPTER 3. PROVING EQUALITIES
+Now later on we might want to justify a chain step that is enabled by one of these
+axioms by citing the list of axioms as a whole, Times-definition , rather than by taking
+the time to explicitly identify the relevant axiom in questi on. As an example, consider
+the earlier proof of Times-right-one (from page 131):
+1conclude Times-right-one
+2pick-any x:N
+3 (!chain
+4 [(x * one)
+5 = (x * S zero) [one-definition]
+6 = (x * zero + x) [Times-nonzero]
+7 = (zero + x) [Times-zero]
+8 = x [left-zero]])
+Here, each of the steps on lines 6 and 7 is justiﬁed by appealin g to the individual axiom
+that licenses the step, Times-nonzero for the ﬁrst one and Times-zero for the other. How-
+ever, it may be more convenient to simply write:
+conclude Times-right-one
+pick-any x:N
+  (!chain
+  [(x * one)
+  = (x * S zero) [one-definition]
+  = (x * zero + x) [Times-definition]
+  = (zero + x) [Times-definition]
+  = x [left-zero]])
+  and let Athena ﬁgure out which axiom(s) exactly, from the Times-definition list, is
+  needed on each step.
+  This brings up another related point: the justiﬁcation list Jof achain step
+  s=t J (3.7)
+  need not contain individual sentences only; it may also cont ainlists of sentences. On
+  lines 6 and 7 in the preceding proof the justiﬁcation list was [Times-definition] , which
+  is a list containing a list. In general, each element of Jcan be either be a sentence or a list
+  of sentences. The reason for this is readability. In informa l proofs, we sometimes justify
+  an inference step by appeal to a single sentence (say an axiom , lemma, or hypothesis),
+  other times by appeal to a whole collection of sentences, and other times by appeal
+  to both (e.g., “ s=tfollows from theorem Xand the equations deﬁning f”), and the
+  ﬂexible format of justiﬁcation lists is intended to emulate that style. Underneath, the
+  implementation of chain will “ﬂatten out” any justiﬁcation list Jinto a single collection
+  of sentences.
+  As pointed out above, Athena processes a chain step of the form (3.7) by launching
+  a search for an equational derivation of (s=t)from Jthat could potentially consist of
+  multiple rewrite steps. This means that we we can often short enchain proofs like the
+
+fpmics 2015/12/8 11:38 Page 181 #203
+3.14.⋆CONDITIONAL REWRITING AND ADDITIONAL FEATURES OF CHAINING 181
+previous one by skipping one or more steps. For instance, we c ould compress the steps
+on lines 6 and 7 into one, as follows:
+conclude Times-right-one
+pick-any x:N
+  (!chain
+  [(x * one)
+  = (x * S zero) [one-definition]
+  = (zero + x) [Times-definition]
+  = x [left-zero]])
+  In fact in this case we could actually skip allsteps:
+  conclude Times-right-one
+  pick-any x:N
+    (!chain [(x * one) = x [one-definition Times-definition lef t-zero]])
+    and the proof would still go through, as the rewrite steps wou ld be discovered by
+    Athena.20Such radical shortening is not always possible, but even whe n it is, we will
+    generally refrain from taking steps that are too large, as th e proof might then fail to shed
+    light on the underlying reasoning.
+    •No rules : When we don’t care to single out any rules for a given step (e. g., because
+    we feel that the rules justifying the step are obvious and do n ot need to be explicitly
+    speciﬁed), we may appeal to the entire assumption base, i.e. , the justiﬁer may simply
+    be(ab). Equivalently, we may omit a justiﬁer altogether for that st ep. This has the same
+    effect as listing the entire assumption base as the justiﬁer . For example, the last two steps
+    of the following chain do not list any justiﬁers, so the entire assumption base beco mes
+    the default justiﬁer list for each:
+    conclude Times-right-one
+    pick-any x:N
+      (!chain
+      [(x * one)
+      If a relatively short proof can be quickly found by rewriti ng, the discovered derivation can be displayed by
+      using the ternary procedure find-eqn-proof , which takes a term s, a term t, and a list of rewrite rules Lin the
+      assumption base, and attempts to ﬁnd a sequence of rewrite st eps from stotusing the rules in L. If it succeeds,
+      the output is a list of triples
+      [[s1R1θ1]···[snRnθn]]
+      where, for i=2,...,n,sican be derived from si−1byRiusing the substitution θi, where Riis an element of L,
+      s1=s, and sn=t, i.e., so that
+      s1→θ2s2[R2]→θ3s3[R3]··· → θnsn[Rn].
+      (The ﬁrst equation R1is the trivial identity (s=s)andθ1is the empty substitution.) If find-eqn-proof fails, it
+      returns the unit value (). For an illustration, apply the procedure to this example as follows:
+      (find-eqn-proof (x * one) x eqns)
+      witheqns deﬁned as [one-definition Times-zero Times-nonzero left-zero] .
+
+fpmics 2015/12/8 11:38 Page 182 #204
+182 CHAPTER 3. PROVING EQUALITIES
+= (x * S zero) [one-definition]
+= (zero + x)
+= x ])
+We rarely write chain steps without any justiﬁers and you should do the same, as suc h
+steps tend to be inefﬁcient and can result in unclear proofs.
+3.15 ⋆Proper function deﬁnitions
+Most of the functions in this book will be deﬁned by collectio ns of (possibly conditional)
+equations. We say “collections” rather than “lists” or “seq uences” because the order in
+which these equations are given is immaterial; we will retur n to this point shortly.
+Speciﬁcally, a function fwith signature [S1···Sn] -> Swill usually be deﬁned by k>0
+possibly conditional equations. Since an unconditional id entity can also be regarded as a
+conditional one, with the trivial condition true, we can think of all kdeﬁning equations of
+f,E1,...,Ek, as conditional, having the following form:
+E1≡(p1==> (( f t1
+1···t1
+n) = r1))
+E2≡(p2==> (( f t2
+1···t2
+n) = r2))
+............
+Ek≡(pk==> (( f tk
+1···tk
+n) = rk))
+where each tj
+iconsists exclusively of constructors and/or variables. Th e right-hand-sides
+rjwill typically consist of constructors, variables, and oth er function symbols (possibly
+including f) that have been likewise deﬁned by similar sets of equations .
+We usually intend the given equations to constitute a total speciﬁcation of f, which
+means that they ought to determine a unique result for every possible sequence of inputs
+x1:S1···xn:Sn. (3.8)
+For that reason, we usually require that there is exactly one equation E japplicable to any
+given input (3.8). That boils down to requiring that (a) ther e isat least one E japplicable to
+any such input, and (b) there is at most oneEjapplicable to any such input. We call these
+theexhaustiveness anddisjointness requirements, respectively. We discuss each in turn:
+•Exhaustiveness : The requirement that there is at least one equation applica ble to any
+input is formally captured by the following sentence:
+(forall x1:S1···xn:Sn(or D1···Dk)) (3.9)
+with each Djas follows:
+Dj≡(exists− →vj(and ( x1=tj
+1)···(xn=tj
+n)pj)) (3.10)
+
+fpmics 2015/12/8 11:38 Page 183 #205
+3.15. ⋆PROPER FUNCTION DEFINITIONS 183
+where we write− →vjfor a ﬁxed listing of the union of the variables that appear in
+(f tj
+1···tj
+n)along with the free variables of pj, and we assume that the variables
+x1:S1···xn:Snare fresh, i.e., do not occur in any deﬁning equation Ej. Intuitively, (3.9)
+says that no matter what input values x1:S1···xn:Snwe choose, there is at least one
+equation Ejsuch that (f tj
+1···tj
+n)and(f x1···xn)become identical and pjis satisﬁed (by
+replacing the variables in the former term and in pjby suitable values; the sentence Dj
+simply asserts the existence of such values). Operationall y, this means that we would
+then be able to use Ejas a rewrite rule to reduce (f x1···xn)to an appropriate instance of
+rj.
+•Disjointness : The requirement here is that if one equation is applicable t hen no others
+are:
+(forall x1:S1···xn:Sn(and ( D1==> D′
+1)···(Dk==> D′
+k))) (3.11)
+where each Djis deﬁned as in (3.10) and
+D′
+j=/logicalandtext
+i∈{1,...,k}\{j}(˜Di). (3.12)
+These two requirements should be viewed as general guidelin es that should normally
+be observed when deﬁning functions in this style: both of the se conditions should hold;
+indeed, both should be provable. Neither is set in stone, how ever. A set of equations might
+violate both conditions and still be a perfectly good functi on deﬁnition. That is probably
+easier to see in the case of exhaustiveness. Sometimes we do n ot care to specify the value
+of a function for certain inputs, and in such cases our deﬁnit ions will be non-exhaustive
+by design. For instance, when we later come to deﬁne division on the natural numbers, we
+will not specify the value of the function when the second arg ument (the divisor) is zero.
+Our equations will therefore serve only as a partial deﬁniti on; they will underspecify the
+division function. This simply means that there will be many different total functions with
+signature [N N] -> N satisfying the deﬁnition. A term such as (S zero / zero) (1 divided
+by 0) will still have a unique value under any given interpret ation, but we will not be able
+to derive any identities of the form
+(S zero / zero = n)
+for a canonical number n(assuming a consistent assumption base), because we will no t
+have any relevant axioms to work with. Underspeciﬁcation is fairly common.
+Disjointness violations occur less frequently, and when th ey do they are more likely to
+represent genuine problems in a deﬁnition. The main concern here is that if two distinct
+deﬁning equations are applicable to one and the same input te rms=(f···)then we might
+end up getting two different outputs r1/\e}atio\slash=r2for that input, r1from one equation and r2
+from the other, which could potentially lead to an inconsist ency, as we would then have to
+
+fpmics 2015/12/8 11:38 Page 184 #206
+184 CHAPTER 3. PROVING EQUALITIES
+conclude that (r1=r2)(from(s=r1)and(s=r2)). But disjointness violations can also
+be innocuous in some cases, as long as the overlapping equati ons are conﬂuent, meaning
+that ultimately they always lead to the same result. To take a simple if contrived example,
+consider the following unorthodox deﬁnition of the factori al function:
+declare fact: [N] -> N
+assert* fact-def :=
+[(fact zero = S zero)
+(fact S zero = S zero)
+(fact S n = S n * fact n)]
+The disjointness condition does not hold here because the la st two equations are both appli-
+cable to the term (S zero) . According to the ﬁrst of these equations, the input (S zero)
+should produce the output (S zero) :
+(fact S zero = S zero) . (3.13)
+And according to the last equation, it should produce the out put
+(S zero * fact zero) . (3.14)
+However, (fact zero) is itself mapped to (S zero) , hence (3.14) further reduces to
+(S zero * S zero) ,
+which, by the deﬁnition of multiplication, becomes (S zero) . We thus arrive at the same
+conclusion as (3.13), and this is in fact a legitimate—if uno rthodox and unnecessarily
+complicated—deﬁnition of the factorial function.
+By and large, however, we will want disjointess to hold. If an d when it does not, we
+should be aware of that fact and either reformulate our deﬁni tion so as to make the equa-
+tions disjoint, or else at least examine the violations clos ely to ensure that they do not
+yield an inconsistency. Likewise for exhaustiveness; we sh ould be aware when a deﬁni-
+tion is non-exhaustive to ensure that the omitted cases are i ntentional (because we want to
+underspecify the function at hand) rather than due to an over sight.
+Athena provides a unary procedure fun-def-conds that can help in that task. It takes
+any function symbol f21that has been deﬁned in the style we have been discussing, and
+produces a list of sentences that capture the two conditions discussed above, the exhaus-
+tiveness and disjointness conditions for f. These two can also be produced separately by
+the procedures fun-def-conds-e (for exhaustiveness) and fun-def-conds-d (for disjoint-
+ness). The output sentences may actually be somewhat simple r than the deﬁnitions given
+above, as these procedures ﬁrst try to carry out a few element ary simpliﬁcations.
+Or overloaded procedure f.
+
+fpmics 2015/12/8 11:38 Page 185 #207
+3.15. ⋆PROPER FUNCTION DEFINITIONS 185
+When the equations deﬁning fare not conditional, both exhaustiveness and disjointness
+are automatically decidable, and moreover, when either con dition is violated, appropriate
+counterexamples can be mechanically generated. Procedure fun-def-conds will perform
+these checks automatically whenever it realizes that all de ﬁning equations are uncondi-
+tional. It will still return a list of sentences representin g the exhaustiveness and disjointness
+conditions, but it will also print out a message which will ei ther declare that these sentences
+hold or else report counter-examples, namely, speciﬁc inpu ts that violate these conditions.
+For instance, here is the output for Plus:
+> (fun-def-conds Plus)
+The definition of Plus is well-formed; the following condit ions hold:
+List: [
+(forall ?v1273:N
+(or (exists ?v1269:N
+(= ?v1273
+(S ?v1269)))
+(= ?v1273 zero)))
+(forall ?v1286:N
+(if (exists ?v1282:N
+(= ?v1286
+(S ?v1282)))
+(not (= ?v1286 zero))))
+]
+Note that the output reports that the conditions are satisﬁe d. Also note that these two
+conditions follow directly from the structural datatype ax ioms for the natural numbers. By
+contrast, here is the output we get for the previous deﬁnitio n offact:
+> (fun-def-conds fact)
+[Warning: the equational axioms defining fact are not disjo int.
+For example, at least two distinct axioms apply to every inst ance
+of this term: (fact (S zero)).]
+List: [
+(forall ?v1308:N
+(or (exists ?v1307:N
+(= ?v1308
+(S ?v1307)))
+(= ?v1308
+(S zero))
+(= ?v1308 zero)))
+(forall ?v1313:N
+(if (exists ?v1312:N
+(= ?v1313
+
+fpmics 2015/12/8 11:38 Page 186 #208
+186 CHAPTER 3. PROVING EQUALITIES
+(S ?v1312)))
+(not (= ?v1313 zero))))
+(forall ?v1313:N
+(if (exists ?v1312:N
+(= ?v1313
+(S ?v1312)))
+(not (= ?v1313
+(S zero)))))
+(forall ?v1313:N
+(if (= ?v1313
+(S zero))
+(not (= ?v1313 zero))))
+]
+Here the procedure determined that disjointess does not hol d and issued a warning to that
+effect, along with a speciﬁc input, (S zero) , that violates the condition. This could have
+also been discovered by falsify if we had tried to generate counterexamples to the given
+sentences:
+define [c1 c2 c3 c4] := (fun-def-conds fact)
+> c3
+Sentence: (forall ?v1327:N
+(if (exists ?v1326:N
+(= ?v1327:N
+(S ?v1326:N)))
+(not (= ?v1327:N
+(S zero)))))
+> (falsify c3 5)
+List: [ /quotesingle.Varsuccess |{?v1326:N := zero, ?v1327:N := (S zero)}|]
+The assignment ?v1327:N := (S zero) gives us a speciﬁc input value that violates the dis-
+jointness condition c3(which is universally quantiﬁed over ?v1327:N ). But again, when the
+deﬁning equations are not conditional this work is done auto matically by fun-def-conds .
+When some of the deﬁning equations are conditional, both exh austiveness and disjoint-
+ness can become arbitrarily difﬁcult to decide. In that case one should look at each sentence
+in the output list of fun-def-conds and try to prove each separately, or at least convince
+oneself that each holds, or, ﬁnally, if it is violated, that t he violation is harmless. Violations,
+when they occur, can often be found automatically by falsify , and usually at low bounds.
+When no violations can be found that usually means that a cond ition holds, in which case
+it should be provable. Again, these conditions can occasion ally require non-trivial proof,
+
+fpmics 2015/12/8 11:38 Page 187 #209
+3.15. ⋆PROPER FUNCTION DEFINITIONS 187
+but oftentimes a proof can be found automatically. Users cou ld, for instance, try deriving
+each of the relevant conditions via the unary method induction* , which takes a universally
+quantiﬁed sentence and attempts to derive it by using (possi bly nested) structural induc-
+tions along with external ATPs integrated with Athena. Data type axioms typically need to
+be in the assumption base for such proofs to succeed.
+For those who are used to programming with pattern matching i n functional program-
+ming languages like ML, note that the operational semantics of such languages guarantee
+disjointness by default, because patterns are tried sequen tially from top to bottom. It would
+be impossible for two clauses to be applicable to one and the s ame input because, by def-
+inition, only the ﬁrst (topmost) one that matched could ever be applied. For instance, the
+foregoing deﬁnition of fact would be given as follows in ML:
+fun fact(zero) = S(zero)
+| fact(S(zero)) = S(zero)
+| fact(S(n)) = Times(S(n),fact(n));
+The last two clauses here are in principle overlapping, but t his is resolved because the
+third one will only be applied if the second one does not match , i.e., only when the input is
+greater than 1. By contrast, in the Athena style we have been d iscussing, the order in which
+the equations are given is irrelevant, and hence disjointne ss needs a little more care. (Non-
+exhaustive deﬁnitions in languages like ML are also automat ically detected and trigger
+warnings.)
+Apart from the conditions discussed above, any recursion pr esent in function deﬁnitions
+must be well-founded, i.e., there should be no inﬁnite chain s
+t1→t2[R1]→t3[R2]→ ···
+whereby a term t1is reduced to t2,t2tot3, and so on ad inﬁnitum. Here is a trivial example
+of a function deﬁnition that fails this requirement:
+declare loop: [N] -> N
+assert* loop-def := [(loop x = loop x)]
+Clearly, for any canonical natural number nwe have
+(loop n)→(loop n) [loop-def] →(loop n) [loop-def] → ···
+ad inﬁnitum. So, for computational purposes, this deﬁnitio n is unacceptable because if we
+tried to use it to mechanically evaluate a term, such as (loop zero) , we would never arrive
+at a result. And for logical purposes the deﬁnition is uninte resting, because the axiom
+is satisﬁed by inﬁnitely many (indeed, by all) unary functions on the natural numbers.
+Therefore, the axiom has no content, as it fails to weed out an y models, i.e., it fails to say
+anything interesting about loop. Care must be taken to ensure that function deﬁnitions are
+terminating. Formally, this can be done by introducing a fun ction that associates an integer
+
+fpmics 2015/12/8 11:38 Page 188 #210
+188 CHAPTER 3. PROVING EQUALITIES
+quantity with the arguments of a deﬁned function, and establ ishing that each recursive call
+decreases that quantity. Informally, inﬁnite loops can be d etected by eval. Ultimately, it is
+the user’s responsibility to ensure that a deﬁned function fdetermines a unique result for
+all inputs in the intended purview of f.
+3.16 Summary
+The most important points raised in this chapter include the following:
+• Equality chaining is a broadly useful proof method, explor ed in terms of addition and
+multiplication functions on natural numbers and concatena tion and reversal functions on
+lists. Athena’s chain method allows expression of equality chains in a form that cl osely
+resembles the way they are commonly expressed in mathematic al writing.
+• Understanding equality chaining is aided by considering t erms and sentences as tree
+structures. A fundamental step involved is term rewriting , deﬁned as replacement of one
+subterm t′of a term tby a new term t′′. Rewriting involves matching of t′to the left-
+hand side of a rewrite rule (an equation L=Rwhere all variables in Ralso appear in L),
+which determines a substitution θthat is applied to Rto yield t′′.
+• Not all useful equalities can be proved just by equality cha ining. Some form of mathe-
+matical induction may be necessary. Here we have considered a simple form for natural
+numbers and lists called ordinary induction . In later chapters we will consider variations
+such as strong induction , that are better adapted for proving properties of function s that
+recurse in less trivial ways.
+• Mathematical induction for a given datatype Tis based on how Tis deﬁned by con-
+structors. Athena’s by-induction proof form extracts the necessary information from
+T’s deﬁnition to set up the required basis and inductive step p roof cases.
+• For understanding how functions can be properly deﬁned by e quational axioms, it helps
+to be able to evaluate ground terms (i.e., terms with no varia bles) using the axioms to see
+if the result agrees with one’s intuition. Athena’s eval procedure provides this capability.
+• Proofs can be developed bottom-up (working from axioms and proving lemmas and
+then a desired result) or top-down (from the desired result c onjecturing needed lem-
+mas, attempting to prove them and possibly conjecturing mor e lemmas until axioms are
+reached), or some combination of the two appraoches. Learni ng to manage such proof
+development is challenging, but the examples and exercises in this book will provide
+extensive experience with the key issues.
+• The last four sections of the chapter are starred because th ey can be treated as reference
+material to be consulted when related topics come up in later chapters:
+
+fpmics 2015/12/8 11:38 Page 189 #211
+3.17. ADDITIONAL EXERCISES 189
+• Athena provides support for translating familar notation s to/from datatypes on which
+proof methods such as equality chaining and induction are de ﬁned. For example, base-
+10 numeric literals can be translated to/from the unary nota tion of Peano arithmetic
+(datatype N), and square-brackets notation for lists to/from construc tions with the
+niland::(“cons”) of datatype (List T) .
+• Athena also provides a simple form of model checking with itsfalsify procedure.
+Applied to a conjectured sentence, it can ﬁnd a counterexamp le if the sentence is not
+valid and a small enough counterexample exists. Besides sav ing time and effort spent
+on futile proof attempts, falsify can help in debugging a conjecture, replacing it with
+one that is actually valid, and thus provable.
+• The rewriting notion was extended to rewrite rules that hav e conditions, making it far
+more useful than the unconditional rules studied in the rest of the chapter.
+• Finally, the last section considered proper function deﬁnitions : when does a set of
+conditional rewrite rules deﬁne a function totally and with out introducing any incon-
+sistency. This boils down to requirements of exhaustiveness anddisjointness on the
+rules.
+Other aspects of complexity in proof development will arise as we move beyond equa-
+tional sentences and the equation-chaining proof methods w e have studied in this chapter.
+While equations are widely used in mathematics and the scien ces (including computer sci-
+ence) and equation-chaining proofs are relatively easy bot h to construct and to understand,
+they are only a small part of the full range of useful logic con cepts and proof methods.
+And even with equations, we have not yet seen signiﬁcant exam ples of the conditional
+equations introduced in Section 3.14. Other crucial questi ons include how to properly deal
+with conjunction ( &), disjunction ( |), equivalence ( <==>)? How do quantiﬁers interact with
+negation? And so on.
+To prepare to address the many aspects of proof development t hat we cover in later
+chapters, we will devote the next two chapters to a tour of the most fundamental principles
+of logic and proof, starting with sentential logic in Chapte r 4 and continuing with ﬁrst-order
+predicate logic in Chapter 5.
+3.17 Additional exercises
+For each exercise requiring a proof, write the proof in a ﬁle s uch that when loaded into a
+fresh Athena session, Athena accepts the proof (and what it p roves is the stated sentence!).
+Most of these exercises build upon previous ones; i.e., theo rems proved in previous exer-
+cises can be used as lemmas (and should be, rather than reprov ing the same thing inline).
+Thus, you should generally write your solutions to the exerc ises in the order given, and
+in a single ﬁle, so that all of the necessary declarations, ax ioms, and previously proved
+
+fpmics 2015/12/8 11:38 Page 190 #212
+190 CHAPTER 3. PROVING EQUALITIES
+theorems are present and will already have been processed by Athena when it is executing
+the current proof. If an exercise states a property Pand you are unable to write a proof for
+it (or that exercise wasn’t assigned), go ahead and assert P, so that you can use it where
+necessary in a later exercise. To get started, put the follow ing at the beginning of your
+solutions ﬁle.
+datatype N := zero | (S N)
+declare one: N
+assert one-definition := (one = (S zero))
+assert (datatype-axioms "N")
+declare Plus: [N N] -> N
+(overload (+ Plus))
+assert right-zero := (forall ?n . ?n + zero = ?n)
+assert right-nonzero := (forall ?n ?m . ?n + (S ?m) = (S (?n + ?m)))
+Exercise 3.19: Proveleft-zero (deﬁned in Section 3.5).
+Exercise 3.20: Proveleft-nonzero (deﬁned in Section 3.5).
+Exercise 3.21: ProvePlus-commutative (deﬁned in Exercise 3.12). Hint: You will need
+bothleft-zero andleft-nonzero .
+Exercise 3.22: State and prove Plus-Associative , an associative axiom for Plus analo-
+gous toTimes-associative (deﬁned on page 132).
+To prepare for the following exercises, insert in your solut ions ﬁle Athena commands
+declaring Times and deﬁning and asserting the two Times axioms given on page 131.
+Exercise 3.23: Prove the following property of Times :
+define Times-left-zero := (forall ?x . zero * ?x = zero)
+Exercise 3.24: Prove the following property of Times :
+define Times-left-nonzero := (forall ?x ?y . (S ?y) * ?x = ?x + ?y * ?x)
+Exercise 3.25: Prove the following property of Times :
+
+fpmics 2015/12/8 11:38 Page 191 #213
+3.17. ADDITIONAL EXERCISES 191
+define Times-Right-Distributive :=
+(forall ?x ?y ?z . (?x + ?y) * ?z = ?x * ?z + ?y * ?z)
+Exercise 3.26: ProveTimes-associative (deﬁned on page 132). Hint: You will need to
+use the three preceding Times properties.
+Exercise 3.27: State and prove Times-commutative , a commutative axiom for Times .
+To prepare for the following exercises, insert in your solut ions ﬁle Athena commands
+declaring **and deﬁning and asserting the two axioms for **given on page 132. Also
+deﬁneTimes-right-one and assert or prove it.
+Exercise 3.28: Prove the following property of **:
+(forall ?n . one ** ?n = one)
+Exercise 3.29: Prove the following property of **:
+define Power-Plus :=
+(forall ?m ?n ?x . ?x ** (?m + ?n) = ?x ** ?m * ?x ** ?n)
+Exercise 3.30: Prove the following property of **:
+define Power-Distributive :=
+(forall ?n ?x ?y . (?x * ?y) ** ?n = ?x ** ?n * ?y ** ?n)
+To prepare for the following exercises, insert in your solut ions ﬁle Athena commands
+declaring join and deﬁning and asserting the two join axioms given on page 149; do the
+same for the reverse declaration and axioms given on page 155. Also assert or repr ove
+right-empty , (page 3.9) and deﬁne reverse-reverse-property (page 3.11).
+Exercise 3.31: Prove the following property of join:
+define right-nonempty :=
+(forall ?p ?y ?q . ?p join (?y :: ?q) =
+(?p join (?y :: nil)) join ?q)
+Exercise 3.32: Withright-nonempty (Exercise 3.31) at hand, reconsider the failed
+proofs of reverse-reverse-property (page 157) and the ﬁrst version of reverse-join-1
+(page 158). Does it help?
+
+fpmics 2015/12/8 11:38 Page 192 #214
+192 CHAPTER 3. PROVING EQUALITIES
+Exercise 3.33: The second version of reverse-join-1 (page 159) generalizes the ﬁrst ver-
+sion (page 158) by having only a variable ?pas the ﬁrst argument to join rather than the
+term(reverse ?p) . But it is still rather specialized in having a singleton lis t as the second
+argument of join. Prove the following further generalization:
+define reverse-join-property :=
+(forall ?p ?q . (reverse (?p join ?q)) = (reverse ?q) join (rev erse ?p))
+Exercise 3.34: Give another proof of reverse-reverse-property usingreverse-join as a
+lemma rather than reverse-join-1 .
+Exercise 3.35: Deﬁne the procedure replace-subterm described in Section 3.3.
+Exercise 3.36: Deﬁne a procedure term-positions that takes a term tand returns a list of
+all and only those lists of positive integers that represent valid positions in the tree represen-
+tation of t. For instance, (term-positions (S zero)) should return a list containing []and
+[1]only. The order in which the elements of the resulting list ar e arranged is immaterial.
+Exercise 3.37: Deﬁne a unary procedure that takes a sentence pand returns a list of all
+and only the subsentences of p. (The subsentences can be listed in any order but without
+duplications.)
+Exercise 3.38: Implement the procedures subsentence ,subsentence-node , andreplace-
+subsentence , as discussed at the end of Section 3.3.
+Exercise 3.39: Deﬁne a procedure sentence-positions that takes a sentence pand returns
+a list of all and only those lists of positive integers that re present valid positions in the tree
+representation of p, in any order. (This is the sentential analogue of term-positions from
+exercise 3.36.)
+Exercise 3.40: Recall the deﬁnition of int->nat given in Section 3.12:
+define (int->nat n) :=
+check{
+(numeral? n) => check{(less? n 1) => zero
+|else=> (S (int->nat (minus n 1)))}
+|else=> n
+}
+Can you spot any glaring sources of inefﬁciency that could be easily removed?
+
+fpmics 2015/12/8 11:38 Page 193 #215
+3.18. CHAPTER NOTES 193
+3.18 Chapter notes
+Birkhoff [9] in 1935 laid the foundations of equational logi c based on identities in abstract
+algebras. In 1970 Knuth and Bendix [41] achieved a breakthro ugh in automating proofs
+of equations using term rewriting systems. Two properties t hat were brieﬂy discussed in
+Section 3.15 for ensuring proper function deﬁnitions, termination andconﬂuence of the
+deﬁning axioms, are also crucial for fully automating proof s of equations. The Knuth-
+Bendix completion procedure achieves both properties in ma ny cases by modifying the
+original set of rules and augmenting it with new rules, but ne ither the original procedure nor
+any of its subsequent reﬁnements always terminates. Dersho witz and Joannaud [17] survey
+much of the very extensive research on term rewriting system s and give many references.
+One line of this research builds on a surprising discovery by Musser [55] that under certain
+conditions it is possible to prove an equation in the inducti ve theory of the axioms without
+explicitly setting up and proving basis and inductive step c ases. The conditions are that
+the axioms satisfy the exhaustiveness property (discussed in Section 3.15 and also known
+in the literature as sufﬁcient completeness ) and that one can generate a terminating and
+conﬂuent system that includes the axioms and the new equatio n.
+In this book our main concern is not with automation of proofs of equations but with
+expressing proofs in a format—an equation chain or inductio n cases that each consist of
+equation chains—that is intuitive to a human reader and easi ly checkable by a software
+program. An advantage of this approach is that we do not alway s have to have termination
+and conﬂuence of the sets of equations we use to axiomatize da ta types: we do use the
+equations as rewrite rules, but we have full control over how they are applied in proofs.
+When each link of an equation chain is justiﬁed by a single rew rite rule, there is no issue
+of termination or conﬂuence (with rare exceptions such as a r ule that by itself produces
+an inﬁnite sequence of rewrites). If we want to shorten proof s by using more than one
+axiom in a link justiﬁcation, then we need to be a bit more conc erned about termination,
+as multiple rules might be combined in unexpected ways to pro dude an inﬁnite rewrite
+sequence. In many cases, however, termination is naturally satisﬁed, and we furthermore
+usually have disjointness, which trivially guarantees con ﬂuence, so we avoid the need to
+run a completion procedure.
+
+fpmics 2015/12/8 11:38 Page 194 #216

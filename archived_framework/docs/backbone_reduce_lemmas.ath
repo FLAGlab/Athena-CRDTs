@@ -1,0 +1,27 @@
+load "backbone"
+load "payload"
+module BackboneReduceLemmas {
+open Backbone
+open Payload
+define reduce-empty-is-id-statement :=
+  "For any ops, states, clocks: reduce ops (kfg states clocks empty-mset) = (kfg states clocks empty-mset)"
+define reduce*-empty-is-id-statement :=
+  "For any ops, states, clocks: reduce* ops (kfg states clocks empty-mset) = (kfg states clocks empty-mset)"
+define reduce-removes-one-message :=
+  "For any cfg with non-empty net (insert msg rest), reduce ops cfg yields a cfg with net = rest (after processing msg)."
+define reduce*-stabilizes-statement :=
+  "For any cfg with cfg-empty-net cfg, reduce* ops cfg = cfg"
+define reduce*-drains-network-statement :=
+  "For any finite cfg, reduce* eventually empties the network"
+define broadcast-creates-n-messages-statement :=
+  "broadcast cfg payload creates |actors| messages"
+define reduce*-deterministic-modulo-order-statement :=
+  "Different message orderings converge to same state via commutativity"
+} 
+open BackboneReduceLemmas
+(print "\n=== Backbone Reduce Lemmas Loaded ===\n")
+(print "Defined: reduce-empty-is-id (statement)\n")
+(print "Defined: reduce*-empty-is-id (statement)\n")
+(print "Defined: reduce*-stabilizes (statement)\n")
+(print "Defined: reduce*-drains-network (statement)\n")
+(print "Scaffold: broadcast and determinism lemmas for future proofs\n")

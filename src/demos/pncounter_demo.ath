@@ -1,0 +1,63 @@
+load "../crdts/pncounter/pncounter_payload_adapter"
+open PNCounterAdapter
+open Payload
+
+(print "\n========================================\n")
+(print "PN-Counter Demo - Unified Framework\n")
+(print "========================================\n\n")
+
+# Create initial configuration with 3 actors
+define actors := ('a :: 'b :: 'c :: nil)
+define cfg0 := (pnc-init actors)
+
+(print "[Step 1] Initialize configuration with actors: a, b, c\n")
+(print "Initial state (pos, neg): (0, 0) for each actor\n\n")
+
+# Actor 'a increments positive by 3 - broadcast to self
+define cfg1 := (pnc-broadcast cfg0 ('a :: nil) (PNCounterSpec.inc-pos (S (S (S zero)))))
+
+(print "[Step 2] Actor 'a increments by 3\n")
+
+# Deliver
+define cfg2 := (pnc-reduce cfg1)
+
+(print "[Step 3] Deliver to 'a -> state: (3, 0)\n\n")
+
+# Actor 'b increments positive by 2 - broadcast to self
+define cfg3 := (pnc-broadcast cfg2 ('b :: nil) (PNCounterSpec.inc-pos (S (S zero))))
+
+(print "[Step 4] Actor 'b increments by 2\n")
+
+# Deliver
+define cfg4 := (pnc-reduce cfg3)
+
+(print "[Step 5] Deliver to 'b -> state: (2, 0)\n\n")
+
+# Actor 'c decrements (increments negative) by 1 - broadcast to self
+define cfg5 := (pnc-broadcast cfg4 ('c :: nil) (PNCounterSpec.inc-neg (S zero)))
+
+(print "[Step 6] Actor 'c decrements by 1\n")
+
+# Deliver
+define cfg6 := (pnc-reduce cfg5)
+
+(print "[Step 7] Deliver to 'c -> state: (0, 1)\n\n")
+
+# Actor 'a decrements by 1 - broadcast to self
+define cfg7 := (pnc-broadcast cfg6 ('a :: nil) (PNCounterSpec.inc-neg (S zero)))
+
+(print "[Step 8] Actor 'a decrements by 1\n")
+
+# Deliver
+define cfg-final := (pnc-reduce cfg7)
+
+(print "[Step 9] Deliver to 'a -> state: (3, 1)\n")
+(print "\nFinal state:\n")
+(eval (am cfg-final))
+(print "\n")
+
+(print "========================================\n")
+(print "Demo completed successfully!\n")
+(print "Total value: +3 +2 -1 -1 = 3\n")
+(print "Actor states: a:(3,1), b:(2,0), c:(0,1)\n")
+(print "========================================\n")

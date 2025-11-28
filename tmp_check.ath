@@ -1,0 +1,40 @@
+load "src/crdts/crdt_or_set_vc"
+
+open ORSetVC
+open VCBackbone
+
+define C0 := (ORSetVC.init ('alice :: 'bob :: nil))
+(print "full C0 cfg (init via ORSetVC):\n")
+(print C0)
+(print "\n")
+
+define C1 := (ORSetVC.issue-add C0 'alice 'apple)
+(print "after issue-add, pending:\n")
+(print (VCBackbone.get-pending C1))
+(print "\nfull C1 cfg:\n")
+(print C1)
+(print "\n")
+
+(print "Testing broadcast-with directly:\n")
+define C1b := (VCBackbone.broadcast-with C0 (ORSetVC.op-add 'test 'testtag FMap.empty-map))
+(print "pending after broadcast-with:\n")
+(print (VCBackbone.get-pending C1b))
+(print "\n")
+(print (VCBackbone.get-states C0))
+(print "\n")
+
+(print (VCBackbone.init-state-map Set.null ('alice :: 'bob :: nil)))
+(print "\n")
+
+(print (VCBackbone.get-states (VCBackbone.init Set.null ('alice :: 'bob :: nil))))
+(print "\n")
+
+(print (VCBackbone.init Set.null ('alice :: 'bob :: nil)))
+(print "\n")
+
+(print "direct enqueue test\n")
+define C2 := (VCBackbone.enqueue C0 'alice (ORSetVC.op-add 'x 't (VCBackbone.cfg-actor-clock C0 'alice)))
+(print (VCBackbone.get-pending C2))
+(print "\nfull C2 cfg:\n")
+(print C2)
+(print "\n")

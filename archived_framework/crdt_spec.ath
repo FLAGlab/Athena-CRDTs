@@ -1,0 +1,66 @@
+load "../utils/sets-notp"
+load "../utils/fmaps"
+load "../utils/pair"
+load "nat-max"
+module CRDTSpec {
+  structure (Spec State Value) :=
+    (crdt-spec
+      initial:State
+      merge:(Function State State State)
+      apply:(Function State Value State))
+  define (get-initial spec) :=
+    match spec {
+      (crdt-spec init _ _) => init
+    }
+  define (get-merge spec) :=
+    match spec {
+      (crdt-spec _ merge _) => merge
+    }
+  define (get-apply spec) :=
+    match spec {
+      (crdt-spec _ _ apply) => apply
+    }
+  module Theory {
+    define (prove-semilattice-properties merge-fn initial) :=
+      [(forall ?x ?y . ((merge-fn ?x ?y) = (merge-fn ?y ?x))),
+       (forall ?x ?y ?z . 
+         ((merge-fn (merge-fn ?x ?y) ?z) = (merge-fn ?x (merge-fn ?y ?z)))),
+       (forall ?x . ((merge-fn ?x ?x) = ?x)),
+       (forall ?x . ((merge-fn initial ?x) = ?x)),
+       (forall ?x . ((merge-fn ?x initial) = ?x))]
+  }
+  module Implementation {
+    datatype Unit := unit
+    datatype (Message Value Meta) := (msg Ide Value Meta)
+    datatype (Configuration State Value Meta) :=
+      (kfg am:(FMap.Map Ide State)
+           net:(MSet.MSet (Message Value Meta)))
+    define (init spec ids) :=
+      let {init-state := (get-initial spec);
+           init-map := (lambda (ids-list)
+                         match ids-list {
+                           nil => FMap.empty-map
+                         | (id :: rest) =>
+                             (FMap.update (pair id init-state) (init-map rest))
+                         })}
+        (kfg (init-map ids) MSet.null)
+    define (apply-update spec cfg actor value) :=
+      match cfg {
+        (kfg am net) =>
+          let {apply-fn := (get-apply spec);
+               current-state := (FMap.apply am actor);
+               new-state := match current-state {
+                 (SOME state) => (apply-fn state value)
+               | NONE => (get-initial spec)
+               }}
+            (kfg (FMap.update (pair actor new-state) am) net)
+      }
+    define (merge-states spec cfg1 cfg2) :=
+      let {merge-fn := (get-merge spec)}
+        match [cfg1 cfg2] {
+          [(kfg am1 _) (kfg am2 _)] =>
+            let {merged-am := (FMap.map-merge merge-fn am1 am2)}
+              (kfg merged-am MSet.null)
+        }
+  }
+} 

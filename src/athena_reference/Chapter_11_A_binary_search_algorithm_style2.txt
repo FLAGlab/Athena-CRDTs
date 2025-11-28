@@ -1,0 +1,641 @@
+fpmics 2015/12/8 11:38 Page 567 #589
+11A binary search algorithm
+11.1 Deﬁning the algorithm
+Binary search is an algorithm capable of searching a binary t ree containing nitems with
+only O(logn)comparisons, assuming the tree is balanced (roughly, this m eans each path
+from the root to a leaf node is about log2nin length). To deﬁne the binary search function
+on binary trees of natural numbers,1we start as usual with its declaration:
+extend-module BinTree {
+  declare binary-search: [N (BinTree N)] -> (BinTree N)
+  #...
+  Recall that in module BinTree we have already deﬁned the following variables and sorts:
+  define [x y z T L R] :=
+  [?x:N ?y:N ?z:N ?T:(BinTree N) ?L:(BinTree N) ?R:(BinTree N )]
+  To deﬁne how binary-search is computed, we call upon an Athen a procedure named fun
+  to translate a simpler input into deﬁning axioms:
+  assert axioms :=
+  (fun
+  [(binary-search x (node L y R)) =
+  [(node L y R) when (x = y)
+  (binary-search x L) when (x < y)
+  (binary-search x R) when (x =/= y &˜x < y)]
+  (binary-search x null) = null])
+  define [at-root go-left go-right empty] := axioms
+  The effect of the assert of thefuntogether with the define is exactly the same as if we
+  had written
+  assert at-root :=
+  (forall x L y R .
+  x = y ==> (binary-search x (node L y R)) = (node L y R)
+  assert go-left :=
+  (forall x L y R .
+  x < y ==> (binary-search x (node L y R)) =
+  (binary-search x L))
+  assert go-right :=
+  (forall x L y R .
+  x =/= y &˜x < y ==> (binary-search x (node L y R)) =
+  (binary-search x R))
+  assert empty := (forall x . (binary-search x null) = null)
+  In Chapter 15, we give a more general treatment, with binary trees over any type with a strict weak ordering
+  relation.
+
+fpmics 2015/12/8 11:38 Page 568 #590
+568 CHAPTER 11. A BINARY SEARCH ALGORITHM
+Thefunprocedure can be used to deﬁne either a predicate or a non-pre dicate function. For
+the details of how funtransforms its argument, see Exercise 12.18. From the binary-search
+example, we see that using funaffords important advantages over writing the axioms
+directly. An obvious advantage is that funproduces the universal closure of each clause
+of the deﬁnition, which saves writing the quantiﬁers explic itly. But the more important
+advantage comes from the fact that when there are several dif ferent axioms for a single
+argument pattern, corresponding to different conditions, one can write the left-hand side
+only once and put the right-hand sides and their enabling con ditions in a list. This syntax
+is similar to multipart deﬁnitions in conventional mathema tical notation, where one might
+write
+(binary-search x(node L y R ))=
+
+(node L y R ) where x=y
+(binary-search x L) where x<y
+(binary-search x R) where x/\e}atio\slash=yand~x<y
+Actually, one would probably write the third condition simp ly as the equivalent y<x, but
+writing it as the conjunction of the negations of the precedi ng conditions, as we have in the
+deﬁnition with fun, makes it syntactically explicit that the condition is disj oint from all of
+the previous ones. Another reason this is helpful is that whe n we we structure proofs using
+case analysis based on the same predicates that appear in the axioms, all of the required
+predicates will be in the assumption base when needed. For th ebinary-search axioms, the
+skeletal structure can be
+(!two-cases
+  assume (x = y)
+    # here at-root can be applied
+    ...
+    assume (x =/= y)
+      (!two-cases
+        assume (x < y)
+          # here go-left can be applied, since (x < y) is
+          # in the assumption base
+          ...
+          assume (˜x < y)
+            # here go-right can be applied, since both (x =/= y)
+            # and (˜x < y) are in the assumption base
+            ...
+            ))
+            This is the structure we use in the proofs of correctness theo rems about binary-search in
+            the next section.
+            In conventional mathematics, one often simply writes “othe rwise” for the last condition,
+            but thefunprocedure requires writing the last condition in full. It is worth the extra typing
+            to have the condition expressed fully, for readability and f or purposes of reference when
+            writing proofs. The lack of an “otherwise” option also means that the clauses could be
+
+fpmics 2015/12/8 11:38 Page 569 #591
+11.1. DEFINING THE ALGORITHM 569
+reordered without changing the meaning, just as is the case w ith the generated axioms or
+with axiom lists or individually asserted axioms.
+11.1.1 Efﬁciency considerations
+While the order of presentation makes no difference for the u se of axioms in proofs, it
+can have a signiﬁcant effect on efﬁciency when the axioms are used for execution of the
+functions they deﬁne. In Athena, this execution is realized with itseval procedure in con-
+junction with Athena code compiled from the axioms. Let’s lo ok at the Athena procedure
+binary-search‘ that is compiled from the axioms generated from our fundeﬁnition of
+binary-search :
+>define (binary-search‘ t1 t2) :=
+match[t1 t2] {
+([x3 (node x1 x4 x2)] where(=/quotesingle.Varx3 x4)) => (node x1 x4 x2)
+| ([x3 (node x1 x4 x2)] where(N.Less.Less‘ x3 x4)) =>
+(binary-search‘ x3 x1)
+| [x3 (node x1 x4 x2)] => (binary-search‘ x3 x2)
+| [x1 null:(BinTree N)] => null:(BinTree N)
+}
+Each axiom has been compiled as a clause of a match that tests for the argument pattern in
+the left-hand side of the equation and in the case of a conditi onal equation can also include
+awhere guard implementing the test for the condition. But note that the next-to-last clause
+contains no guard, whereas a completely straightforward tr anslation of the corresponding
+clause of the fundeﬁnition, namely
+(binary-search x R) when (x =/= y &˜x < y)]])
+would be
+([x3 (node x1 x4 x2)]
+where(&& (negate (= /quotesingle.Varx3 x4))
+(negate (N.Less.Less‘ x3 x4))))
+=> (binary-search‘ x3 x2))
+Since each conjunct in the guard negates a condition already tested in previous clauses, the
+guard simpliﬁes to (&& true true) , and thus to true, and thus it can be omitted.
+We see that such simpliﬁcations depend crucially on the orde r of the match clauses.
+There is actually a different order for this example that res ults in more efﬁcient compu-
+tation (in terms of the number of comparisons done on average ), as we will see in Sec-
+tion 11.4. One might conclude from such considerations that we need to be aware of all
+the details of how axioms are compiled in the Athena code, and beyond that all of the
+transformations it may undergo on the way to machine code (as , for example, if the Athena
+code is compiled into SML and thence to C and ﬁnally to machine code). But for most
+
+fpmics 2015/12/8 11:38 Page 570 #592
+570 CHAPTER 11. A BINARY SEARCH ALGORITHM
+purposes, the following guarantees about the match clauses of the Athena code sufﬁce: (1)
+the order of the match clauses is the same as the order in which the axioms are presented ,
+and (2) each guard in a match clause is simpliﬁed by removing t he negation of any guard
+of a preceding clause. These guarantees ensure that lines in afunserve, for purposes of
+computation, essentially like an “if-then-else” or “cond” construct in conventional high
+level languages.
+11.1.2 Correspondence to deﬁnitions in other languages
+With that understanding, and in a programming language that allows writing datatype con-
+structor patterns in the formal parameters of function deﬁn itions, such as ML or Oz, one
+can write the binary search deﬁnition in a form very similar t o the way we have written it
+usingfun. In ML, for example, we could write
+1datatype BinTree = Null | Node ofBinTree * int * BinTree
+2
+3funbinarySearch(x, Node(L, y, R)) =
+4 if x = y then
+5 node(L, y, R)
+6 elseif x < y then
+7 binarySearch(x, L)
+8 else
+9 binarySearch(x, R)
+10| binarySearch(x, Null) = Null
+Most languages, however, lack such a pattern matching featu re, and we would thus be
+restricted to using only variables as formal parameters. Th en, in the body of the function,
+we would need to replace occurrences of pattern variables wi th the corresponding accessor
+function call or other component access notation. In C ++, for example, we would write
+something like
+1struct node;
+2typedef node* BinTree;
+3
+4struct node {
+5BinTree left; intkey; BinTree right;
+6node(BinTree L, inty, BinTree R) : left(L), key(y), right(R) {}
+7};
+8
+9BinTree binarySearch( intx, BinTree T)
+10{
+11if (T == NULL)
+12 return NULL;
+13if (x == T->key)
+14 return T;
+15if (x < T->key)
+16 return binarySearch(x, T->left);
+
+fpmics 2015/12/8 11:38 Page 571 #593
+11.1. DEFINING THE ALGORITHM 571
+17return binarySearch(x, T->right);
+18}
+(Note that in this case, the test for the empty tree must be don e ﬁrst, since otherwise the
+expression T->key , etc., would cause an error when Tis aNULL pointer.)
+11.1.3 Interface design
+Before going on to proofs, let us note one additional factor i n algorithm design that is
+often just as important as computational efﬁciency, namely , the interface. In the case of
+binary-search , it would be simpler just to return a Boolean value, true if the search value
+is found, false otherwise. (Most signiﬁcantly, that interface would make s ome of the issues
+we have to deal with in the upcoming proofs disappear.) By ret urning a node or null,
+however, we still have an easy test for success— ((binary-search x T) =/= null) —and
+we make it possible to continue with other computations at th e position in the tree where
+the search value is found, without recomputing that positio n. For example, if we wanted
+to output all elements in the tree within a range from xtoy, where x<y, we could use
+binary-search to ﬁnd xand from that node do an inorder tree walk until yis encountered.
+(A tree walk starting from an interior node needs the tree to h ave parent links as well as left
+and right subtree links, so this could not be done with the sim ple form of tree considered
+here, but the binary search algorithm would remain the same i f parent links were included.)
+11.1.4 Testing with evaluation
+As in earlier cases, it’s a good idea to test our deﬁnition of b inary search using evaluation.
+To make it easy to deﬁne trees for test cases, we can arrange to use decimal integer notation
+instead of Nvalues, using the techniques introduced in Section 3.12. We ﬁrst deﬁne tree
+input and output conversion procedures as follows:
+define nat-tree->int-tree :=
+lambda (T)
+matchT {
+(node L x R) => (node (nat-tree->int-tree L)
+(nat->int x)
+(nat-tree->int-tree R))
+| null => null
+}
+define int-tree->nat-tree :=
+lambda (T)
+matchT {
+(node L x R) => (node (int-tree->nat-tree L)
+(int->nat x)
+(int-tree->nat-tree R))
+| null => null
+
+fpmics 2015/12/8 11:38 Page 572 #594
+572 CHAPTER 11. A BINARY SEARCH ALGORITHM
+}
+We can then use input expansion and output transformation to work with trees such as the
+one deﬁned in Figure 8.1 on page 470:
+expand-input BinTree.binary-search [int->nat int-tree->nat-tree]
+transform-output eval [nat-tree->int-tree]
+>(eval (BinTree.binary-search 5 tree1))
+Term: (node (node null
+3
+null)
+5
+null)
+>(eval (BinTree.binary-search 11 tree1))
+Term: (node null
+11
+null)
+>(eval (BinTree.binary-search 12 tree1))
+Term: null
+11.2 First correctness properties
+The ﬁrst correctness properties we consider concern what th e result returned by
+(binary-search x T) implies about presence or absence of xinT.
+define found :=
+(forall T .
+(BST T) ==>
+forall x L y R .
+(binary-search x T) = (node L y R) ==> x = y & x in T)
+define not-found :=
+(forall T .
+(BST T) ==>
+forall x . (binary-search x T) = null ==>˜x in T)
+The proof of found will be by induction on binary trees. Let’s ﬁrst write just th e proof of
+the basis case, encapsulating it in the following proof meth od:
+
+fpmics 2015/12/8 11:38 Page 573 #595
+11.2. FIRST CORRECTNESS PROPERTIES 573
+define binary-search-found-base :=
+method ()
+  conclude (BST null ==>
+  (forall x L y R .
+  (binary-search x null) = (node L y R) ==>
+  x = y & x in null))
+  assume (BST null)
+    pick-any x:N L:(BinTree N) y:N R:(BinTree N)
+      assume i := ((binary-search x null) = (node L y R))
+        let{A :=conclude (null = (node L y R))
+          (!chain
+          [null:(BinTree N) = (binary-search x null)
+          [empty]
+          = (node L y R) [i]]);
+          B := (!chain-> [true ==> (null =/= (node L y R))
+          [(exclusive-constructors "BinTree")]])}
+          (!from-complements (x = y & x in null) A B)
+          Now we can check the basis case proof before going on to the ind uction step, by executing
+          >(!binary-search-found-base)
+Theorem : (if (BinTree.BST null)
+(forall ?x:N
+(forall ?L:(BinTree N)
+(forall ?y:N
+(forall ?R:(BinTree N)
+(if (= (BinTree.binary-search ?x
+null)
+(node ?L
+?y
+?R))
+(and (= ?x ?y)
+(BinTree.In ?x
+null))))))))
+We therefore continue with the induction step. After applyi ng the deﬁnition of BSTto
+(node L y R) and combining the result with the induction hypotheses, the proof proceeds
+by case analysis, setting up cases according to whether xis found at the root, in the left
+subtree, or in the right subtree, and applying the correspon dingbinary-search axiom in
+each case.
+define binary-search-found-step :=
+method (T)
+  matchT {
+  (node L:(BinTree N) y:N R:(BinTree N)) =>
+  let{p1 := (forall ?x ?L1 ?y1 ?R1 .
+    (binary-search ?x L) = (node ?L1 ?y1 ?R1) ==>
+    ?x = ?y1 & ?x in L);
+    p2 := (forall ?x ?L1 ?y1 ?R1 .
+
+fpmics 2015/12/8 11:38 Page 574 #596
+574 CHAPTER 11. A BINARY SEARCH ALGORITHM
+(binary-search ?x R) = (node ?L1 ?y1 ?R1) ==>
+?x = ?y1 & ?x in R);
+ind-hyp1 := (BST L ==> p1);
+ind-hyp2 := (BST R ==> p2)}
+assume i := (BST (node L y R))
+  conclude
+  (forall ?x ?L1 ?y1 ?R1 .
+  (binary-search ?x (node L y R)) = (node ?L1 ?y1 ?R1)
+  ==> ?x = ?y1 & ?x in (node L y R))
+  let{
+    p0 := (BST L & (forall ?x . ?x in L ==> ?x <= y) &
+    BST R & (forall ?z . ?z in R ==> y <= ?z));
+    _ := (!chain-> [i ==> p0 [BST.nonempty]]);
+    _ := (!chain-> [p0 ==> (BST L) [prop-taut]
+    ==> p1 [ind-hyp1]]);
+    _ := (!chain-> [p0 ==> (BST R) [prop-taut]
+    ==> p2 [ind-hyp2]])}
+    pick-any x:N L1 y1:N R1
+      assume p3 := ((binary-search x (node L y R)) =
+        (node L1 y1 R1))
+        conclude (x = y1 & x in (node L y R))
+        (!two-cases
+          assume (x = y)
+            let{A :=conclude (x = y1)
+              (!chain->
+              [(node L y R)
+              = (binary-search x (node L y R))
+              [at-root]
+              = (node L1 y1 R1) [p3]
+              ==> (& (L = L1) (y = y1) (R = R1))
+              [(datatype-axioms "BinTree")]
+              ==> (y = y1)
+              [(compose right-and left-and)]
+              ==> (x = y1) [(x = y)]]);
+              B :=conclude (x in (node L y R))
+              (!chain->
+              [(x = y) ==> (x in (node L y R))
+              [in.root]])}
+              (!both A B)
+              assume (x =/= y)
+                (!two-cases
+                  assume (x < y)
+                    (!chain->
+                    [(binary-search x L)
+                    = (binary-search x (node L y R))
+                    [go-left]
+                    = (node L1 y1 R1) [p3]
+                    ==> (x = y1 & x in L) [p1]
+                    ==> (x = y1 & x in (node L y R))
+                    [in.left]])
+
+fpmics 2015/12/8 11:38 Page 575 #597
+11.2. FIRST CORRECTNESS PROPERTIES 575
+assume (˜x < y)
+  (!chain->
+  [(binary-search x R)
+  = (binary-search x (node L y R))
+  [go-right]
+  = (node L1 y1 R1) [p3]
+  ==> (x = y1 & x in R) [p2]
+  ==> (x = y1 & x in (node L y R))
+  [in.right]])))
+}
+The complete proof is then:
+>by-induction found {
+  null => (!binary-search-found-base)
+  | (node L y:N R) => (!binary-search-found-step (node L y R))
+}
+Theorem : (forall ?T:(BinTree N)
+(if (BinTree.BST ?T)
+(forall ?x:N
+(forall ?L:(BinTree N)
+(forall ?y:N
+(forall ?R:(BinTree N)
+(if (= (BinTree.binary-search ?x
+?T)
+(node ?L
+?y
+?R))
+(and (= ?x ?y)
+(BinTree.In ?x
+?T)))))))))
+Turning to the proof of not-found , we will write the basis case and induction step proofs
+inline. The basis case is an immediate consequence of BinTree.In.empty . In the induction
+step, we again start by applying the deﬁnition of BSTto(node L y R) and combining the
+result with the induction hypotheses. The conclusion we see k being a negative, we naturally
+use proof by contradiction, but there are several different cases to be considered and we
+must ﬁnd a contradiction within each.
+by-induction not-found {
+  null =>
+  assume (BST null)
+    conclude (forall ?x .
+    (binary-search ?x null) = null ==>˜?x in null)
+    pick-any x:N
+      assume ((binary-search x null) = null)
+
+fpmics 2015/12/8 11:38 Page 576 #598
+576 CHAPTER 11. A BINARY SEARCH ALGORITHM
+(!chain-> [true ==> (˜x in null) [in.empty]])
+| (node L y:N R) =>
+let{p1 := (forall ?x .
+  (binary-search ?x L) = null ==>˜?x in L);
+  p2 := (forall ?x .
+  (binary-search ?x R) = null ==>˜?x in R);
+  ind-hyp1 := (BST L ==> p1);
+  ind-hyp2 := (BST R ==> p2)}
+  assume i := (BST (node L y R))
+    conclude (forall ?x . (binary-search ?x (node L y R)) = null ==>
+    ˜?x in (node L y R))
+    let{
+      smaller-in-left := (forall ?x . ?x in L ==> ?x <= y);
+      larger-in-right := (forall ?z . ?z in R ==> y <= ?z);
+      p0 := (BST L & smaller-in-left & BST R &
+      larger-in-right);
+      _ := (!chain-> [i ==> p0 [BST.nonempty]]);
+      _ := (!chain-> [p0 ==> (BST L) [prop-taut]
+      ==> p1 [ind-hyp1]]);
+      _ := (!chain-> [p0 ==> smaller-in-left [prop-taut]]);
+      _ := (!chain-> [p0 ==> (BST R) [prop-taut]
+      ==> p2 [ind-hyp2]]);
+      _ := (!chain-> [p0 ==> larger-in-right [prop-taut]])}
+      pick-any x
+        assume p3 := ((binary-search x (node L y R)) = null)
+          (!by-contradiction (˜x in (node L y R))
+            assume (x in (node L y R))
+              let{p4 := (!chain-> [(x in (node L y R))
+                ==> (x = y | x in L | x in R)
+                [in.nonempty]])}
+                (!two-cases
+                  assume (x = y)
+                    let{A := (!chain
+                      [null:(BinTree N)
+                      = (binary-search x (node L y R)) [p3]
+                      = (node L y R) [at-root]]);
+                      B := (!chain->
+                      [true ==> (null =/= (node L y R))
+                      [(exclusive-constructors "BinTree")]])}
+                      (!absurd A B)
+                      assume (x =/= y)
+                        (!two-cases
+                          assume (x < y)
+                            (!cases p4
+                              assume (x = y)
+                                (!absurd (x = y) (x =/= y))
+                                assume A := (x in L)
+                                  let{B := (!chain->
+                                    [(binary-search x L)
+                                    = (binary-search x (node L y R))
+
+fpmics 2015/12/8 11:38 Page 577 #599
+11.2. FIRST CORRECTNESS PROPERTIES 577
+[go-left]
+= null:(BinTree N) [p3]
+==> (˜x in L) [p1]])}
+(!absurd A B)
+assume (x in R)
+  let{_ := (!chain->
+    [(x in R)
+    ==> (y <= x) [larger-in-right]
+    ==> (˜x < y)
+    [N.Less=.trichotomy4]])}
+    (!absurd (x < y) (˜x < y)))
+    assume (˜x < y)
+      (!cases p4
+        assume (x = y)
+          (!absurd (x = y) (x =/= y))
+          assume (x in L)
+            let{_ :=
+              (!chain->
+              [(x in L)
+              ==> (x <= y) [smaller-in-left]
+              ==> (x < y | x = y) [N.Less=.definition]
+              ==> (˜x < y & (x < y | x = y))
+              [augment]
+              ==> (x = y) [prop-taut]])}
+              (!absurd (x = y) (x =/= y))
+              assume (x in R)
+                let{_ :=
+                  (!chain->
+                  [(binary-search x R)
+                  = (binary-search x (node L y R))
+                  [go-right]
+                  = null:(BinTree N) [p3]
+                  ==> (˜x in R) [p2]])}
+                  (!absurd (x in R) (˜x in R))))))
+                }# by-induction
+                Exercise 11.1: In the proof given for not-found , we structured the case analysis along the
+                lines discussed on page 568 (and used also in the proof of found ). Within two of the cases
+                there are nested case analyses based on the cases (x = y | x in L | x in R) . Modify the
+                proof to do a top level case analysis based on those cases.
+                Exercise 11.2: In the solution given in the online solutions to the precedin g exer-
+                cise, in the proof of the induction step, note that the main pr oof by contradiction, of
+                (˜x in (node L y R)) , is preceded by another proof by contradiction, of (x =/= y) . A
+
+fpmics 2015/12/8 11:38 Page 578 #600
+578 CHAPTER 11. A BINARY SEARCH ALGORITHM
+more natural proof structure would be to embed the reasoning of ﬁrst proof within the
+second:
+(!by-contradiction (˜x in (node L y R))
+  assume (x in (node L y R))
+    let{C := (!chain-> [(x in (node L y R))
+      ==> (x = y | x in L | x in R)
+      [BinTree.in.nonempty]])
+      (!cases C
+        assume (x = y)
+          (!absurd
+          (!chain
+          [null:(BinTree N)
+          = (binary-search x (node L y R)) [p3]
+          = (node L y R) [at-root]])
+          (!chain->
+          [true ==> (null =/= (node L y R))
+          [(datatype-axioms "BinTree")]])))
+          assume (x in L)
+            # ... remainder of proof as shown
+            Explain why this would not work as well as doing the proof of (x =/= y) ﬁrst.
+            .3 Specifying requirements on a function to be deﬁned
+            We started the preceding section with an axiomatic deﬁnitio n ofbinary-search and proved
+            two theorems about it that give some evidence that our deﬁnit ion is correct. Suppose,
+            though, that we start with axioms found andnot-found and consider them to be a spec-
+            iﬁcation of requirements that a binary search function, yet to be written, must satisf y. We
+            could then write a different set of axioms for binary-search (e.g., see Section 11.4) and try
+            to use it to prove found andnot-found . The question then arises whether these two require-
+            ments are sufﬁcient. That is, could they be satisﬁed by a deﬁn ition ofbinary-search that
+            is not satisfactory in some other respect besides what is exp licitly mandated by the two
+            requirements? If so, what additional requirements, if any, do we need in order to “tighten
+            up” the function’s speciﬁcation? The following exercises e xplore this question.
+            Exercise 11.3: The two requirements found andnot-found only contain implications
+            about the presence or absence of the search value in the tree, based on the function’s result.
+            Consider not-found : perhaps we should add as another requirement the implicati on in the
+            other direction:
+            define not-in-implies-null-result :=
+            (forall T .
+            BST T ==> (forall x .˜x in T ==> (binary-search x T) = null))
+
+fpmics 2015/12/8 11:38 Page 579 #601
+11.4. CORRECTNESS OF AN OPTIMIZED BINARY SEARCH ALGORITHM 579
+Show that separately requiring this implication is unneces sary, by proving it follows from
+found and one of the axioms in (datatype-axioms "BinTree") . In the proof, do not use
+any of the deﬁning axioms for binary-search (so that you establish that anydeﬁnition of
+binary-search that satisﬁes found also satisﬁes not-in-implies-null-result .
+Exercise 11.4: Prove the following theorem, which combines the implicatio ns in
+not-found andnot-in-implies-null-result into an equivalence.
+define not-found-iff-not-in :=
+(forall T .
+BST T ==> (forall x .
+(binary-search x T) = null <==>˜x in T))
+Exercise 11.5: Prove the following without directly using any of the axioms for
+binary-search , just(datatype-axioms "BinTree") and the two theorems found and
+not-found .
+define in-implies-node-result :=
+(forall T .
+BST T ==>
+forall x .
+x in T ==> exists L R . (binary-search x T) = (node L x R))
+Exercise 11.6: Exercise 11.5 shows that if we consider found andnot-found to be require-
+ments that a binary-search function must satisfy, then (binary-search x T)must return
+a node result and the value in the node must be x. But if the node returned is (node L x R),
+what about the subtrees LandR? Could they be different from the left and right subtrees
+of the node in Twhere xis found?
+.4 Correctness of an optimized binary search algorithm
+The binary search algorithm studied in the previous section s is the one traditionally pre-
+sented in textbooks, perhaps because it seems natural to ﬁrs t compare for equality of the
+search value with the current node’s key. Notice, however, t hat until the equality com-
+parison succeeds, the algorithm expends two comparisons pe r level of the tree. And in a
+balanced n-element tree, most searches will require descending throu gh almost log2nlev-
+els (since about n/2 elements reside in the bottom level, n/4 at the next lowest level, etc.)
+Thus, on average, a total of almost 2 log2ncomparisons will be required. Now consider
+the following alternative deﬁnition:
+
+fpmics 2015/12/8 11:38 Page 580 #602
+580 CHAPTER 11. A BINARY SEARCH ALGORITHM
+assert axioms :=
+(fun
+[(binary-search x (node L y R)) -->
+[(binary-search x L) when (x < y)
+(binary-search x R) when (y < x)
+(node L y R) when (˜x < y &˜y < x)]
+(binary-search x null) = null])
+define [go-left go-right at-root empty] := axioms
+With this control structure, if the search value is in the lef t subtree, only one comparison
+is required to descend a level; if it is in the right subtree, t wo are required. Assuming
+it is equally likely to take one path or the other at each level , a total of about 1.5 log2n
+comparisons are required, on average—a 25% reduction from t he traditional version of the
+algorithm.
+This is a signiﬁcant optimization, but before adopting it as the preferred version of binary
+search, we should be sure that it is correct! This is a small ex ample, but it is illustrative of
+one of the most important applications of logic and proof in c omputer science, correctness
+of algorithm optimizations, so we examine it closely here.
+Exercise 11.7: Provefound using the optimized version of binary-search .Hint. Much
+of the top-level structure of the proof given in the text can b e retained, but you should
+restructure the case analysis as suggested by the new when conditions.
+Exercise 11.8: Provenot-found using the optimized version of binary-search .Hint.
+Much of the top-level structure of the proof given in the text can be retained, but you
+should restructure the case analysis as suggested by the new when conditions.
+Exercise 11.9: Another way to establish found andnot-found using the optimized version
+ofbinary-search is to start with the new axioms of the optimized version and pr ove the
+axioms of Section 11.1 as lemmas. Then the original proofs gi ven in that section will still
+work. That is, from the new axioms ﬁrst prove
+define at-root /quotesingle.Var:=
+(forall ?x ?L ?y ?R .
+?x = ?y ==> (binary-search ?x (node ?L ?y ?R)) = (node ?L ?y ?R))
+define go-right /quotesingle.Var:=
+(forall ?x ?L ?y ?R .
+?x =/= ?y &˜?x < ?y ==>
+(binary-search ?x (node ?L ?y ?R)) = (binary-search ?x ?R))
+(go-left is unchanged). Then you will be able to reprove not-found with
+let{[at-root go-right] := [at-root /quotesingle.Vargo-right /quotesingle.Var]}
+  conclude not-found
+  ...# same proof as in Section 8.1.
+
+fpmics 2015/12/8 11:38 Page 581 #603
+11.5. SUMMARY AND LOOKING AHEAD 581
+and similarly for found .
+11.5 Summary and looking ahead
+In this chapter we have begun the study of algorithm speciﬁca tion and correctness issues,
+in terms of a classic binary search algorithm that operates o n binary search trees. We
+expressed the algorithm using the funprocedure, which provides a syntax for express-
+ing function deﬁnitions that resembles traditional forms i n ML and similar functional lan-
+guages, while remaining ﬁrmly based in logic. We will be usin g thefunsyntax frequently
+in subsequent chapters.
+The treatment of binary search in this chapter is not the end o f the story. We will return
+to the topic twice more, ﬁrst in Chapter 15 with an algorithm t hat works with more general
+value orderings than just for natural numbers, as a ﬁrst illu stration of proof issues with
+abstract (or generic) algorithms. Then in Chapter 16 we will specify and prove correct an
+abstract binary search algorithm that works on memory range s rather than binary trees. In
+these treatments we continue to highlight speciﬁcation iss ues—how to state correctness
+properties precisely enough for proof, without restrictin g applicability.
+11.6 Additional exercises
+Exercise 11.10: Suppose we wish to deﬁne a replace function on lists such that
+(replace L x y)returns a copy of Lexcept that all occurrences of xare replaced by y.
+Fill in the clauses of the following deﬁnition of replace using the Athena funprocedure.
+declare replace: (S) [(List S) S S] -> (List S)
+module replace {
+  assert axioms := (fun [ ... ])
+}# close module replace
+Exercise 11.11: Based on the solution to the previous exercise, prove the fol lowing theo-
+rems:
+define sanity-check1 :=
+(forall L x y . x =/= y ==> (count x (replace L x y)) = zero)
+define sanity-check2 :=
+(forall L x y .
+x =/= y ==> (count y (replace L x y)) = (count x L) + (count y L))
+
+fpmics 2015/12/8 11:38 Page 582 #604

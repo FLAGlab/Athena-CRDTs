@@ -1,0 +1,2131 @@
+fpmics 2015/12/8 11:38 Page 791 #813
+18A simple imperative programming language
+WE START this chapter by introducing a simple imperative programmin g language,
+theWhile language, formally encoding its abstract syntax and natura l semantics in
+Athena.1We then proceed to prove some non-trivial results about the l anguage, including
+a proof showing that the formal semantics are deterministic .
+This chapter serves a number of goals. First, because this ma terial is relatively more
+complicated, it constitutes a sort of stress-test for techn iques that we have already intro-
+duced in earlier chapters. We will see that these techniques scale well; they can be used
+to develop well-structured proofs of non-trivial results. Second, it introduces some new
+techniques of its own. The natural semantics of While are expressed by means of an infer-
+ence system. Proofs in that system have a recursive tree-lik e structure, and are explicitly
+represented by an inductive datatype. Reasoning about the s emantics often requires induc-
+tion on the shape of such proof trees. Induction of this form g oes beyond simple structural
+induction on abstract syntax trees (indeed, the determinis m result for the While semantics
+cannot be obtained by structural induction on ASTs, for reas ons we shall explain in due
+course; induction on proof shapes is necessary). The method ology introduced in this chap-
+ter has wide applicability because inference systems are ro utinely used to deﬁne formal
+languages and type systems in computer science, and inducti on over proofs is an important
+general technique for reasoning about such languages and sy stems. Note that the proofs in
+question are object-level proofs (in the inference system b eing encoded, which will be the
+object system), and our inductive Athena proofs over them wi ll be meta-proofs, i.e., proofs
+about the (encoded) proofs.
+Moreover, because natural semantics are more intuitively r epresented by relations rather
+than functions, evaluation by rewriting is not directly app licable and therefore we cannot
+straightforwardly “execute” our speciﬁcations in order to test them, at least not by simple
+rewriting, as we have done previously. This provides a good o pportunity to illustrate the use
+of logic programming for similar evaluation purposes. We wi ll see that logic programming
+is in certain respects more ﬂexible than rewriting. For inst ance, it will allow us to not only
+compute the semantics of While programs, but also to simultaneously compute the object-
+level proofs that derive the corresponding evaluation judg ments.
+18.1 A simple imperative language
+We begin by deﬁnining the abstract syntax of the While language. There are ﬁve syntactic
+categories:
+1 With a few minor differences, our presentation of the synta x and semantics of While follows the discussion of
+Nielsen and Nielsen [57].
+
+fpmics 2015/12/8 11:38 Page 792 #814
+792 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+1. non-negative numerals ;
+2.variables ;
+3.expressions ;
+4.boolean conditions ; and
+5.commands .
+We use the letters n,x,e,b, and c(possibly with subscripts, etc.) as variables ranging over
+these ﬁve domains, respectively. Numerals and variables ar e primitive, whereas the other
+three domains are deﬁned by the following abstract grammars :
+e::=n|x|e1sum e2|e1prod e2|e1diffe2 (18.1)
+b::=e1eqe2|e1leqe2|negb|b1conj b2 (18.2)
+c::=skip|x:=e|c1;c2|ifbthen c1elsec2|while bdoc (18.3)
+We informally explain each grammar. (18.1) says that an expr ession is either a numeral
+n, or a variable x, or the sum, product, or difference of two expressions. (18. 2) says that
+a boolean condition is either an identity between two numeri c expressions, of the form
+e1eqe2; or an inequality of the form e1leqe2(leqhere should be read as “less than or
+equal to”); or a negation of a boolean condition ( negb); or a conjunction of two boolean
+conditions ( b1conj b2). Finally, a command is either a skip statement, which, as we will
+see, does nothing; or an assignment of the form x:=e, intended to assign to the variable
+xthe value of the expression e; or a sequence c 1;c2, intended to compose the effects
+of the two commands c1andc2by executing them sequentially, in the given order; or a
+conditional statement of the form
+ifbthen c1else c2
+which will execute either c1orc2, depending on whether or not the boolean condition b
+holds; or, ﬁnally, a loop of the form
+while bdoc
+which will keep executing the body cas long as the condition bholds.
+It is worthwhile at this point to say a few things about abstra ct grammars. There are,
+essentially, two different ways of looking at syntactic obj ects such as expressions and
+commands. One way is through the lens of a concrete syntax. We can view expressions,
+for instance, as linear strings of symbols drawn from a certa in alphabet. In that case we
+would use a context-free BNF grammar to specify the exact mem bership of the set of all
+expressions. Such a grammar would tell us whether or not any g iven string is an expression.
+That viewpoint is too low-level for doing formal semantics. For the purpose of specifying
+the formal meaning of expressions, for instance, we want to be able to say someth ing
+along the following lines: the value of an expression ethat represents the addition of two
+
+fpmics 2015/12/8 11:38 Page 793 #815
+18.1. A SIMPLE IMPERATIVE LANGUAGE 793
+subexpressions e1ande2is the sum of the values of e1ande2. Here we are not—and should
+not be—concerned with how such expressions are represented as strings of symbols. It is
+irrelevant to our purposes whether or not an “an expression t hat represents the addition of
+two subexpressions e1ande2” is concretely written down as “( e1sum e2)” or as “ (e1+
+e2)” or as “ e1+e2” or as “ (+e1e2)” or “[ +e1e2]” or “ +(e1,e2)” and so on. All we
+care about is the abstract tree structure of the expression, namely, that there is an addition
+operator at the root of the tree,2and the two subtrees corresponding to e1ande2on the left
+and right sides, respectively:
+sum
+e1 e2
+When we treat syntactic objects as strings of symbols, we are concerned with con-
+crete syntax. When we treat them as two-dimensional tree str uctures, we are dealing with
+abstract syntax. These two viewpoints converge in parsing t heory and practice: A parser
+is a program that takes a string as input and either rejects it as ill-formed or else outputs
+a “parse tree” that captures the string’s abstract syntacti c structure. We implement such a
+parser for the While language in the exercises.
+Although in formal semantics we are almost always concerned exclusively with abstract
+syntax, it would be cumbersome to represent and manipulate a bstract syntax trees with two-
+dimensional pictures all the time. Instead, we use a linear n otation speciﬁed by “abstract
+grammars” such as (18.1)—(18.3). Such grammars are very muc h like concrete BFN
+grammars: There are non-terminals and terminals, and a set o f productions for each non-
+terminal. But despite the similarities, it is generally not feasible to treat abstract gram-
+mars as conventional BNF grammars. This is because abstract grammars, when understood
+as conventional BNF grammars, are usually ambiguous and can not be used for parsing
+purposes—at least not by themselves.3For instance, (18.1) does not tell us whether
+asum bprod c (18.4)
+should be parsed as the sum of aand the product of bandc, or as the product of the sum of
+aandbon the one hand and con the other. But with a set of appropriate conventions, such
+2 That is, a function symbol that is to be interpreted as repre senting addition.
+3 Ambiguous context-free languages can be parsed as well: th e parser simply produces (some representation
+of) a set—or ranked list—of abstract syntax trees for an ambi guous input string. That is actually par for the
+course in parsing natural languages such as English or Chine se. However, for formal (artiﬁcial) languages such as
+programming languages, we typically require an unambiguou s grammar for clarity (we typically want a program
+to have a unique meaning, derived from a unique abstract synt ax tree), and also for increased parsing efﬁciency.
+
+fpmics 2015/12/8 11:38 Page 794 #816
+794 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+as precedence levels and/or parenthesization, we can usual ly turn an abstract grammar into
+an unambigous concrete grammar without too much difﬁculty.4
+Abstract syntax trees (ASTs) can be naturally represented b yterms , owing to the fact
+that terms are essentially tree structures (recall the disc ussion of Section 3.3). For exam-
+ple, an abstract syntax tree like the one graphically depict ed above could be represented
+by—or indeed identiﬁed with—a term of the form (sum t1t2), where the subterms t1and
+t2are the term representations of the subexpressions e1ande2, respectively. That is the
+main idea behind the use of algebraic datatypes for deﬁning s ets of abstract syntax trees:
+The constructors of the datatype represent the main abstrac t syntactic operators (addition
+on expressions, sequencing on commands, etc.), and canonic al terms built from those con-
+structors represent abstract syntax trees under the usual u nderstanding of terms as trees.
+In the case of While , the three abstract syntactic categories of interest can be deﬁned by
+the following datatypes:
+datatype Exp := (num N)
+| (var Ide)
+| (sum Exp Exp)
+| (diff Exp Exp)
+| (prod Exp Exp)
+datatype BCond := (eq Exp Exp)
+| (leq Exp Exp)
+| (neg BCond)
+| (conj BCond BCond)
+datatype Cmd := skip
+| (asgn Ide Exp)
+| (sequence Cmd Cmd)
+| (cond BCond Cmd Cmd)
+| (while-loop BCond Cmd)
+4 The easiest way to obtain an unambiguous context-free gram mar, suitable for parsing purposes, from any
+abstract grammar, is to fully parenthesize the right-hand s ide of every production of the abstract grammar that
+contains a non-terminal. For example, in the case of express ions, we would get:
+e::=n|x|(e1sum e2)|(e1prod e2)|(e1diffe2) (18.5)
+Interpreted as a conventional context-free grammar, (18.5 ) is unambiguous, i.e., every string in the language
+deﬁned by (18.5) has a unique parse tree. Strictly speaking, the set of strings deﬁned by (18.5) is not the same set
+of strings that we obtain by treating (18.1) as a conventiona l BNF grammar, but that is not the objective here any-
+way. The point, rather, to ﬁnd some unambiguous BFN grammar t hat provides an acceptable linear notation for the
+abstract tree structures described by (18.1), and (18.5) ﬁt s that bill. Of course we may want to tweak the concrete
+BNF grammar in order to make the linear notation more palatab le, e.g., to avoid the excessive parenthesization
+required by (18.5). That can be done by precedence levels and other similar conventions. But parenthesizing the
+right-hand sides of the abstract grammar’s productions alw ays provides us with an unambiguous context-free
+grammar that we can use as a starting point for developing a co ncrete syntax to our liking. “Parenthesizing,” by
+the way, does not necessarily mean using the usual pair of par entheses, ( and ). Square brackets would also do, as
+would begin-end pairs, or indeed any other two distinct matc hing terminals.
+
+fpmics 2015/12/8 11:38 Page 795 #817
+18.1. A SIMPLE IMPERATIVE LANGUAGE 795
+The correspondence between these datatypes and the abstrac t grammars (18.1)—(18.3)
+is straightforward. Terms of the form (num t), where tis a canonical natural number, rep-
+resent numerals; terms of the form (varx), where xis a meta-identiﬁer, represent variables.
+Terms of the from (sum t1t2), where t1andt2are expression terms, represent additions;
+and so on.
+Note that the free-generation axioms for datatype construc tors are crucial for ensuring
+that deﬁnitions such as the above can be understood as gramma rs. If an identity such as
+skip=(asgn s t)
+held, for some sandt, then it would make no sense to treat asgn andskip assyntac-
+ticoperators. If assignment commands are to be understood as pi eces of syntax, whether
+abstract or concrete, then they must be guaranteed to be dist inct from skip commands,
+and indeed distinct from all other commands produced by othe r constructors. Further, two
+assignments commands must be identical, as syntactic objec ts, iff their respective variables
+and expressions are identical:
+(asgn x1e1) = (asgn x2e2)iffx1=x2ande1=e2.
+Likewise for conditional commands, while loops, and so on. M oreover, it is understood
+that there are no commands other than those that can be built f rom the given constructors.
+But these requirements are precisely the free-generation c onstraints that must hold of all
+datatypes. As was mentioned before (section 2.7), these con straints can always be satisﬁed
+by requiring that the set deﬁned by the datatype is the smallest set that satisﬁes the recur-
+sive equations implicit in the datatype deﬁnition. And that requirement, in turn, obtains
+in virtue of the syntactic form of the datatype deﬁnitions, a long with some set-theoretic
+results which ensure that certain functions have least ﬁxed points.
+Given that Athena terms have unique string representations as parenthesized s-
+expressions,5this scheme also provides us with an unambiguous linear nota tion for abstract
+syntax trees. We will use this notation extensively for spec ifying the functions and relations
+of our formal semantics. For instance, the function Vthat gives the meaning (value) of an
+expression with respect to a given state will be deﬁned as fol lows for sums:
+(forall e1 e2 s . e1 sum e2 wrt s = (e1 wrt s) + (e2 wrt s))
+wheree1ande2are variables ranging over Exp;sis a variable ranging over states; +is
+natural-number addition, i.e., N.+;6and we write (ewrt s)(“the value of ewith respect to
+5 Essentially, the strings that represent Athena terms, lik e all s-expressions, are obtained through the parenthe-
+sization device discussed in footnote 4, with the additiona l preﬁx convention that the operator always appears to
+the left. This is what makes them somewhat bulky to use on cert ain occasions, as we will shortly illustrate in the
+main text.
+6 In fact we will overload +to represent either natural-number addition orthe constructor sum, so in fact this
+equation will be expressible as
+(forall e1 e2 s . e1 + e2 wrt s = (e1 wrt s) + (e2 wrt s))
+
+fpmics 2015/12/8 11:38 Page 796 #818
+796 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+state s”) as an inﬁx shorthand for (V e s). This notation works well for deﬁning semantic
+functions because the abstract-syntax terms that appear in such deﬁnitions contain various
+universally quantiﬁed variables designating arbitrary su btrees (e.g., the term (e1 sum e2)
+in the preceding quantiﬁcation), and are therefore short an d easy to understand. (Essen-
+tially, they are patterns.)
+However, this notation is too cumbersome to use for the purpo se of representing ground
+ASTs denoting particular expressions, commands, and so on. Consider, for instance, a
+simple composition of two commands that we might informally write as follows:
+x := 0; whilex <= y dox := x + 1 (18.6)
+The AST representing this command is the following rather un wieldy term:
+(sequence (asgn /quotesingle.Varx
+(num zero))
+(while-loop (leq (var /quotesingle.Varx)
+(var/quotesingle.Vary))
+(asgn/quotesingle.Varx
+(sum (var /quotesingle.Varx)
+(num (succ zero))))))
+We will need to deal with particular (ground) commands, expr essions, and so on, in order
+to test our formal semantics. Hence, in order to represent su ch objects more succinctly and
+in more familiar notation, we will use parsers that can accep t string input such as (18.6)
+and automatically produce the corresponding AST terms as ou tput. We will use three such
+parsers: exp-parser ,bcond-parser , andcmd-parser , for expressions, boolean conditions,
+and commands, respectively. In what follows we brieﬂy expla in the set of strings accepted
+by each of these parsers.
+The simplest (atomic) sort of expressions will be
+1. non-negative numerals (where a numeral is either 0or a non-empty sequence of digits
+in the0,...,9range that does not begin with 0); and
+2. variables, where a variable is any non-empty sequence of p rintable characters that does
+not begin with a digit and does not contain any of the followin g 11 lexically signiﬁcant
+characters: ; = < + - * : ( ) & ˜ .
+More complicated (compound) expressions will be sums, diff erences, and products, which
+will be written as e1+e2,e1-e2, and e1*e2, respectively. Products bind tighther than
+sums and differences, which bind equally tightly. All three associate to the right. Prece-
+dence levels can be overriden by the use of parentheses. Some examples:
+where the occurrence of +on the left side is an alias for sumwhile the right-side occurrence stands for N.+.
+
+fpmics 2015/12/8 11:38 Page 797 #819
+18.1. A SIMPLE IMPERATIVE LANGUAGE 797
+> (exp-parser "1")
+Term: (num (S zero))
+> (exp-parser "x")
+Term: (var /quotesingle.Varx)
+> (exp-parser "x + 1")
+Term: (sum (var /quotesingle.Varx)
+(num (S zero)))
+> (exp-parser "x + y * z")
+Term: (sum (var /quotesingle.Varx)
+(prod (var /quotesingle.Vary)
+(var/quotesingle.Varz)))
+> (exp-parser "(x + y) * z")
+Term: (prod (sum (var /quotesingle.Varx)
+(var/quotesingle.Vary))
+(var/quotesingle.Varz))
+Atomic boolean conditions (identities and inequalities) a re written as e1=e2and
+e1<=e2, respectively. Conjunctions are written as b1&b2and associate to the right. Nega-
+tions must be written in the form ˜(b), i.e., the scope of a negation must be explicitly
+marked with parentheses. We allow for the syntax (e1!=e2)as an abbreviation for the
+negation of (e1=e2). Some examples:
+> (bcond-parser "x = 1")
+Term: (equal (var /quotesingle.Varx)
+(num (S zero)))
+> (bcond-parser "x <= 2 * y &˜(z = 0)")
+Term: (conj (leq (var /quotesingle.Varx)
+(prod (num (S (S zero)))
+(var/quotesingle.Vary)))
+(neg (eq (var /quotesingle.Varz)
+(num zero))))
+> (bcond-parser "x != 1")
+Term: (neg (eq (var /quotesingle.Varx)
+(num (S zero))))
+
+fpmics 2015/12/8 11:38 Page 798 #820
+798 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+> (bcond-parser "˜(x <= y & z = 1) & w = w & 1 <= foo")
+Term: (conj (neg (conj (leq (var /quotesingle.Varx)
+(var/quotesingle.Vary))
+(eq (var /quotesingle.Varz)
+(num (S zero)))))
+(conj (eq (var /quotesingle.Varw)
+(var/quotesingle.Varw))
+(leq (num (S zero))
+(var/quotesingle.Varfoo))))
+Finally, we explain how cmd-parser works. Assignments are written as x:=e; skip
+commands are written as skip; the composition of c1andc2is written as c1;c2; condi-
+tionals are written as ifbthen c1else c2; and while loops are written as while bdoc.
+Sequences bind less tightly than while loops or conditional s, but that can be overriden by
+the use of begin -endpairs. Some examples:
+define parse := cmd-parser
+> (parse "x := 1")
+Term: (asgn /quotesingle.Varx
+(num (S zero)))
+> (parse "x := 1; y := x * 2")
+Term: (sequence (asgn /quotesingle.Varx
+(num (S zero)))
+(asgn/quotesingle.Vary
+(prod (var /quotesingle.Varx)
+(num (S (S zero))))))
+> (parse "x := 0; while x <= y do x := x + 1; z := z + x")
+Term: (sequence (asgn /quotesingle.Varx
+(num zero))
+(sequence (while-loop (leq (var /quotesingle.Varx)
+(var/quotesingle.Vary))
+(asgn/quotesingle.Varx
+(sum (var /quotesingle.Varx)
+(num (S zero)))))
+(asgn/quotesingle.Varz
+(sum (var /quotesingle.Varz)
+(var/quotesingle.Varx)))))
+> (parse "x := 0; while x <= y do begin x := x + 1; z := z + x end")
+Term: (sequence (asgn /quotesingle.Varx
+(num zero))
+
+fpmics 2015/12/8 11:38 Page 799 #821
+18.1. A SIMPLE IMPERATIVE LANGUAGE 799
+(while-loop (leq (var /quotesingle.Varx)
+(var/quotesingle.Vary))
+(sequence (asgn /quotesingle.Varx
+(sum (var /quotesingle.Varx)
+(num (S zero))))
+(asgn/quotesingle.Varz
+(sum (var /quotesingle.Varz)
+(var/quotesingle.Varx))))))
+We impose one last requirement on these parsers that will com e handy: they must be able
+to handle Athena variables (of the form ?I)inside the strings that they are parsing. These
+will essentially stand for arbitrary subexpressions (or su bcommands, etc.), and will appear
+as the corresponding variables in the output terms. For exam ple:
+> (exp-parser "x + 2") # as already specified
+Term: (sum (var /quotesingle.Varx)
+(num (S (S zero))))
+> (exp-parser "x + ?FOO") # note the occurrence of ?FOO
+Term: (sum (var /quotesingle.Varx)
+?FOO:Exp)
+> (cmd-parser "x := 1; ?C") # note the occurrence of ?C
+Term: (sequence (asgn /quotesingle.Varx
+(num (S zero)))
+?C:Cmd)
+Exercise 18.1: Implement the three parsers.
+A few more notational conventions before we turn to semantic s. First, some variable
+abbreviations:
+define [n n/quotesingle.Varn1 n2 n3 m m /quotesingle.Var] := [?n:N ?n /quotesingle.Var:N···]
+define [e e/quotesingle.Vare1 e2 e3] := [?e:Exp ?e /quotesingle.Var:Exp ···]
+define [x y z x /quotesingle.Vary/quotesingle.Varz/quotesingle.Var] := [?x ?y ···]
+define [cmd cmd /quotesingle.Varcmd1 cmd2 cmd3 body c c /quotesingle.Varc1 c2 c3 c1 /quotesingle.Varc2/quotesingle.Varc3/quotesingle.Var] :=
+[?cmd:Cmd ?cmd /quotesingle.Var:Cmd ···]
+We deﬁne ˆas an alias for sequence and<-as an alias for asgn:
+define [ˆ <-] := [sequence asgn]
+Thus we can write an assignment of the form (asgn x e)in inﬁx as (x<-e):
+
+fpmics 2015/12/8 11:38 Page 800 #822
+800 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+> (x <- e)
+Term: (asgn ?x:Ide ?e:Exp)
+We also deﬁne a few function symbol abbreviations:
+define [+ - * null ++ in subset singleton \/ /\ \] :=
+[N.+ N.- N.* Set.null Set.++ Set.in Set.subset
+Set.singleton Set.\/ Set./\ Set.\]
+and we overload +,-,*, and<=so that they can be used in place of sum,diff,prod, and
+leq, respectively:
+overload (+ sum) (- diff) (* prod) (<= leq)
+Further, we make the numconstructor accept integer numerals (which will be convert ed to
+natural numbers), in addition to natural numbers, and give a high precedence level to the
+unary expression constructors numandvar:
+expand-input num [int->nat]
+set-precedence num 350
+set-precedence var 350
+Thus, we can now write expressions like this:
+> (e1 + num 3 * e2)
+Term: (sum ?e1:Exp
+(prod (num (S (S (S zero))))
+?e2:Exp))
+We also deﬁne some convenient inﬁx abbreviations for the boo lean-condition constructors:
+define [== -- /\] := [eq neg conj]
+.2 Semantics of expressions
+The meaning or value of an expression ewill be a natural number n. That value can only
+be obtained if we are given values for the variables that occu r ine. There is no way to tell
+the value of x+1, for instance, unless we are ﬁrst given a value for the varia blex. If we are
+told that xis 2, then we can compute the value of x+1 to be 3; if xis 99, then the value of
+x+1 will be 100; etc. This means that the value of an expression c an only be given relative
+to, or with respect to, the values of its variables.
+Astate is a data structure that provides precisely that type of info rmation: it tells us the
+values of certain variables. We will represent states as ﬁni te maps from variables to values,
+
+fpmics 2015/12/8 11:38 Page 801 #823
+18.2. SEMANTICS OF EXPRESSIONS 801
+i.e., to natural numbers. In particular, a state will be an ob ject of sort (DMap Ide N) with a
+default value of zero, meaning that if a key is not explicitly bound in a state then i ts value
+will be zero by default (see Section 10.4.3 for a discussion o f these maps and their theory).
+We deﬁne a few abbreviations for variables ranging over this State sort:
+define-sort State := (DMap.DMap Ide N)
+define [s s/quotesingle.Vars/quotesingle.Var/quotesingle.Vars1 s2 s3 is is /quotesingle.Var] := [?s:State ?s /quotesingle.Var:State ···]
+It will be convenient to have a procedure state that takes a list of pair bindings in Athena-
+list (square-bracket) notation and produces the correspon ding map, converting integer
+numerals to natural numbers along the way:
+define (state L) :=
+matchL {
+(some-list _) => (DMap.alist->dmap-general [zero L] int->nat)
+| _ => L}
+For example:
+> (state [])
+Term: (DMap.empty-map zero)
+> (state [[ /quotesingle.Vara --> 1] [ /quotesingle.Varb --> 2]])
+Term: (DMap.update (pair /quotesingle.Vara
+(S zero))
+(DMap.update (pair /quotesingle.Varb
+(S (S zero)))
+(DMap.empty-map zero)))
+The meaning of an expression ecan now be given by a binary function Vthat takes eas
+its ﬁrst input and a state sas a second input:
+declare V: [Exp State] -> N
+[150 [exp-parser lambda (L)
+(DMap.alist->dmap-general L int->nat)]]
+We also introduce wrt(“with respect to”) as an inﬁx variant of V, writing (ewrt s)inter-
+changeably with (V e s);7and we deﬁne atasDMap.at :
+define [wrt at] := [V DMap.at]
+And we transform the output of eval so that natural numbers are converted to integers and
+states are converted to lists of pairs:
+Intuitively, we read (ewrt s)as “the value of expression ewith respect to state s.”
+
+fpmics 2015/12/8 11:38 Page 802 #824
+802 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+transform-output eval
+[nat->int lambda (m) (DMap.dmap->alist-general m nat->int)]
+Note that we have listed exp-parser as an input expander for the ﬁrst argument of V, so we
+can, for example, write:
+> ("x + 1" wrt state [[ /quotesingle.Varx --> 2]])
+Term: (V (sum (var /quotesingle.Varx)
+(num (S zero)))
+(DMap.update (pair /quotesingle.Varx
+(S (S zero)))
+(DMap.empty-map zero)))
+We deﬁne this evaluation function by the following axioms, o ne for each constructor of
+Exp:
+assert* V-def :=
+[(num n wrt _ = n)
+(var x wrt s = s at x)
+(e1 + e2 wrt s = (e1 wrt s) + (e2 wrt s))
+(e1 - e2 wrt s = (e1 wrt s) - (e2 wrt s))
+(e1 * e2 wrt s = (e1 wrt s) * (e2 wrt s))]
+Note the overloaded use of numeric operators such as +: on the left-hand side they represent
+constructors of the Expdatatype, while on the right-hand side they represent opera tions on
+N.
+The ﬁrst axiom essentially says that numeric expressions ar e self-evaluating. The second
+says that the value of a variable relative to a given state is t he result obtained by applying
+that state to the variable. The third one says that the value o f an expression of the form
+(sum e1e2)w.r.t. a state sis the numeric sum of the values of e1ande2w.r.t. s. And
+likewise for the other two axioms. Let us test the deﬁnition:
+define sample-state := (state [[ /quotesingle.Varx --> 2] [ /quotesingle.Vary --> 3]])
+> (eval "x + 1" wrt sample-state)
+Term: 3
+> (eval "x * 3" wrt sample-state)
+Term: 6
+> (eval "x + 2 * y" wrt sample-state)
+Term: 8
+> (eval "(x - 1) + (y - 1)" wrt sample-state)
+
+fpmics 2015/12/8 11:38 Page 803 #825
+18.2. SEMANTICS OF EXPRESSIONS 803
+Term: 3
+> (eval "2 * counter" wrt sample-state)
+Term: 0
+The last ouput is 0becausesample-state does not contain a binding for the key ’counter ,
+so it gets mapped to zero by default, which is then multiplied by two to yield a ﬁnal val ue
+ofzero.
+Next let us deﬁne the set of variables that occur in a given exp ression:
+declare evars: [Exp] -> (Set.Set Ide) [exp-parser]
+(Recall that, for any sort S,(Set.Set S)is the sort of all ﬁnite sets of elements drawn
+from S; see Section 10.3). In conventional mathematical notation , we would deﬁne evars
+as follows:
+evars(n)= ∅
+evars(x)= {x}
+evars(e1+e2)=evars(e1)∪evars(e2)
+evars(e1−e2)=evars(e1)∪evars(e2)
+evars(e1∗e2)=evars(e1)∪evars(e2)
+where all the variables are understood to be universally qua ntiﬁed. The deﬁnition is quite
+similar in Athena:
+assert* evars-def :=
+[(evars num _ = null)
+(evars var x = singleton x)
+(evars e1 + e2 = (evars e1) \/ (evars e2))
+(evars e1 - e2 = (evars e1) \/ (evars e2))
+(evars e1 * e2 = (evars e1) \/ (evars e2))]
+We introduce a similar function for boolean conditions:
+declare bcond-vars: [BCond] -> (Set.Set Ide) [[bcond-parser]]
+and leave its deﬁnition as an exercise.
+Exercise 18.2: Deﬁnebcond-vars , and test your deﬁnition.
+Let us now prove that if two states s1ands2agree on the variables of an expression e,
+meaning that the said variables are mapped to identical numb ers by the two states, then the
+value of eis the same wrt to the two states:
+
+fpmics 2015/12/8 11:38 Page 804 #826
+804 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+define var-agreement :=
+(forall e s1 s2 . (DMap.agree-on s1 s2 evars e) ==> e wrt s1 = e wr t s2)
+> var-agreement
+Sentence: (forall ?e:Exp
+(forall ?s1:(DMap.DMap Ide N)
+(forall ?s2:(DMap.DMap Ide N)
+(if (DMap.agree-on ?s1:(DMap.DMap Ide N)
+?s2:(DMap.DMap Ide N)
+(evars ?e:Exp))
+(= (V ?e:Exp
+?s1:(DMap.DMap Ide N))
+(V ?e:Exp
+?s2:(DMap.DMap Ide N)))))))
+Recall that two maps agree on a set of keys Kiff every key in Kis mapped to the same value
+by the two maps (that is the content of the theorem DMap.agreement-characterization ).
+This goal is universally quantiﬁed over expressions, and it s body involves the function
+V, which is deﬁned by structural recursion on expressions. Th is is a strong hint that the
+proof requires structural induction over expressions. Let us begin by deﬁning the relevant
+inductive property as a unary procedure:
+define (var-agreement-property e) :=
+(forall s1 s2 . (DMap.agree-on s1 s2 evars e) ==> e wrt s1 = e wrt s2)
+The goal now can be formulated as
+(forall e . var-agreement-property e)
+The skeleton of the inductive proof appears below. The two ba sis steps, for numerals
+and variables, are handled inline. The remaining three (ind uctive) cases are relegated to a
+method that handles the inductive steps:
+  by-induction var-agreement {
+    (num n) =>
+    pick-any s1:State s2:State
+      assume hyp := (DMap.agree-on s1 s2 evars num n)
+        (!chain [(num n wrt s1) --> n [V-def]
+        <-- (num n wrt s2) [V-def]])
+        | (eas(var x)) =>
+        pick-any s1:State s2:State
+          assume hyp := (DMap.agree-on s1 s2 evars e)
+            (!chain<- [(e wrt s1 = e wrt s2)
+            <== (s1 at x = s2 at x) [V-def]
+            <== (x in evars e) [DMap.agreement-characterization]
+            <== (x in singleton x) [evars-def]
+            <== true [Set.singleton-lemma]])
+            | (sum e1 e2) => (!istep + e1 e2)
+
+fpmics 2015/12/8 11:38 Page 805 #827
+18.2. SEMANTICS OF EXPRESSIONS 805
+16| (diff e1 e2) => (!istep - e1 e2)
+17| (prod e1 e2) => (!istep * e1 e2)
+18}
+Being optimistic, we are assuming here that a single method, istep , will be able to han-
+dle all 3 inductive cases. That is not an unrealistic assumpt ion; we have seen before—e.g.,
+in chapter 17—that many inductive subproofs have similar st ructures and their reasoning
+can be abstracted into one single master method. For now we wi ll treatistep as a black
+box, using force to make it produce the right result:
+define (istep op:( OP2) e1 e2) :=
+(!force(var-agreement-property (e1 op e2)))
+We will shortly provide a proper implementation of istep , but using force calls in this
+manner—and then gradually removing them—is a convenient to p-down methodology.
+How did we arrive at this proof skeleton? The overall form of t he proof is of course
+dictated by the syntax of the by-induction construct, but what about the two basis steps?
+Also, why did we decide to make istep ternary rather than unary? And why are we passing
+the overloaded operators as arguments to istep , instead of the original constructors? For
+example, on line 15, why are we passing +rather than sumas the ﬁrst argument to istep ?
+We brieﬂy take up these questions in what follows.
+Let us consider the basis step for numerals ﬁrst, on lines 2–6 . The ﬁrst two steps
+of this proof, on lines 3 and 4, are determined purely by the sy ntactic structure of the
+corresponding subgoal: We need to prove that for allstatess1ands2,ifs1ands2
+agree on the variables of (num n) ,then(num n wrt s1) is identical to (num n wrt s2) .
+Thus, we start by picking two arbitrary states s1ands2, on line 2, and assuming that
+the two agree on the variables of (num n) . We must now proceed to derive the identity
+(num n wrt s1 = num n wrt s2) . As usual, we do that by chaining. Both chain steps fol-
+low directly from the deﬁnition of V.
+Consider now the basis step for variables, on lines 7–14. As w as the case with the previ-
+ous basis step, the ﬁrst two moves, on lines 8 and 9, are dictat ed by the syntactic structure
+of the current subgoal. We need to show that for all states s1ands2, if the two agree on
+the variables of the expression (var x) (which we are abbreviating as evia theaspattern
+mechanism), then the value of (var x) wrts1is identical to the value of (var x) wrts2.
+So we consider arbitrary s1ands2, assume that the two agree on the expression variables
+of(var x) , and proceed to derive the identity (var x wrt s1 = var x at s2) by chaining.
+We do this in a backward direction, ultimately reducing the g oal toSet.singleton-lemma ,
+namely the result
+(forall x . x in singleton x) ,
+which of course reduces to true, as it is unconditional. The ﬁrst backward step of the chain
+is determined by the deﬁnition of V. The second step is perhaps the crucial one, noting
+
+fpmics 2015/12/8 11:38 Page 806 #828
+806 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+that the current goal (s1 at x = s2 at x) would in fact follow from (x in evars e) by
+virtue of DMap.agreement-characterization , given that we are currently operating under
+the assumption that s1ands2agree on the set (evars e) . Once we have taken that step, the
+next step backwards, from (x in evars e) to(x in singleton x) , follows directly from
+the deﬁnition of evars , with the ﬁnal step supported by Set.singleton-lemma .
+Let us turn to istep , ﬁrst considering the questions that were raised earlier. W hile we
+could make istep unary, in which case the call on line 12 would be (!istep (sum e1 e2))
+instead of (!istep + e1 e2) , and likewise for the other two calls, that would require istep
+to start by destructuring the input term in order to extract i ts individual components. Pass-
+ing the individual components as three separate arguments s aves us the effort of that initial
+pattern matching. As to why we are passing +instead of sum, etc., the answer is that +
+is overloaded and hence more ﬂexible. Suppose we passed suminstead. Then if the body
+istep needed to use the corresponding operator on natural numbers ,Plus, then we would
+need to write additional code to obtain Plus fromsum,Times fromprod, and so on. But
+overloaded operators can be used in both capacities, as requ ired by the context, so there
+is no need for such additional code. This will become more cle ar when we deﬁne istep
+below.
+Recall that istep takesop,e1, ande2as inputs and has to derive
+(var-agreement-property (e1 op e2))
+i.e., it must prove that for all states s1ands2, if the two agree on the variables of
+(e1 op e2) , then the values of (e1 op e2) under s1ands2are identical:
+(e1 op e2 at s1 = e1 op e2 at s2)
+where, of course, istep has access to the corresponding inductive hypotheses about e1
+ande2, namely, (var-agreement-property e1) and(var-agreement-property e2) . Let us
+proceed syntactically:
+define (istep op:( OP2) e1 e2) :=
+pick-any s1:State s2:State
+  assume hyp := (DMap.agree-on s1 s2 evars e1 op e2)
+    let{ih1 := (var-agreement-property e1);
+      ih2 := (var-agreement-property e2)}
+      # ih1 and ih2 will be in the a.b. when istep is called
+      conclude ((e1 op e2) wrt s1 = (e1 op e2) wrt s2)
+      ...
+      How do we go about ﬁlling in the dots? Since the goal is an ident ity, we use chaining. The
+      ﬁrst step is simply to apply the recursive deﬁnition of V.Vwill thus be driven inward to the
+      subexressions e1ande2, and at that point the inductive hypotheses will hopefully b ecome
+      applicable. While we’re at it, we abbreviate (e1 op e2) ase:
+
+fpmics 2015/12/8 11:38 Page 807 #829
+18.2. SEMANTICS OF EXPRESSIONS 807
+1define (istep op:( OP2) e1 e2) :=
+2pick-any s1:State s2:State
+3 assume hyp := (DMap.agree-on s1 s2 evars e1 op e2)
+4 let{ih1 := (var-agreement-property e1);
+5 ih2 := (var-agreement-property e2);
+6 e := (e1 op e2)}
+7 # ih1 and ih2 will be in the a.b. when istep is called
+8 conclude (e wrt s1 = e wrt s2)
+9 (!chain [(e wrt s1)
+10 = ((e1 wrt s1) op (e2 wrt s1)) [V-def]
+11 = ((e1 wrt s2) op (e2 wrt s2)) [ih1 ih2]
+12 = (e wrt s2) [V-def]])
+(Here you can observe the aforementioned advantage of passi ng the overloaded opas a
+separate argument: opis used in two different capacities in the body of this method .)
+Unfortunately, this version does not work. The ﬁrst and last steps are correct, but the
+second step, from line 10 to line 11, does not go through. Keep in mind that the inductive
+hypotheses are conditional (since var-agreement-property is conditional). Thus, to apply
+the inductive hypothesis ih1, for example, in order to replace (e1 wrt s1) by(e1 wrt s2) ,
+the antecedent of the inductive hypothesis must hold , i.e., the sentence
+(DMap.agree-on s1 s2 evars e1)
+must be in the assumption base. Likewise for applying the sec ond inductive hypothesis.
+Accordingly, the body of the method must take the following f orm:
+define (istep op:( OP2) e1 e2) :=
+pick-any s1:State s2:State
+  assume hyp := (DMap.agree-on s1 s2 evars e1 op e2)
+    let{ih1 := (var-agreement-property e1);
+      ih2 := (var-agreement-property e2);
+      e := (e1 op e2);
+      _ := ···# somehow derive (DMap.agree-on s1 s2 evars e1);
+      _ := ···# somehow derive (DMap.agree-on s1 s2 evars e2)
+    }
+    conclude (e wrt s1 = e wrt s2)
+    (!chain [(e wrt s1)
+    = ((e1 wrt s1) op (e2 wrt s1)) [V-def]
+    = ((e1 wrt s2) op (e2 wrt s2)) [ih1 ih2]
+    = (e wrt s2) [V-def]])
+    So how do we derive these two lemmas? We already have a tool for doing just that:
+    DMap.downward-agreement-lemma ,
+    namely:
+    (forall B A m1 m2 .
+    (agree-on m1 m2 A) & B subset A ==> agree-on m1 m2 B)
+
+fpmics 2015/12/8 11:38 Page 808 #830
+808 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+The variables of e1ande2are a subset of the variables of
+e≡(e1ope2) (18.7)
+and therefore, if s1ands2agree on the variables of e, they must also agree on the variables
+ofe1ande2, by the downward agreement lemma. Of course, we still need to prove that
+“the variables of e1ande2are a subset of the variables of (18.7).” So let us assume the
+existence of a method var-subset that takes the same three arguments that istep takes,op,
+e1, ande2, and derives the following conjunction:
+(evars e1 subset evars e & evars e2 subset evars e)
+whereeis the compound expression (e1 op e2) . With that method at our disposal, istep
+can be deﬁned as follows:
+define (istep op:( OP2) e1 e2) :=
+pick-any s1:State s2:State
+  assume hyp := (DMap.agree-on s1 s2 evars e1 op e2)
+    let{ih1 := (var-agreement-property e1);
+      ih2 := (var-agreement-property e2);
+      dal := DMap.downward-agreement-lemma;
+      e := (e1 op e2);
+      _ := (!var-subset op e1 e2);
+      _ := (!chain-> [hyp
+      ==> (hyp & evars e1 subset evars e) [augment]
+      ==> (DMap.agree-on s1 s2 evars e1) [dal]]);
+      _ := (!chain-> [hyp
+      ==> (hyp & evars e2 subset evars e) [augment]
+      ==> (DMap.agree-on s1 s2 evars e2) [dal]])
+    }
+    conclude (e wrt s1 = e wrt s2)
+    (!chain [(e wrt s1)
+    = ((e1 wrt s1) op (e2 wrt s1)) [V-def]
+    = ((e1 wrt s2) op (e2 wrt s2)) [ih1 ih2]
+    = (e wrt s2) [V-def]])
+    The deﬁnition of var-subset is left as an exercise.
+    Exercise 18.3: Implement var-subset .
+    Similar to V, we need a function that gives us the “value” of a boolean cond ition in a
+    given state. We thus deﬁne a binary predicate true-in that tells us whether or not a boolean
+    condition holds in a given state:
+    declare true-in: [BCond State] -> Boolean
+    [105 [bcond-parser
+    lambda (L) (DMap.alist->dmap-general L int->nat)]]
+    Its deﬁnition uses structural recursion:
+
+fpmics 2015/12/8 11:38 Page 809 #831
+18.3. SEMANTICS OF COMMANDS 809
+assert* true-in-def :=
+[(e1 == e2 true-in s <==> e1 wrt s = e2 wrt s)
+(e1 <= e2 true-in s <==> e1 wrt s <= e2 wrt s)
+(-- b true-in s <==>˜b true-in s)
+(b1 /\ b2 true-in s <==> b1 true-in s & b2 true-in s)]
+The deﬁnition should be fairly straightforward to read. The ﬁrst axiom says that an equality
+between two expressions holds in a given state iff the expres sions have identical values in
+that state. Likewise, an inequality between two expression s holds in a state iff the value of
+the ﬁrst expression in that state is less than or equal to the v alue of the second expression in
+that state. The third axiom states that a negation is true in a state iff the negated condition is
+not true in that state, while the last one gives the semantics of conjunctions: a conjunction
+of two boolean conditions is true in a state iff both conditio ns are true in that state. Some
+tests:
+> (eval "x + 10 = 12" true-in sample-state)
+Term: true
+> (eval "x + 10 != 15 - 3" true-in sample-state)
+Term: false
+18.3 Semantics of commands
+As is the case in most imperative languages, the purpose of a While program8is to change
+states—speciﬁcally, to transform given starting states to desired ﬁnal states. Suppose, for
+example, that we write a While program to compute the factorial of x, putting the result in
+the “output” variable y:
+1y := 1;
+2while(x != 0) do
+3begin
+4 y := y * x;
+5 x := x - 1;
+6end(18.8)
+Starting from any state that assigns a value nto variable x, this program succeeds if and
+only if it terminates in a state in which the value of yisn!.
+8 We use the terms “program” and “command” synonymously, as a While program is just a (potentially large)
+command.
+
+fpmics 2015/12/8 11:38 Page 810 #832
+810 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+In general, the fundamental semantic judgments in this lang uage are of this form:
+Starting from so-and-so state, executing this program
+terminates and results in such-and-such state.(18.9)
+In more mathematical parlance, the relation that we are inte rested in for semantic purposes
+is a binary relation, let us call it yields , which holds between starting conﬁgurations on the
+one hand and ﬁnal states on the other:
+yields ⊆Conﬁguration ×State
+where a conﬁguration is simply a pair consisting of a program to be executed and the initial
+state in which execution is to be commenced:
+Conﬁguration =Cmd×State .
+To specify the formal semantics of While is nothing more and nothing less than to specify
+the precise extension of the yields relation—in short, to deﬁne yields .9
+Writing [ c,s] for a conﬁguration pair consisting of command cand state s, and using
+inﬁx notation for binary relations, a semantic judgment of t he form (18.9) above may be
+more compactly notated as:
+[c,s]yields s′(18.10)
+Using the symbol ֒→as a more intuitive alias for yields , (18.10) may be written as
+[c,s]֒→s′(18.11)
+As mentioned above, the task of a formal semantics for While is to rigorously deﬁne yields ,
+i.e., to tell us, for any given c,s, and s′, whether or not [ c,s]֒→s′holds.
+This is what we will now proceed to do. The deﬁnition of yields will be given by an
+inference system, i.e., a collection of axioms and inferenc e rules10that establish judgments
+of the form [ c,s]֒→s′. It will then be understood that [ c,s]֒→s′holds if and only if
+the judgment [c,s]֒→s′can be formally derived using the given inference rules .
+We will ﬁrst present the inference rules in conventional mat hematical notation. Later
+we will encode them in Athena. We start with the axiom that giv es the semantics of skip
+commands:
+[skip-axiom ]
+[skip,s]֒→s
+Axioms are always written in this format, which consists of t hree parts:
+9 At least that is the case for so-called “natural” formal sem antics. Formal semantics given in other styles may
+have different mathematical purposes.
+10 Strictly speaking, axioms are inference rules with no pre mises, so it is not necessary to treat them separately.
+Nevertheless, it is customary to distinguish the two and we w ill generally follow that practice here. But when we
+use the term “rule” without qualiﬁcation, it should be under stood as inference rule oraxiom.
+
+fpmics 2015/12/8 11:38 Page 811 #833
+18.3. SEMANTICS OF COMMANDS 811
+1. A horizontal line with nothing above it. The fact that ther e is nothing above the line
+signiﬁes that there are no premises to be derived in order to a pply the axiom.
+2. An axiom name (in this case skip-axiom ) enclosed within square brackets and appear-
+ing to the right of the horizontal line. This is just a label th at we give to the axiom so
+that we can refer to it.
+3. The body or conclusion of the axiom, which appears directly below the horizontal line,
+and in this particular inference system is always of the form [c,s]֒→s′.
+Although we refer to it as an axiom in the interest of simplici ty,skip-axiom is really an
+axiom schema , because sis a variable that ranges over all states. Accordingly, skip-axiom
+has inﬁnitely many instances , as many as can be obtained by replacing sby a particular
+ground state. Read as a schema, the axiom essentially says th atskip does nothing: execut-
+ingskip in any given state sresults in sunchanged.
+We continue with the axiom that gives the semantics of assign ments:
+[asgn-axiom ]
+[x:=e,s]֒→[x,V(e,s)]++s
+This is also an axiom schema that can be instantiated by assig ning particular values to x,e,
+ands. Here we write V(e,s)for the value of expression ein state s,11and [ x,V(e,s)]++sfor
+the state obtained by prepending the pair [ x,V(e,s)] to the state s.12The axiom says that
+executing an assignment of the form x:=ein a state swill result in the state [ x,V(e,s)]++s.
+Recall that sand [ x,V(e,s)]++sagree everywhere, except perhaps on x.
+The semantics of compositions are given by the following inf erence rule:
+[c1,s]֒→s′[c2,s′]֒→s′′
+[seq-rule ]
+[c1;c2,s]֒→s′′
+Inference rules are written and named just like axioms, the o nly difference being that they
+might have one or more premises above the horizontal line, in addition to the body (or con-
+clusion) of the rule below the line. Intuitively, the operat ional meaning of an inference rule
+with kpremises is this: if kconclusions have been derived that match the rule’s premise s,
+then the corresponding body of the inference rule may also be derived.
+We speak of matching because seq-rule , like the two axioms we have already seen, is
+really a schema with as many instances as can be obtained by (c onsistently) replacing the
+variables c1,c2,s,s′, and s′′by particular commands and states.13The rule is perhaps best
+11 We have formally deﬁned this function in Athena by structu ral recursion. V(e,s)is just a more customary
+mathematical notation that we use here to denote the applica tion of Vtoeands.
+12 More precisely, applying the constructor DMap.++ to: (a) the pair of xandV(e,s); and (b) the map s.
+13 The result of carrying out such a replacement can be viewed as a triple of judgments [ j1,j2,j3], where the ﬁrst
+two judgments are instances of the two rule premises, while j3is an instance of the conclusion. More generally,
+
+fpmics 2015/12/8 11:38 Page 812 #834
+812 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+read backwards: to obtain the state that results from execut ing a sequence c1;c2ins, ﬁrst
+execute c1insto get some state s′, and then execute c2ins′to get the ﬁnal state for the
+whole composition.
+Occasionally, an axiom or inference rule might have certain side conditions . These are
+provisos which further delimit the applicability of the axi om or rule. The stronger the
+provisos, the fewer the instances of the axiom or rule. Side c onditions, when there are any,
+are written further below the body of the rule. An example is p rovided by if-true-rule
+andif-false-rule , which together specify the semantics of conditional comma nds:
+[c1,s]֒→s′
+[if-true-rule ]
+[ifbthen c1elsec2,s]֒→s′
+provided that T(b,s)
+[c2,s]֒→s′
+[if-false-rule ]
+[ifbthen c1elsec2,s]֒→s′
+provided that ¬T(b,s)
+Consider if-true-rule ﬁrst. The side condition here dictates that T(b,s)must hold, where
+we write T(b,s)to indicate that condition bis true in state s.14Thus, the rule essentially
+says that if bis true in state sand the execution of c1insyields s′, then the execution
+ofifbthen c1elsec2insyields s′. Read backwards: if bis true in s, then to execute
+a conditional statement ifbthen c1elsec2ins, we execute c1ins. The second rule,
+if-false-rule , is read likewise, except that it requires the condition bto fail in s. Since any
+condition bwill either hold or not hold in any given state s, these two rules are exhaustive
+for conditional commands.
+There are also two rules for while loops, one for when the loop condition is true in the
+starting state and one for when it is false. The ﬁrst one has no premises (although it has a
+side condition), and is therefore an axiom:
+[while-axiom ]
+[while bdoc,s]֒→s
+provided that ¬T(b,s)
+This axiom says that if bdoes not hold in s, then the loop does nothing: its body is not
+executed and the resulting state is just the starting state sunchanged. By contrast, we have
+the following inference rule for the case when bis true in s:
+ann+1-element list L=[j1,...,jn,jn+1] of particular semantic judgments is said to be an instance o f an infer-
+ence rule with npremises iff Lcan be obtained from the n+1-element list comprising the rule’s premises and
+conclusion by consistently substituting particular synta ctic objects and states in place of the variables that occur
+in the premises and conclusion.
+14 Again, we formally deﬁned this predicate with structural recursion earlier (where we called it true-in );
+here we are just using T(b,s)as a piece of more conventional mathematical notation for th e same thing.
+
+fpmics 2015/12/8 11:38 Page 813 #835
+18.3. SEMANTICS OF COMMANDS 813
+[skip-axiom ]
+[skip,s]֒→s
+[asgn-axiom ]
+[x:=e,s]֒→[x,V(e,s)]++s
+[c1,s]֒→s′[c2,s′]֒→s′′
+[seq-rule ]
+[c1;c2,s]֒→s′′
+[c1,s]֒→s′
+[if-true-rule ]
+[ifbthen c1elsec2,s]֒→s′
+provided that T(b,s)
+[c2,s]֒→s′
+[if-false-rule ]
+[ifbthen c1elsec2,s]֒→s′
+provided that ¬T(b,s)
+[c,s]֒→s′[while bdoc,s′]֒→s′′
+[while-true-rule ]
+[while bdoc,s]֒→s′′
+provided that T(b,s)
+[while-axiom ]
+[while bdoc,s]֒→s
+provided that ¬T(b,s)
+Figure 18.1
+Inference system deﬁning the formal semantics of While commands.
+[c,s]֒→s′[while bdoc,s′]֒→s′′
+[while-true-rule ]
+[while bdoc,s]֒→s′′
+provided that T(b,s)
+According to this rule, when bis true in s, the ﬁnal state is obtained in two stages, as
+indicated by the two premises: ﬁrst by executing the body of t he loop, c, thereby obtaining
+an intermediate state s′; and then executing the entire loop again, but with s′as our starting
+state.
+
+fpmics 2015/12/8 11:38 Page 814 #836
+814 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+Figure 18.1 summarizes the axioms and rules of this inferenc e system. Observe that
+there is exactly one rule for each syntactic operator that bu ilds commands (essentially, for
+each constructor of the Cmddatatype), except for while andif, each of which has a pair of
+rules, one covering the case where the relevant boolean cond ition is true and one for when
+it is false.
+Aproof in this inference system is a tree τ,15every node of which contains two things:
+1. a judgment of the form [ c,s]֒→s′; and
+2. the name Rof an axiom or inference rule.
+We say that τsuccessfully derives its conclusion , namely, the judgment at the root of τ,
+iff for every node uinτthat contains a judgment jand a rule label R,jfollows from the
+judgments j1,...,jnat the children of u(where we will have n=0 ifuis a leaf) by virtue
+of the rule named by R. More precisely, the (n+1)-element list [ j1,...,jn,j] must be an
+instance of that rule.16
+As a simple example, here is a proof that derives the conclusi on
+[c,s]֒→[[x, 1], [ y, 2]],
+where cis the command x:=x+1;y:=2∗xandsis the state [[ x, 0], [ y, 0]]:
+[c,s]֒→[[x, 1], [ y, 2]]
+[sequence-rule ]
+[x:=x+1,s]֒→[[x, 1], [ y, 0]]
+[asgn-axiom ][y:=2∗x, [[x, 1], [ y, 0]]]֒→[[x, 1], [ y, 2]]
+[asgn-axiom ]
+As can be veriﬁed, the conclusion at the root of this proof tre e follows from the two leaves
+through [ seq-rule ], as required. The leaves, in turn, are instances of [ asgn-axiom ], as is
+also readily conﬁrmed.
+Let us start to encode this inference system in Athena. We sta rt by introducing a datatype
+that captures the fundamental semantic judgments of this sy stem:
+datatype Judgment := (yields (Pair Cmd State) State)
+15 We are overloading the term “proof” here, which is also use d throughout the book to designate Athena deduc-
+tions. In what follows the context will always make clear whe ther we are talking about an Athena proof or about
+a proof in the restricted sense of this particular inference system.
+16 When n=0, we regard the one-element list [ j] as an instance of an axiom iff jis an instance of that axiom.
+
+fpmics 2015/12/8 11:38 Page 815 #837
+18.3. SEMANTICS OF COMMANDS 815
+So judgments here are of the form
+(yields (pair c s)s′)
+for arbitrary command cand states sand s′, corresponding to the judgments of the
+form (18.10). To mimic the graphical symbol ֒→, we could introduce something like the
+following as an alias for yields :
+define -->> := yields
+That would allow us to write a judgment in the following form:
+((pair ?c ?s) -->> ?s’) .
+But it would be nicer still if we could pass a two-element list [c s]as the left argument
+of-->>, instead of a term of the form (pair c s), so that we could write judgments in the
+form
+([c s] -->> s′),
+which are almost visually identical to the “conventional” j udgments of the form (18.11).
+As we have done before, the trick here is to make -->> accept a two-element list on its left
+side and automatically convert it to the corresponding pair. (Of course it should also be
+able to accept regular pair terms.) That is again achieved with the expand-input directive:
+expand-input yields [ lambda (x) (lst->pair-general x cmd-parser state) state]
+/a\}⌊ra⌋ketle{tD:lst->pair-general isn’t deﬁned in this ﬁle or in any of the book/*.ath ﬁles. In
+examples/proglang/While.ath, I used
+[lambda (x) ((alist->pair cmd-parser state) x) state , which worked. /a\}⌊ra⌋ketri}htAccord-
+ingly, we can now write, e.g.,
+> ([c s] -->> s /quotesingle.Var)
+Term: (yields (pair ?c:Cmd
+?s:(DMap.DMap Ide N))
+?s/quotesingle.Var:(DMap.DMap Ide N))
+> ((pair c s) -->> s /quotesingle.Var)
+Term: (yields (pair ?c:Cmd
+?s:(DMap.DMap Ide N))
+?s/quotesingle.Var:(DMap.DMap Ide N))
+> (c pair s -->> s /quotesingle.Var)
+Term: (yields (pair ?c:Cmd
+?s:(DMap.DMap Ide N))
+?s/quotesingle.Var:(DMap.DMap Ide N))
+
+fpmics 2015/12/8 11:38 Page 816 #838
+816 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+All three expressions are equivalent, in that they produce t he same output, but we will
+generally prefer the ﬁrst alternative.
+Next, we specify the structure of the proofs of this inferenc e system:
+datatype Proof := asgn-axiom
+| skip-axiom
+| (seq-rule Proof Proof)
+| (if-true-rule Proof)
+| (if-false-rule Proof)
+| while-axiom
+| (while-rule Proof Proof)
+Note that there is exactly one constructor for each inferenc e rule of the system. Construc-
+tors representing axioms are irreﬂexive, in fact nullary co nstants, whereas the constructors
+corresponding to proper inference rules are reﬂexive, mean ing that they take proof objects
+as their arguments. Indeed, each such rule constructor rece ives exactly as many arguments
+as there are premises. This reﬂects the fact that axioms have no premises and thus serve
+as the leaves of proof trees, whereas inference rules have pr emises and their constructors
+will therefore require proofs of those premises as their chi ldren (arguments). We introduce
+some convenient shorthands for variables ranging over Proof andJudgment :
+define [proof proof /quotesingle.Varproof1 proof2 p p /quotesingle.Varp1 p2 p3] := [?proof:Proof ···]
+define [judgment j j /quotesingle.Varj1 j2] := [?judgment:Judgment ···?j2:Judgment]
+Although we refer to them as proofs in the interest of simplic ity, objects of sort Proof
+are really proof shapes . A canonical term of this sort represents the tree structure of a proof
+in the sense in which we deﬁned proof above (p. 814). More prec isely, aProof object is
+what we get by a regular proof tree by eliding the judgments fr om its nodes and keeping
+only the names of the inference rules and axioms. Consider, f or example, the proof tree
+depicted earlier:
+[c,s]֒→[[x, 1], [ y, 2]]
+[sequence-rule ]
+[x:=x+1,s]֒→[[x, 1], [ y, 0]]
+[asgn-axiom ][y:=2∗x, [[x, 1], [ y, 0]]]֒→[[x, 1], [ y, 2]]
+[asgn-axiom ]
+If we strike out the judgments from the nodes, what we are left with is this tree:
+
+fpmics 2015/12/8 11:38 Page 817 #839
+18.3. SEMANTICS OF COMMANDS 817
+[sequence-rule ]
+[asgn-axiom ] [ asgn-axiom ]
+which is represented by the canonical Proof term
+(seq-rule asgn-axiom asgn-axiom) .
+To put the meat back on such proofs, we must connect them with j udgments, and that
+is done by giving the operational meaning of proofs, i.e., es sentially by transcribing the
+content of ﬁgure 18.1 in Athena. To do that, we ﬁrst introduce a binary relation derives
+that holds between a proof and a judgment:
+declare derives: [Proof Judgment] -> Boolean
+In the vein of continuing to use conventional notation, we in troduce the following alias for
+derives :
+define |- := derives
+So we can now say that a given proof derives a given judgment as follows:
+> (proof |- judgment)
+Term: (derives ?proof:Proof ?judgment:Judgment)
+Let us proceed to specify exactly what it is that proofs do, i. e., exactly what judgments
+they derive and under what circumstances. That is, for each a xiom and inference rule Rwe
+willassert an axiom of the form
+Rderives a judgment of the form [c s] -->> s′iff···.
+More precisely, for each constructor proof-con of theProof datatype, we will give exactly
+one axiom of the form
+(proof-con ···)derives a judgment of the form [c s] -->> s′iff···.
+We start with skip-axiom :
+assert* skip-semantics :=
+(skip-axiom |- [c s] -->> s /quotesingle.Var<==> c = skip & s /quotesingle.Var= s)
+This says that a proof of the form skip-axiom derives a judgment [c s] -->> s’ iff the
+command cis none other than skip and the resulting state s’is none other than the initial
+states. Note that both directions of the biconditional are importa nt. It is the right-to-left
+
+fpmics 2015/12/8 11:38 Page 818 #840
+818 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+direction that corresponds more closely to skip-axiom as shown in ﬁgure 18.1, but if we
+did not also have the left-to-right direction then we would b e leaving open the possibility
+thatskip-axiom might derive judgments about commands other than skip, or that the ﬁnal
+state might be something other than the initial state. In a si milar vein, here is the meaning
+ofasgn-axiom :
+assert* asgn-semantics :=
+(asgn-axiom |- [c s] -->> s /quotesingle.Var<==>
+exists x e . c = x <- e & s /quotesingle.Var= [x (e wrt s)] ++ s)
+And our ﬁrst reﬂexive constructor:
+assert* sequence-semantics :=
+((seq-rule p1 p2) |- [c s] -->> s /quotesingle.Var<==>
+exists c1 c2 s /quotesingle.Var/quotesingle.Var. c = c1 ˆ c2
+& p1 |- [c1 s] -->> s /quotesingle.Var/quotesingle.Var
+& p2 |- [c2 s /quotesingle.Var/quotesingle.Var] -->> s /quotesingle.Var)
+Observe the recursive constraints on the subproofs p1andp2: they must themselves derive
+appropriate judgments if (seq-rule p1 p2) is to do its work. Here s’’is an “intermediate
+state” such that
+p1 |- [c1 s] -->> s’’ andp2 |- [c2 s’’] -->> s’ .
+We continue with the remaining rules:
+assert* if-true-semantics :=
+(if-true-rule p |- [c s] -->> s /quotesingle.Var<==>
+exists b c1 c2 .
+c = (cond b c1 c2) & b true-in s & p |- [c1 s] -->> s /quotesingle.Var)
+assert* if-false-semantics :=
+(if-false-rule p |- [c s] -->> s /quotesingle.Var<==>
+exists b c1 c2 .
+c = (cond b c1 c2) &˜b true-in s & p |- [c2 s] -->> s /quotesingle.Var)
+assert* while-false-semantics :=
+(while-axiom |- [c s] -->> s /quotesingle.Var<==>
+exists b body . c = (while-loop b body) &˜b true-in s & s /quotesingle.Var= s)
+assert* while-true-semantics :=
+((while-rule p1 p2) |- [c s] -->> s /quotesingle.Var<==>
+exists b body s /quotesingle.Var/quotesingle.Var. c = (while-loop b body) &
+b true-in s &
+p1 |- [body s] -->> s /quotesingle.Var/quotesingle.Var&
+p2 |- [(while-loop b body) s /quotesingle.Var/quotesingle.Var] -->> s /quotesingle.Var)
+And we are done! For ease of reference, we collect these axiom s into a single list that we
+callsemantics :
+
+fpmics 2015/12/8 11:38 Page 819 #841
+18.4. ⋆TESTING THE SEMANTICS 819
+define semantics :=
+[skip-semantics asgn-semantics sequence-semantics if-t rue-semantics
+if-false-semantics while-true-semantics while-false-s emantics])
+Finally, we say that a judgment is provable iff there is some proof that derives it:
+declare provable: [Judgment] -> Boolean
+assert* provable-def :=
+[(provable judgment <==> exists proof . proof |- judgment)]
+Before we proceed we will have to assert the free-generation axioms for each of the
+datatypes we have introduced so far that ought to be freely ge nerated (thus not counting
+maps). We will refer to them collectively as structural-axioms :
+assert structural-axioms :=
+(join (datatype-axioms "Exp")
+(datatype-axioms "BCond")
+(datatype-axioms "Cmd")
+(datatype-axioms "Judgment")
+(datatype-axioms "Proof"))
+Note that this is a fairly long list:
+> (length structural-axioms)
+Term: 70
+18.4 ⋆Testing the semantics
+The semantics of proof trees have been formulated using bico nditionals and existential
+quantiﬁcations. As we have already indicated, this is neces sary in order to ensure, for
+instance, that skip-axiom canonly be used to derive judgments about skip commands and
+not, say, about assignments or loops. And it is also necessar y in order to“complete” the
+inference rules of the system in both directions, so that we c an be assured, for instance, that
+if a proof of the form (seq-rule p1p2)derives a judgment about a certain composition
+(c1ˆc2), then p1derives the appropriate judgment about c1andp2about c2.
+Consequently, these axioms have somewhat complicated logi cal structure. They are cer-
+tainly not universally quantiﬁed conditional equations, w hich means that we cannot use
+evaluation based on rewriting to “test” our deﬁnitions or to falsify conjectures in the way
+we have done before. Nevertheless, the semantics do have con structive content (unsur-
+prisingly, given that they are computational semantics), a nd that content can be readily
+
+fpmics 2015/12/8 11:38 Page 820 #842
+820 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+mined in the setting of logic programming. Indeed, using the tools described in the rel-
+evant appendix, that content can be extracted completely au tomatically by analyzing the
+assumption base, so there is no need to explicitly specify a l ogic program—we can just
+pose a query and let Prolog.auto-solve try to ﬁgure out how to answer it.
+As discussed in Section A.4, auto-solve will not only extract relevant Horn clauses that
+are shallowly embedded in the assumption base, but will also perform a deeper translation
+of all relevant (conditional) equations into relational fo rm. This means that we can freely
+mix paradigms when we develop our theories, combining equat ions with non-equational
+axioms such as the ones we used to specify the natural semanti cs of While commands;
+auto-solve should be able to treat these uniformly. For instance, let us test the semantics
+of expressions and boolean conditions, which were deﬁned us ing equations:
+(Prolog.add-transformer nat->int)
+> (Prolog.auto-solve "x + 3" wrt sample-state = ?RESULT)
+List: [true [[?RESULT --> 5]]]
+More interestingly, in some cases logic programming can eve n ﬁnd for us the expressions
+(or subexpressions) that we need in order to achieve a certai n result. To take a simple
+example, given a state that maps ’xto 2, what expression (from the abstract grammar of
+all expressions) do we need to add to (var ’x) in order to obtain 4?
+> (Prolog.auto-solve ?E1 + var /quotesingle.Varx wrt state [[ /quotesingle.Varx --> 2]] = S S S S zero)
+List: [true [[?E1 --> (num (S (S zero))))]]]
+In fact we can ask for a number of different solutions. When we ask for 3 such expressions,
+auto-solve obliges with the following answers:
+define goal := (?E1 + var /quotesingle.Varx wrt state [[ /quotesingle.Varx --> 2]] = S S S S zero)
+> (Prolog.auto-solve-N goal 3)
+List: [[[?E1 --> (num (S (S zero)))]]
+[[?E1 --> (var /quotesingle.Varx)]]
+[[?E1 --> (prod (num (S (S zero)))
+(num (S zero)))]]]
+The second suggestion is particularly interesting because it is not a constant expression—
+the system has discovered that, in the given state, one can ad d(var ’x) to itself in order to
+produce the sum 4.
+Let us try testing a simple boolean condition:
+
+fpmics 2015/12/8 11:38 Page 821 #843
+18.4. ⋆TESTING THE SEMANTICS 821
+define sample-state := (state [[ /quotesingle.Varx --> 2] [ /quotesingle.Vary --> 3]])
+define goal := ("5 + x <= y" true-in sample-state)
+> (Prolog.auto-solve goal)
+List: [false {}]
+If we negate the goal we see that it becomes true, as it should:
+> (Prolog.auto-solve "˜5 + x <= y" true-in sample-state)
+List: [true {}]
+And a more interesting goal involving boolean conditions:
+> (Prolog.auto-solve num 5 <= ?E true-in sample-state)
+List: [true {?E:Exp --> (num (S (S (S (S (S (S ?v53781:N)))))) )}]
+Let us now move on to the bread and butter of the While language—commands. We
+start with a very simple (the simplest possible) command: skip.
+(Prolog.add-transformer
+lambda (m) (DMap.dmap->alist-canonical-general m nat->int))
+> (Prolog.auto-solve skip-axiom |- [skip sample-state] -- >> ?RESULT)
+List: [true [[?RESULT --> [zero [[ /quotesingle.Varx --> 2] [ /quotesingle.Vary --> 3]]]]]]
+Thus we see that executing the trivial command skip in the starting state sample-state has
+no effect, in that the ﬁnal state is identical to the starting state, namely
+[zero [[’x --> 2] [’y --> 3]]] .
+In the above example we explicitly speciﬁed the relevant pro of object ourselves on the left
+of the|-symbol, namely skip-axiom . But Prolog could also ﬁnd this for us automatically:
+> (Prolog.auto-solve ?PROOF |- [skip sample-state] -->> ?S TATE)
+List: [true [[?STATE --> [zero [[ /quotesingle.Varx --> 2] [ /quotesingle.Vary --> 3]]]]
+[?PROOF --> skip-axiom]]]
+Here is a simple program for swapping the values of two variab lesxandy:
+define swap := "z := x; x := y; y := z"
+define goal :=
+(?PROOF |- [swap (state [[ /quotesingle.Varx --> 1] [ /quotesingle.Vary --> 2]])] -->> ?RESULT)
+
+fpmics 2015/12/8 11:38 Page 822 #844
+822 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+> (Prolog.auto-solve goal)
+List: [true [[?RESULT --> [zero [[ /quotesingle.Vary --> 1] [ /quotesingle.Varx --> 2] [ /quotesingle.Varz --> 1]]]]
+[?PROOF --> (seq-rule asgn-axiom
+(seq-rule asgn-axiom
+asgn-axiom))]]]
+Indeed, we can execute this code completely symbolically by introducing two natural
+number constants x-val andy-val for the values of the xandyvariables respectively, and
+verifying that these are swapped in the output state:
+declare x-val, y-val: N
+define goal :=
+(?PROOF |- [swap (state [[ /quotesingle.Varx --> x-val] [ /quotesingle.Vary --> y-val]])] -->> ?RESULT)
+> (Prolog.auto-solve goal)
+List: [true [[?RESULT --> [zero [[ /quotesingle.Vary --> x-val]
+[/quotesingle.Varx --> y-val]
+[/quotesingle.Varz --> x-val]]]]
+[?PROOF --> (seq-rule asgn-axiom
+(seq-rule asgn-axiom
+asgn-axiom))]]]
+To test conditionals, consider a simple program that sets yto twice the value of x if x is
+positive, and sets it to 1 otherwise:
+define prog := "if (x = 0) then y := 1 else y := 2 * x"
+define goal :=
+(?PROOF |- [prog (state [[ /quotesingle.Varx --> 0]])] -->> ?RESULT)
+> (Prolog.auto-solve goal)
+List: [true [[?RESULT --> [zero [[ /quotesingle.Vary --> 1] [ /quotesingle.Varx --> 0]]]]
+[?PROOF --> (if-true-rule asgn-axiom)]]]
+> (Prolog.auto-solve
+?PROOF |- [prog (state [[ /quotesingle.Varx --> 4]])] -->> ?RESULT)
+List: [true [[?RESULT --> [zero [[ /quotesingle.Vary --> 8] [ /quotesingle.Varx --> 4]]]]
+[?PROOF --> (if-false-rule asgn-axiom)]]]
+Let us now consider a more interesting example, involving lo oping—a program for com-
+puting the factorial function:
+
+fpmics 2015/12/8 11:38 Page 823 #845
+18.4. ⋆TESTING THE SEMANTICS 823
+define factorial-program :=
+"y := 1; while (x != 0) do begin y := y * x; x := x - 1 end"
+define goal :=
+(?PROOF |- [factorial-program (state [[ /quotesingle.Varx --> 3]])] -->> ?RESULT)
+> (Prolog.auto-solve goal)
+List: [true [[?RESULT --> [zero [[ /quotesingle.Varx --> 0] [ /quotesingle.Vary --> 6]]]]
+[?PROOF -->
+(seq-rule
+asgn-axiom
+(while-rule
+(seq-rule asgn-axiom asgn-axiom)
+(while-rule
+(seq-rule asgn-axiom asgn-axiom)
+(while-rule
+(seq-rule asgn-axiom asgn-axiom)
+while-axiom))))]]]
+Note that the discovered proof object essentially tracks an unfolding of the program as it
+goes through the various loop iterations. Note, in particul ar, that the number of applications
+ofwhile-rule in the computed proof object is equal to the number of times th e body of the
+while loop is executed at runtime, which in this case is identical t o the value of the input x:
+define goal :=
+(?PROOF |- [factorial-program (state [[ /quotesingle.Varx --> 5]])] -->> ?RESULT)
+> (Prolog.auto-solve goal)
+List: [true [[?RESULT --> [zero [[ /quotesingle.Varx --> 0] [ /quotesingle.Vary --> 120]]]]
+[?PROOF -->
+(seq-rule asgn-axiom
+(while-rule
+(seq-rule asgn-axiom asgn-axiom)
+(while-rule
+(seq-rule asgn-axiom asgn-axiom)
+(while-rule
+(seq-rule asgn-axiom asgn-axiom)
+(while-rule
+(seq-rule asgn-axiom asgn-axiom)
+(while-rule
+(seq-rule asgn-axiom asgn-axiom)
+while-axiom))))))]]]
+
+fpmics 2015/12/8 11:38 Page 824 #846
+824 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+Let us now try computing a function of two arguments: the foll owing program raises xto
+thenthpower and stores the result in y:
+y := 1;
+while(n != 0) do
+begin
+y := y * x;
+n := n -1;
+end(18.12)
+We check that it produces the right result:
+define exp :=
+"y := 1; while (n != 0) do begin y := y * x; n := n - 1 end"
+define goal :=
+(?PROOF |- [exp (state [[ /quotesingle.Varx --> 2] [ /quotesingle.Varn --> 3]])] -->> ?RESULT)
+> (Prolog.auto-solve goal)
+List: [true [[?RESULT --> [zero [[ /quotesingle.Varn --> 0] [ /quotesingle.Vary --> 8] [ /quotesingle.Varx --> 2]]]]
+[?PROOF --> (seq-rule
+asgn-axiom
+(while-rule
+(seq-rule asgn-axiom asgn-axiom)
+(while-rule
+(seq-rule asgn-axiom asgn-axiom)
+(while-rule
+(seq-rule asgn-axiom asgn-axiom)
+while-axiom))))]]]
+Finally, here is a program that loops forever:
+define loop := "while (1 = 1) do skip"
+define goal := (?PROOF |- [loop sample-state] -->> ?RESULT)
+> (Prolog.auto-solve goal)
+···
+# Infinite loop ultimately failing
+# with an out-of-stack error message from Prolog
+.5 Some lemmas
+In this section we continue to extract some useful lemmas fro m the formal semantics.
+
+fpmics 2015/12/8 11:38 Page 825 #847
+18.5. SOME LEMMAS 825
+WhileProlog.auto-solve automatically extracts Horn clauses from the assumption ba se
+as needed to answer its input queries, we will see that, for th e natural semantics of While
+at least, it is also useful to extract Horn clauses more expli citly and permanently—to prove
+them. Starting from the strong semantics as we have stated th em, it takes little effort to
+derive the uni-directional inference rules of ﬁgure 18.1 as lemmas. These lemmas will
+come handy in some of the forthcoming proofs.
+Let us begin with skip. The lemma that we want to derive is essentially [ skip-axiom ] of
+ﬁgure 18.1:
+define skip-horn-clause := (forall s . skip-axiom |- [skip s] -->> s )
+How can we deduce this result from skip-semantics ? Recall the content of that axiom:
+(forall cmd s s /quotesingle.Var.
+skip-axiom |- [cmd s] -->> s /quotesingle.Var<==> cmd = skip & s /quotesingle.Var= s)
+Sinceskip-horn-clause wants to prove (skip-axiom |- [skip s] -->> s) for arbitrary
+s, we need to use the biconditional of skip-semantics in a right-to-left direction, so we
+need to establish the right-hand side of that biconditional for the appropriate values of cmd,
+s, ands’. Chaining can do that in one step:
+conclude skip-horn-clause
+pick-any s:State
+  (!chain-> [(skip = skip & s = s)
+  ==> (skip-axiom |- [skip s] -->> s) [skip-semantics]])
+  (Recall from p. 419 that chain-> will automatically derive the ﬁrst element of the chain,
+  (skip = skip & s = s) , since it is a conjunction of two identities of the form (t=t).)
+  We continue with asgn-axiom . Here we want to derive the following lemma, which cap-
+  tures the [ asgn-axiom ] of ﬁgure 18.1:
+  define asgn-horn-clause :=
+  (forall x e s . asgn-axiom |- [(x <- e) s] -->> [?x (V e s)] ++ s)
+  The idea is similar to the proof of skip-horn-clause : We derive the lemma from the bicon-
+  ditional of asgn-semantics , except that now there is an extra step required to introduce the
+  necessary existential quantiﬁcation:
+  conclude asgn-horn-clause
+  pick-any x e s:State
+    (!chain->
+    [(x <- e = x <- e & [x (e wrt s)] ++ s = [x (e wrt s)] ++ s)
+    ==> (exists x /quotesingle.Vare/quotesingle.Var.
+    (x <- e) = (x /quotesingle.Var<- e/quotesingle.Var) &
+    [x (e wrt s)] ++ s = [x /quotesingle.Var(e/quotesingle.Varwrt s)] ++ s) [existence]
+    ==> (asgn-axiom |-
+    [(x <- e) s] -->> [x (e wrt s)] ++ s) [asgn-semantics]])
+
+fpmics 2015/12/8 11:38 Page 826 #848
+826 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+We state the remaining Horn clauses here and leave their proo fs as exercises:
+define seq-horn-clause :=
+(forall cmd1 cmd2 s s /quotesingle.Vars/quotesingle.Var/quotesingle.Varp1 p2 .
+p1 |- [cmd1 s] -->> s /quotesingle.Var& p2 |- [cmd2 s /quotesingle.Var] -->> s /quotesingle.Var/quotesingle.Var==>
+(seq-rule p1 p2) |- [(cmd1 ˆ cmd2) s] -->> s /quotesingle.Var/quotesingle.Var)
+define if-true-horn-clause :=
+(forall b cmd1 cmd2 p s s /quotesingle.Var.
+b true-in s & p |- [cmd1 s] -->> s /quotesingle.Var==>
+(if-true-rule p) |- [(cond b cmd1 cmd2) s] -->> s /quotesingle.Var)
+define if-false-horn-clause :=
+(forall b cmd1 cmd2 p s s /quotesingle.Var.
+˜b true-in s & p |- [cmd2 s] -->> s /quotesingle.Var==>
+(if-false-rule p) |- [(cond b cmd1 cmd2) s] -->> s /quotesingle.Var)
+define while-true-horn-clause :=
+(forall b body p1 p2 s s /quotesingle.Vars/quotesingle.Var/quotesingle.Var.
+b true-in s &
+p1 |- [body s] -->> s /quotesingle.Var&
+p2 |- [(while-loop b body) s /quotesingle.Var] -->> s /quotesingle.Var/quotesingle.Var
+==> (while-rule p1 p2) |- [(while-loop b body) s] -->> s /quotesingle.Var/quotesingle.Var)
+define while-false-horn-clause :=
+(forall b body s .
+˜b true-in s ==>
+while-axiom |- [(while-loop b body) s] -->> s)
+We gather all the Horn clauses into a single list for ease of re ference:
+define semantics-horn-clauses :=
+[skip-horn-clause asgn-horn-clause seq-horn-clause
+if-false-horn-clause if-false-horn-clause
+while-false-horn-clause while-true-horn-clause]
+Exercise 18.4: Derive the remaining Horn clause lemmas.
+We refer to the lemmas that are formulated and proven in the re mainder of this Section
+as “exclusivity lemmas” because each of them states that, ro ughly, for any given command
+cofWhile there is only one inference rule that can derive semantic judgments about c.
+For instance, given some composition (c1ˆc2), only proofs of the form (seq-rule ···)
+are capable of deriving judgments about it; only skip-axiom can derive judgments about
+skip commands; and so on. These are not particularly glamorous or interesting lemmas.
+But they are quite useful, as we will see later. Moreover, the y provide a good opportunity
+to demonstrate, once again, the beneﬁts of using methods to a utomate recurring patterns of
+reasoning.
+Let us start with the exclusivity lemma for compositions:
+
+fpmics 2015/12/8 11:38 Page 827 #849
+18.5. SOME LEMMAS 827
+define skip-excl :=
+(forall proof s s /quotesingle.Var.
+proof |- [skip s] -->> s /quotesingle.Var==> proof = skip-axiom & s /quotesingle.Var= s)
+This sentence says that if any proof tree derives a judgment o f the form [skip s] -->> s’ ,
+then that proof tree must be the leaf skip-axiom , and further, the state s’must be identical
+tos. This ought to follow from our semantics, and indeed we will p rove that it does. For
+now, we simply list all the exclusivity lemmas:
+define skip-excl :=
+(forall proof s s /quotesingle.Var.
+proof |- [skip s] -->> s /quotesingle.Var==> proof = skip-axiom & s /quotesingle.Var= s)
+define asgn-excl :=
+(forall proof x e s s /quotesingle.Var.
+proof |- [(x <- e) s] -->> s /quotesingle.Var==> proof = asgn-axiom &
+s/quotesingle.Var= [x (V e s)] ++ s)
+define seq-excl :=
+(forall p c1 c2 s s /quotesingle.Var.
+p |- [(c1 ˆ c2) s] -->> s /quotesingle.Var==>
+exists p1 p2 s /quotesingle.Var/quotesingle.Var. p = (seq-rule p1 p2) &
+p1 |- [c1 s] -->> s /quotesingle.Var/quotesingle.Var&
+p2 |- [c2 s /quotesingle.Var/quotesingle.Var] -->> s /quotesingle.Var)
+define if-true-excl :=
+(forall p b c1 c2 s s /quotesingle.Var.
+p |- [(cond b c1 c2) s] -->> s /quotesingle.Var& b true-in s ==>
+exists p /quotesingle.Var. p = if-true-rule p /quotesingle.Var& p/quotesingle.Var|- [c1 s] -->> s /quotesingle.Var)
+define if-false-excl :=
+(forall p b c1 c2 s s /quotesingle.Var.
+p |- [(cond b c1 c2) s] -->> s /quotesingle.Var&˜b true-in s ==>
+exists p /quotesingle.Var. p = if-false-rule p /quotesingle.Var& p/quotesingle.Var|- [c2 s] -->> s /quotesingle.Var)
+define while-true-excl :=
+(forall p b body s s /quotesingle.Var.
+p |- [(while-loop b body) s] -->> s /quotesingle.Var& b true-in s ==>
+exists p1 p2 s /quotesingle.Var/quotesingle.Var. p = (while-rule p1 p2) &
+p1 |- [body s] -->> s /quotesingle.Var/quotesingle.Var&
+p2 |- [(while-loop b body) s /quotesingle.Var/quotesingle.Var] -->> s /quotesingle.Var)
+define while-false-excl :=
+(forall p b body s s /quotesingle.Var.
+p |- [(while-loop b body) s] -->> s /quotesingle.Var&˜b true-in s ==>
+p = while-axiom & s /quotesingle.Var= s)
+define excl-lemmas :=
+[skip-excl asgn-excl seq-excl if-true-excl if-false-exc l
+while-true-excl while-false-excl]
+
+fpmics 2015/12/8 11:38 Page 828 #850
+828 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+So how do we go about proving these lemmas Let’s consider the c ase of compositions
+ﬁrst,seq-excl . We need to show that for anyproof p,if pderives a judgment of the form
+[(c1ˆc2)s] -->> s′,then p must be of the form (seq-rule p1p2), where p1andp2
+themselves derive appropriate judgments. This goal is univ ersally quantiﬁed over proofs,
+so we must show that the aforementioned conditional holds no matter what pis, i.e., no
+matter what the form ofpis; in other words, no matter what the top constructor of p
+is. So we have to consider each possible proof constructor, a nd establish the conditional
+separately in each case. One way to do that is to use the datatype-cases form. So the
+desired proof now takes the following skeletal form:
+datatype-cases seq-excl {
+  skip-axiom => ...
+  | asgn-axiom => ...
+  | (seq-rule p1 p2) => ...
+  | (if-true-rule p) => ...
+  | (if-false-rule p) =>
+  | (while-rule p1 p2) => ...
+  | while-axiom => ... }
+  Let us take up the case of skip-axiom ﬁrst. We need to show that ifskip-axiom derives
+  a judgment of the form [(c1ˆc2)s] -->> s′,thenskip-axiom must be of the form
+  (seq-rule p1p2), where p1andp2themselves derive appropriate judgments. How can
+  we establish such a conditional? The answer is by contradict ion. We are assuming that
+  skip-axiom derives a judgment of the form [(c1ˆc2)s] -->> s′:
+  skip-axiom |- [( c1ˆc2)s] -->> s′. (18.13)
+  But that’s inconsistent with skip-semantics ! Recall:
+  assert* skip-semantics :=
+  (skip-axiom |- [cmd s] -->> s /quotesingle.Var<==> cmd = skip & s /quotesingle.Var= s)
+  So our assumption (18.13) can be combined with skip-semantics to derive the absurd
+  conclusion:
+  (c1ˆc2)=skip.
+  This conclusion is absurd on account of the free-generation axioms of the Cmddatatype (or
+  less precisely, from what we earlier called structural-axioms ). Accordingly, we can start
+  to ﬁll that part of the overall proof skeleton as follows:
+  datatype-cases seq-excl {
+    skip-axiom =>
+    pick-any cmd1 cmd2 s:State s /quotesingle.Var:State
+      assume hyp := (skip-axiom |- [(cmd1 ˆ cmd2) s] -->> s /quotesingle.Var) {
+        goal := (exists p1 p2 is . skip-axiom = (seq-rule p1 p2) &
+        p1 |- [cmd1 s] -->> is &
+        p2 |- [cmd2 is] -->> s /quotesingle.Var);
+        (!chain-> [hyp ==> (cmd1 ˆ cmd2 = skip) [semantics]
+
+fpmics 2015/12/8 11:38 Page 829 #851
+18.5. SOME LEMMAS 829
+==> goal [free-gen]])}
+| asgn-axiom => ...
+| (seq-rule p1 p2) => ...
+| (if-true-rule p) => ...
+| (if-false-rule p) =>
+| (while-rule p1 p2) => ...
+| while-axiom => ... }
+where, on ﬁrst approximation, free-gen is a binary method that takes a premise of the form
+(cmd1 ˆ cmd2 = skip)
+as its ﬁrst argument and an arbitrary goal as its second argum ent, and derives that goal.
+(We deliberately defer further discussion of free-gen for now.) Let us continue by ﬁlling
+in the case of if-true-rule , which is quite similar:
+datatype-cases seq-excl {
+  skip-axiom =>
+  pick-any c1 c2 s:State s /quotesingle.Var:State
+    assume hyp := (skip-axiom |- [(c1 ˆ c2) s] -->> s /quotesingle.Var)
+      let{goal := (exists p1 p2 s /quotesingle.Var/quotesingle.Var. skip-axiom = (seq-rule p1 p2) &
+        p1 |- [c1 s] -->> s /quotesingle.Var/quotesingle.Var&
+        p2 |- [c2 s /quotesingle.Var/quotesingle.Var] -->> s /quotesingle.Var)}
+        (!chain-> [hyp ==> (c1 ˆ c2 = skip) [semantics]
+        ==> goal [free-gen]])
+        | (if-true-rule p) =>
+        pick-any c1 c2 s:State s /quotesingle.Var:State
+          assume hyp := ((if-true-rule p) |- [(c1 ˆ c2) s] -->> s /quotesingle.Var)
+            let{goal := (exists p1 p2 s /quotesingle.Var/quotesingle.Var.
+              (if-true-rule p) = (seq-rule p1 p2) &
+              p1 |- [c1 s] -->> s /quotesingle.Var/quotesingle.Var&
+              p2 |- [c2 s /quotesingle.Var/quotesingle.Var] -->> s /quotesingle.Var)}
+              (!chain-> [hyp
+              ==> (exists b cmd1 cmd2 .
+              c1 ˆ c2 = (cond b cmd1 cmd2) &
+              b true-in s &
+              p |- [cmd1 s] -->> s /quotesingle.Var) [semantics]
+              ==> goal [free-gen]])
+              | asgn-axiom => ···
+              | (seq-rule p1 p2) => ···
+              | (if-false-rule p) => ···
+              | (while-rule p1 p2) => ···
+              | while-axiom => ···
+            }
+            Two points emerge when we examine the two subproofs in the abo ve skeleton:
+
+fpmics 2015/12/8 11:38 Page 830 #852
+830 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+• Thefree-gen method needs to be somewhat more sophisticated. Its input pr emise need
+not be a simple premise of the form
+((c···) = ( c′···)) (18.14)
+i.e., an identity between two terms built with distinct Cmdconstructors candc′. Instead,
+as the case of if-true-rule shows above, the input premise of free-gen could be an
+existential quantiﬁcation, only one conjunct of which is an identity of the form (18.14).
+However, we specify that the existential quantiﬁcation in q uestion might have zero
+variables, which means that free-gen should also be able to handle equations of the
+form (18.14). Of course, such an existential quantiﬁcation is inconsistent with the free-
+generation axioms of Cmd, sofree-gen should be able to derive its second argument by
+contradiction, in the way outlined above. Therefore, the sk eleton of free-gen can be
+expressed as follows:
+define (free-gen premise goal) :=
+matchpremise {
+(exists ( some-list evars) body) =>
+# granting that body contains a conjunct of the form
+# ((c ...) = (c /quotesingle.Var...))
+# for two distinct constructors c and c /quotesingle.Varof Cmd,
+# derive goal.
+...
+}
+We leave the complete deﬁnition of this method as an exercise .
+• For both subproofs shown above, we deﬁned the appropriate goal that was l derived in
+the subsequent chain. These goals have a common structure wh ich can be abstracted into
+a procedure:
+define (make-goal proof c1 c2 s s /quotesingle.Var) :=
+(exists p1 p2 s /quotesingle.Var/quotesingle.Var. proof = (seq-rule p1 p2) &
+p1 |- [c1 s] -->> s /quotesingle.Var/quotesingle.Var&
+p2 |- [c2 s /quotesingle.Var/quotesingle.Var] -->> s /quotesingle.Var)
+Exercise 18.5: Implement free-gen .
+Withfree-gen under our belt, most remaining cases become fairly routine, as they are
+quite similar to the two cases shown above: by assuming that a proof constructor other that
+seq-rule derives a judgment of the form
+[(c1ˆc2)s] -->> s′,
+we get a contradiction that allows us to derive our goal vacuo usly. The only interesting
+case, which does not involve a contradiction, is the case of seq-rule . In that case the result
+
+fpmics 2015/12/8 11:38 Page 831 #853
+18.5. SOME LEMMAS 831
+can be derived from the semantics andstructural-axioms of our theory. The proof in its
+entirety is shown below:
+datatype-cases seq-excl {
+  asgn-axiom =>
+  pick-any c1 c2 s s /quotesingle.Var
+    assume hyp := (asgn-axiom |- [(c1 ˆ c2) s] -->> s /quotesingle.Var)
+      let{goal := (make-goal asgn-axiom c1 c2 s s /quotesingle.Var)}
+        (!chain-> [hyp ==> (exists x e . c1 ˆ c2 = x <- e &
+        s/quotesingle.Var= [x (V e s)] ++ s)
+        [semantics]
+        ==> goal [free-gen]])
+        | skip-axiom =>
+        pick-any c1 c2 s:State s /quotesingle.Var:State
+          assume hyp := (skip-axiom |- [(c1 ˆ c2) s] -->> s /quotesingle.Var)
+            let{goal := (make-goal skip-axiom c1 c2 s s /quotesingle.Var)}
+              (!chain-> [hyp ==> (c1 ˆ c2 = skip & s /quotesingle.Var= s) [semantics]
+              ==> goal [free-gen]])
+              | (seq-rule p1 p2) =>
+              pick-any c1 c2 s:State s /quotesingle.Var:State
+                assume hyp := ((seq-rule p1 p2) |- [(c1 ˆ c2) s] -->> s /quotesingle.Var)
+                  let{goal := (make-goal (seq-rule p1 p2) c1 c2 s s /quotesingle.Var);
+                    L := (!chain->
+                    [hyp ==> (exists cmd1 cmd2 s /quotesingle.Var/quotesingle.Var.
+                    c1 ˆ c2 = cmd1 ˆ cmd2 &
+                    p1 |- [cmd1 s] -->> s /quotesingle.Var/quotesingle.Var&
+                    p2 |- [cmd2 s /quotesingle.Var/quotesingle.Var] -->> s /quotesingle.Var)
+                    [semantics]])}
+                    pick-witnesses c1/quotesingle.Varc2/quotesingle.Vars/quotesingle.Var/quotesingle.VarforL
+                      (!chain-> [(p1 |- [c1 /quotesingle.Vars] -->> s /quotesingle.Var/quotesingle.Var&
+                      p2 |- [c2 /quotesingle.Vars/quotesingle.Var/quotesingle.Var] -->> s /quotesingle.Var)
+                      ==> (p1 |- [c1 s] -->> s /quotesingle.Var/quotesingle.Var&
+                      p2 |- [c2 s /quotesingle.Var/quotesingle.Var] -->> s /quotesingle.Var)
+                      [(c1 = c1 /quotesingle.Var& c2 = c2 /quotesingle.Var) <==
+                      (c1 ˆ c2 = c1 /quotesingle.Varˆ c2/quotesingle.Var) [structural-axioms]]
+                      ==> ((seq-rule p1 p2) = (seq-rule p1 p2) &
+                      p1 |- [c1 s] -->> s /quotesingle.Var/quotesingle.Var&
+                      p2 |- [c2 s /quotesingle.Var/quotesingle.Var] -->> s /quotesingle.Var) [augment]
+                      ==> goal [existence]])
+                      | (if-true-rule p) =>
+                      pick-any c1 c2 s:State s /quotesingle.Var:State
+                        assume hyp := ((if-true-rule p) |- [(c1 ˆ c2) s] -->> s /quotesingle.Var)
+                          let{goal := (make-goal (if-true-rule p) c1 c2 s s /quotesingle.Var)}
+                            (!chain->
+                            [hyp ==> (exists b cmd1 cmd2 .
+                            c1 ˆ c2 = (cond b cmd1 cmd2) &
+                            b true-in s &
+                            p |- [cmd1 s] -->> s /quotesingle.Var) [semantics]
+                            ==> goal [free-gen]])
+                            | (if-false-rule p) =>
+                            pick-any c1 c2 s:State s /quotesingle.Var:State
+
+fpmics 2015/12/8 11:38 Page 832 #854
+832 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+assume hyp := (if-false-rule p |- [(c1 ˆ c2) s] -->> s /quotesingle.Var)
+  let{goal := (make-goal (if-false-rule p) c1 c2 s s /quotesingle.Var)}
+    (!chain->
+    [hyp ==> (exists b cmd1 cmd2 .
+    c1 ˆ c2 = (cond b cmd1 cmd2) &
+    ˜b true-in s &
+    p |- [cmd2 s] -->> s /quotesingle.Var) [semantics]
+    ==> goal [free-gen]])
+    | (while-rule p1 p2) =>
+    pick-any c1 c2 s:State s /quotesingle.Var:State
+      assume hyp := ((while-rule p1 p2) |- [(c1 ˆ c2) s] -->> s /quotesingle.Var)
+        let{goal := (make-goal (while-rule p1 p2) c1 c2 s s /quotesingle.Var)}
+          (!chain-> [hyp
+          ==> (exists b body s /quotesingle.Var/quotesingle.Var.
+          c1 ˆ c2 = (while-loop b body) &
+          b true-in s &
+          p1 |- [body s] -->> s /quotesingle.Var/quotesingle.Var&
+          p2 |- [(while-loop b body) s /quotesingle.Var/quotesingle.Var] -->> s /quotesingle.Var)
+          [semantics]
+          ==> goal [free-gen]])
+          | while-axiom =>
+          pick-any c1 c2 s:State s /quotesingle.Var:State
+            assume hyp := (while-axiom |- [(c1 ˆ c2) s] -->> s /quotesingle.Var)
+              let{goal := (make-goal while-axiom c1 c2 s s /quotesingle.Var)}
+                (!chain-> [hyp ==> (exists b body .
+                c1 ˆ c2 = (while-loop b body) &
+                ˜b true-in s & s /quotesingle.Var= s) [semantics]
+                ==> goal [free-gen]])
+              }
+              This is a rather long and tedious method. We have written 77 li nes of code, not count-
+              ing some auxiliary methods and procedures, and have only man aged to prove one of the
+              seven exclusivity lemmas. If we need to write another 80–100 lines of code for each of
+              the remaining lemmas, we are looking at about 800 lines of cod e just for the exclusivity
+              lemmas. There has to be a better way.
+              Once again, method abstraction can come to our aid. The inele gance of the above proof
+              stems from the fact that there is a lot of unnecessary repetit ion of the same pattern of
+              reasoning: all cases other than seq-rule do essentially the same thing. Abstracting that
+              pattern into a separate method, if it can be done, would save u s a great deal of effort and
+              also make our proof more intelligible. In fact, when we think about the situation a bit
+              more carefully we see that there is common structure not just in the proof of this particu-
+              lar exclusivity lemma, but in the proofs of all exclusivity l emmas. Each such lemma will
+              have to be proved by datatype-cases , and the proof will have to proceed along similar
+              lines: there will be one Proof constructor for which we will do some honest work, while
+              for the remaining constructors we will be using free-gen to derive the relevant goal by
+
+fpmics 2015/12/8 11:38 Page 833 #855
+18.5. SOME LEMMAS 833
+contradiction. Is there any way we can automate this pattern across all different exclusivity
+lemmas?
+The answer is afﬁrmative. The key is to think of the reasoning for the various branches
+ofdatatype-cases as an independent unit that can be passed around and applied; specif-
+ically, as a unary method that takes a given proof object (c···)as its argument and acts
+accordingly, depending on c. To achieve this decoupling, we formulate a binary method
+auto-dtc-for-proofs
+that takes a goal as its ﬁrst argument, universally quantiﬁe d over all proofs, and a method
+Mas its second argument, and proceeds to prove the goal by datatype-cases , using Min
+each case:
+define (auto-dtc-for-proofs goal M) :=
+datatype-cases goal {
+  asgn-axiom => (!M asgn-axiom)
+  | skip-axiom => (!M skip-axiom)
+  | (seq-rule p1 p2) => (!M (seq-rule p1 p2))
+  | (if-true-rule p) => (!M (if-true-rule p))
+  | (if-false-rule p) => (!M (if-false-rule p))
+  | while-axiom => (!M while-axiom)
+  | (while-rule p1 p2) => (!M (while-rule p1 p2))
+}
+We can now prove an exclusivity lemma, say the one for skip, in a few lines as follows:
+(!auto-dtc-for-proofs skip-excl
+method (proof)
+  pick-any s:State s /quotesingle.Var:State
+    assume hyp := (proof |- [skip s] -->> s /quotesingle.Var)
+      let{goal := (proof = skip-axiom & s /quotesingle.Var= s)}
+        matchproof {
+        skip-axiom =>
+        (!chain-> [hyp ==> (s /quotesingle.Var= s) [semantics]
+        ==> goal [augment]])
+        | _ => (!chain-> [hyp
+        ==> (fire-semantic-axiom hyp) [semantics]
+        ==> goal [free-gen]])
+      })
+      wherefire-semantic-axiom is deﬁned as follows:
+      define (fire-semantic-axiom hyp) :=
+      (find-first
+      semantics
+      lambda (axiom)
+      matchaxiom {
+      (forall ( some-list _) (left <==> right)) =>
+      match(match-sentences hyp left) {
+      (some-sub sub) => (sub right)
+
+fpmics 2015/12/8 11:38 Page 834 #856
+834 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+| _ => false
+}
+})
+The generic utility find-first is a binary procedure that takes a list Land a unary proce-
+dure fand returns the ﬁrst (leftmost) element xofLsuch that (f x)is a value other than
+false . An error occurs if Lhas no such x:
+define (find-first L f) :=
+matchL {
+(list-of x rest) => match(f x) {
+false => (find-first rest f)
+| res => res
+}
+}
+Note that we have to use something like fire-semantic-axiom in the proof of skip-excl ,
+because we want to handle allcases other than skip-axiom in one fell swoop, so we need to
+retrieve and use the proper semantic axiom automatically, d epending on the case at hand.
+Thus, for instance:
+> (fire-semantic-axiom (asgn-axiom |- [c s] -->> s /quotesingle.Var))
+Sentence: (exists ?v70422:Ide
+(exists ?v70423:Exp
+(and (= ?c:Cmd
+(asgn ?v70422:Ide ?v70423:Exp))
+(= ?s/quotesingle.Var:(DMap.DMap Ide N)
+(DMap.update (pair ?v70422:Ide
+(V ?v70423:Exp
+?s:(DMap.DMap Ide N)))
+?s:(DMap.DMap Ide N))))))
+> (fire-semantic-axiom ((if-true-rule p) |- [c s] -->> s /quotesingle.Var))
+Sentence: (exists ?v70424:BCond
+(exists ?v70425:Cmd
+(exists ?v70426:Cmd
+(and (= ?c:Cmd
+(cond ?v70424:BCond ?v70425:Cmd ?v70426:Cmd))
+(and (true-in ?v70424:BCond
+?s:(DMap.DMap Ide N))
+(derives ?p:Proof
+(yields (pair ?v70425:Cmd
+?s:(DMap.DMap Ide N))
+?s/quotesingle.Var:(DMap.DMap Ide N))))))))
+Using this approach we can prove seq-excl as follows:
+
+fpmics 2015/12/8 11:38 Page 835 #857
+18.6. REASONING ABOUT THE LANGUAGE 835
+(!auto-dtc-for-proofs seq-excl
+method (proof)
+  pick-any c1 c2 s s /quotesingle.Var
+    assume hyp := (proof |- [(c1 ˆ c2) s] -->> s /quotesingle.Var)
+      let{goal := (make-goal proof c1 c2 s s /quotesingle.Var)}
+        matchproof {
+        (seq-rule p1 p2) =>
+        let{L := (!chain->
+          [hyp
+          ==> (exists cmd1 cmd2 s /quotesingle.Var/quotesingle.Var.
+          c1 ˆ c2 = cmd1 ˆ cmd2 &
+          p1 |- [cmd1 s] -->> s /quotesingle.Var/quotesingle.Var&
+          p2 |- [cmd2 s /quotesingle.Var/quotesingle.Var] -->> s /quotesingle.Var) [semantics]])}
+          pick-witnesses c1/quotesingle.Varc2/quotesingle.Vars/quotesingle.Var/quotesingle.VarforL
+            (!chain->
+            [(p1 |- [c1 /quotesingle.Vars] -->> s /quotesingle.Var/quotesingle.Var& p2 |- [c2 /quotesingle.Vars/quotesingle.Var/quotesingle.Var] -->> s /quotesingle.Var)
+            ==> (p1 |- [c1 s] -->> s /quotesingle.Var/quotesingle.Var& p2 |- [c2 s /quotesingle.Var/quotesingle.Var] -->> s /quotesingle.Var)
+            [(c1 = c1 /quotesingle.Var& c2 = c2 /quotesingle.Var) <==
+            (c1 ˆ c2 = c1 /quotesingle.Varˆ c2/quotesingle.Var) [structural-axioms]]
+            ==> ((seq-rule p1 p2) = (seq-rule p1 p2) &
+            p1 |- [c1 s] -->> s /quotesingle.Var/quotesingle.Var&
+            p2 |- [c2 s /quotesingle.Var/quotesingle.Var] -->> s /quotesingle.Var) [augment]
+            ==> goal [existence]])
+            | _ => (!chain->
+            [hyp ==> (fire-semantic-axiom hyp) [semantics]
+            ==> goal [free-gen]])
+          })
+          So we have not only eliminated the redundancies from our ﬁrst proof attempt, thereby
+          going from 77 to 26 lines, but we have found a general template that can be used to prove
+          all exclusivity lemmas with signiﬁcantly less effort. The p roofs of the other exclusivity
+          lemmas are left as exercises.
+          Exercise 18.6: Prove the remaining exclusivity lemmas.
+          .6 Reasoning about the language
+          In this section we prove some results about the semantics of t heWhile language. Two
+          of these results make use of a notion of program equivalence . We say that two programs
+          (commands) c1andc2are equivalent iff executing c1andc2in the same initial state results
+          in the same ﬁnal state. We can deﬁne this notion more precisel y in Athena as follows:
+          declare equivalent: [Cmd Cmd] -> Boolean
+          assert equivalent-def :=
+          (forall cmd1 cmd2 . cmd1 equivalent cmd2 <==>
+          (forall s s /quotesingle.Var. provable [cmd1 s] -->> s /quotesingle.Var<==>
+
+fpmics 2015/12/8 11:38 Page 836 #858
+836 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+provable [cmd2 s] -->> s /quotesingle.Var))
+We deﬁne ==as a more intuitive mnemonic for equivalent :
+define == := equivalent
+set-precedence == 105
+The ﬁrst result that we will prove is the associativity of com position:
+define assoc-theorem :=
+(forall c1 c2 c3 . c1 ˆ (c2 ˆ c3) == (c1 ˆ c2) ˆ c3)
+Assuming that the result is true, how do we prove it? Consider arbitrary commands c1,c2,
+andc3, and let left andright refer to the compositions
+(c1ˆ (c2ˆc3))
+and((c1ˆc2) ˆ c3), respectively. Consider, further, two arbitrary states sands′. Now,
+equivalence is a bidirectional notion, so there are two part s that we need to establish. First,
+in one direction, we need to show that ifthe judgment [left s] -->> s′is derivable, then
+the judgment [right s] -->> s′is also derivable. And conversely, in the other direction,
+we need to show that if the judgment [right s] -->> s′is derivable then [left s] -->> s′
+is also derivable. It is therefore natural to break up the pro of effort into two proof methods
+that will do the brunt of the work: assoc-dir-1 will take a premise of the form
+[(c1ˆ (c2ˆc3))s] -->> s′(18.15)
+and will derive
+[((c1ˆc2) ˆ c3)s] -->> s′. (18.16)
+The second method, assoc-dir-2 , will work in the reverse direction: It will take a
+premise of the form (18.16) and it will derive (18.15). Equip ped with these two methods,
+assoc-theorem can be derived as follows:
+conclude assoc-theorem
+pick-any c1 c2 c3
+  let{left := (c1 ˆ (c2 ˆ c3));
+    right := ((c1 ˆ c2) ˆ c3);
+    eqv := pick-any s:State s /quotesingle.Var:State
+    let{imp1 := assume hyp1 := (provable [left s] -->> s /quotesingle.Var)
+      (!assoc-dir-1 hyp1);
+      imp2 := assume hyp2 := (provable [right s] -->> s /quotesingle.Var)
+      (!assoc-dir-2 hyp2)}
+      (!equiv imp1 imp2)}
+      (!chain-> [eqv ==> (left == right) [equivalent-def]])
+      All we now have to do is implement the two methods. The ﬁrst one is deﬁned as follows:
+
+fpmics 2015/12/8 11:38 Page 837 #859
+18.6. REASONING ABOUT THE LANGUAGE 837
+define assoc-dir-1 :=
+(method (premise)
+matchpremise {
+(provable ( bindjudgment
+(yields (pair ( bindleft (sequence c1
+(sequence c2 c3)))
+start-s)
+final-s))) => {
+right := ((c1 ˆ c2) ˆ c3);
+conclude goal := (provable [right start-s] -->> final-s)
+pick-witness pfor
+  (!chain-> [premise ==> (exists p . p |- judgment)
+  [provable-definition]]) {
+  L1 := (!chain->
+  [(p |- judgment)
+  ==> (exists p1 p2 s /quotesingle.Var.
+  p = (seq-rule p1 p2) &
+  p1 |- [c1 start-s] -->> s /quotesingle.Var&
+  p2 |- [(c2 ˆ c3) s /quotesingle.Var] -->> final-s)
+  [seq-excl]]);
+  pick-witnesses p1 p2 s /quotesingle.VarforL1 {
+    L2 := (!chain->
+    [(p2 |- [(c2 ˆ c3) s /quotesingle.Var] -->> final-s)
+    ==> (exists p3 p4 s /quotesingle.Var/quotesingle.Var.
+    p2 = (seq-rule p3 p4) &
+    p3 |- [c2 s /quotesingle.Var] -->> s /quotesingle.Var/quotesingle.Var&
+    p4 |- [c3 s /quotesingle.Var/quotesingle.Var] -->> final-s) [seq-excl]]);
+    pick-witnesses p3 p4 s /quotesingle.Var/quotesingle.VarforL2
+      (!chain->
+      [(p1 |- [c1 start-s] -->> s /quotesingle.Var)
+      ==> (p1 |- [c1 start-s] -->> s /quotesingle.Var&
+      p3 |- [c2 s /quotesingle.Var] -->> s /quotesingle.Var/quotesingle.Var) [augment]
+      ==> ((seq-rule p1 p3) |-
+      [(c1 ˆ c2) start-s] -->> s /quotesingle.Var/quotesingle.Var)
+      [seq-horn-clause]
+      ==> ((seq-rule p1 p3) |-
+      [(c1 ˆ c2) start-s] -->> s /quotesingle.Var/quotesingle.Var&
+      p4 |- [c3 s /quotesingle.Var/quotesingle.Var] -->> final-s) [augment]
+      ==> ((seq-rule (seq-rule p1 p3) p4) |-
+      [right start-s] -->> final-s) [seq-horn-clause]
+      ==> (exists p .
+      p |- [right start-s] -->> final-s) [existence]
+      ==> goal [provable-definition]])
+    }
+  }}})
+  The converse method, assoc-dir-2 , is left as an exercise.
+  Exercise 18.7: Implement assoc-dir-2 .
+  Our next result will be the determinism of the semantics:
+
+fpmics 2015/12/8 11:38 Page 838 #860
+838 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+define deterministic-semantics :=
+(forall c s s /quotesingle.Vars/quotesingle.Var/quotesingle.Var.
+provable [c s] -->> s /quotesingle.Var& provable [c s] -->> s /quotesingle.Var/quotesingle.Var==> s/quotesingle.Var= s/quotesingle.Var/quotesingle.Var)
+We will prove this result in a form in which the deﬁnition of provable has been expanded:
+define determinism :=
+(forall proof1 proof2 c s s /quotesingle.Vars/quotesingle.Var/quotesingle.Var.
+proof1 |- [c s] -->> s /quotesingle.Var&
+proof2 |- [c s] -->> s /quotesingle.Var/quotesingle.Var==> s/quotesingle.Var/quotesingle.Var= s/quotesingle.Var)
+Deriving deterministic-semantics fromdeterminism is straightforward.
+How do we go about proving determinism ? The goal is univerally quantiﬁed over all
+proofs, so one thought would be to use datatype-cases . However, if we tried that avenue
+we would soon realize that it will not work. We need a more powe rful mechanism—
+induction. So we will proceed instead by structural inducti on on proof objects.
+We begin by deﬁning the relevant inductive property as a unar y procedure:
+define det-property :=
+lambda (proof1)
+(forall proof2 c s s /quotesingle.Vars/quotesingle.Var/quotesingle.Var.
+proof1 |- [c s] -->> s /quotesingle.Var&
+proof2 |- [c s] -->> s /quotesingle.Var/quotesingle.Var==> s/quotesingle.Var/quotesingle.Var= s/quotesingle.Var)
+Thus,determinism can be understood as the sentence
+(forall proof . det-property proof) .
+Our inductive proof inlines the basis cases and separate out the inductive subproofs in
+different methods that can be independently tested:
+by-induction (forall proof . det-property proof) {
+  skip-axiom =>
+  pick-any proof2 c s:State s /quotesingle.Var:State s /quotesingle.Var/quotesingle.Var:State
+    assume hyp1 := (skip-axiom |- [c s] -->> s /quotesingle.Var);
+      hyp2 := (proof2 |- [c s] -->> s /quotesingle.Var/quotesingle.Var)
+      (!chain->
+      [hyp2 ==> (proof2 |- [skip s] -->> s /quotesingle.Var/quotesingle.Var)
+      [(c = skip) <== hyp1 [semantics]]
+      ==> (s/quotesingle.Var/quotesingle.Var= s) [skip-excl]
+      = s/quotesingle.Var[(s/quotesingle.Var= s) <== hyp1 [semantics]]])
+      | asgn-axiom =>
+      pick-any proof2 c s:State s /quotesingle.Var:State s /quotesingle.Var/quotesingle.Var:State
+        assume hyp1 := (asgn-axiom |- [c s] -->> s /quotesingle.Var);
+          hyp2 := (proof2 |- [c s] -->> s /quotesingle.Var/quotesingle.Var)
+          let{L1 := (!chain->
+            [hyp1 ==>
+            (exists x e . c = x <- e &
+            s/quotesingle.Var= [x (V e s)] ++ s) [semantics]])}
+
+fpmics 2015/12/8 11:38 Page 839 #861
+18.6. REASONING ABOUT THE LANGUAGE 839
+pick-witnesses x eforL1
+  (!chain->
+  [hyp2
+  ==> (proof2 |- [(x <- e) s] -->> s /quotesingle.Var/quotesingle.Var) [(c = x <- e)]
+  ==> (s/quotesingle.Var/quotesingle.Var= [x (V e s)] ++ s) [asgn-excl]
+  = s/quotesingle.Var [(s/quotesingle.Var= [x (V e s)] ++ s)]])
+  | (seq-rule p1 p2) => (!determinism-sequence-case (seq-ru le p1 p2))
+  | (if-true-rule p) => (!determinism-if-true-case (if-tru e-rule p))
+  | (if-false-rule p) => (!determinism-if-false-case (if-f alse-rule p))
+  | (while-rule p1 p2) => (!determinism-while-true-case (wh ile-rule p1 p2))
+  | while-axiom => (!determinism-while-axiom-case)
+}
+We present the methods for compositions and the “if-true” ca ses below, and leave the rest
+as exercises.
+define determinism-sequence-case :=
+method (seq-proof)
+  matchseq-proof {
+  (seq-rule p1 p2) =>
+  pick-any other-proof:Proof c:Cmd s:State s /quotesingle.Var:State s /quotesingle.Var/quotesingle.Var:State
+    assume hyp1 := (seq-proof |- [c s] -->> s /quotesingle.Var) ;
+      hyp2 := (other-proof |- [c s] -->> s /quotesingle.Var/quotesingle.Var)
+      let{ih1 := (det-property p1);
+        ih2 := (det-property p2);
+        L1 := (!chain->
+        [hyp1
+        ==> (exists c1 c2 is .
+        c = c1 ˆ c2 &
+        p1 |- [c1 s] -->> is &
+        p2 |- [c2 is] -->> s /quotesingle.Var) [semantics]])}
+        pick-witnesses c1 c2 is forL1
+          let{L2 := (!chain->
+            [hyp2
+            ==> (other-proof |- [(c1 ˆ c2) s] -->> s /quotesingle.Var/quotesingle.Var)
+            [(c = c1 ˆ c2)]
+            ==> (exists proof1 proof2 s1 .
+            other-proof = (seq-rule proof1 proof2) &
+            proof1 |- [c1 s] -->> s1 &
+            proof2 |- [c2 s1] -->> s /quotesingle.Var/quotesingle.Var) [seq-excl]])}
+            pick-witnesses proof1 proof2 s1 forL2
+              (!chain->
+              [(p2 |- [c2 is] -->> s /quotesingle.Var&
+              proof2 |- [c2 s1] -->> s /quotesingle.Var/quotesingle.Var)
+              ==> (p2 |- [c2 is] -->> s /quotesingle.Var&
+              proof2 |- [c2 is] -->> s /quotesingle.Var/quotesingle.Var)
+              [(s1 = is) <== (p1 |- [c1 s] -->> is &
+              proof1 |- [c1 s] -->> s1) [ih1]]
+              ==> (s/quotesingle.Var/quotesingle.Var= s/quotesingle.Var) [ih2]])
+            }
+
+fpmics 2015/12/8 11:38 Page 840 #862
+840 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+We can test the method independently as follows:
+set-flag print-var-sorts "off"
+>pick-any p1:Proof p2:Proof
+  assume (det-property p1)
+    assume (det-property p2)
+      let{composition := (seq-rule p1 p2)}
+        conclude (det-property composition)
+        (!determinism-sequence-case composition)
+Theorem : (forall ?p1:Proof
+(forall ?p2:Proof
+(if (forall ?proof2:Proof
+(forall ?c:Cmd
+(forall ?s:(DMap.DMap Ide N)
+(forall ?s /quotesingle.Var:(DMap.DMap Ide N)
+(forall ?s /quotesingle.Var/quotesingle.Var:(DMap.DMap Ide N)
+(if (and (derives ?p1
+(yields (pair ?c
+?s)
+?s/quotesingle.Var))
+(derives ?proof2
+(yields (pair ?c
+?s)
+?s/quotesingle.Var/quotesingle.Var)))
+(= ?s/quotesingle.Var/quotesingle.Var
+?s/quotesingle.Var)))))))
+(if (forall ?proof2:Proof
+(forall ?c:Cmd
+(forall ?s:(DMap.DMap Ide N)
+(forall ?s /quotesingle.Var:(DMap.DMap Ide N)
+(forall ?s /quotesingle.Var/quotesingle.Var:(DMap.DMap Ide N)
+(if (and (derives ?p2
+(yields (pair ?c
+?s)
+?s/quotesingle.Var))
+(derives ?proof2
+(yields (pair ?c
+?s)
+?s/quotesingle.Var/quotesingle.Var)))
+(= ?s/quotesingle.Var/quotesingle.Var
+?s/quotesingle.Var)))))))
+(forall ?other-proof:Proof
+(forall ?c:Cmd
+(forall ?s:(DMap.DMap Ide N)
+(forall ?s /quotesingle.Var:(DMap.DMap Ide N)
+(forall ?s /quotesingle.Var/quotesingle.Var:(DMap.DMap Ide N)
+(if (and (derives (seq-rule ?p1 ?p2)
+(yields (pair ?c
+?s)
+?s/quotesingle.Var))
+
+fpmics 2015/12/8 11:38 Page 841 #863
+18.6. REASONING ABOUT THE LANGUAGE 841
+(derives ?other-proof
+(yields (pair ?c
+?s)
+?s/quotesingle.Var/quotesingle.Var)))
+(= ?s/quotesingle.Var/quotesingle.Var
+?s/quotesingle.Var)))))))))))
+Finally, here is determinism-if-true-case :
+define determinism-if-true-case :=
+method (if-true-proof)
+  matchif-true-proof {
+  (if-true-rule p) =>
+  pick-any other-proof:Proof c:Cmd s:State s /quotesingle.Var:State s /quotesingle.Var/quotesingle.Var:State
+    assume hyp1 := (if-true-proof |- [c s] -->> s /quotesingle.Var);
+      hyp2 := (other-proof |- [c s] -->> s /quotesingle.Var/quotesingle.Var)
+      let{ih := (det-property p);
+        L1 := (!chain->
+        [hyp1 ==> (exists b c1 c2 .
+        c = (cond b c1 c2) &
+        b true-in s &
+        p |- [c1 s] -->> s /quotesingle.Var) [semantics]])}
+        pick-witnesses b c1 c2 forL1
+          let{L2 := (!chain->
+            [hyp2
+            ==> (other-proof |-
+            [(cond b c1 c2) s] -->> s /quotesingle.Var/quotesingle.Var)
+            [(c = (cond b c1 c2))]
+            ==> (other-proof |-
+            [(cond b c1 c2) s] -->> s /quotesingle.Var/quotesingle.Var&
+            b true-in s) [augment]
+            ==> (exists proof /quotesingle.Var.
+            other-proof = if-true-rule proof /quotesingle.Var&
+            proof/quotesingle.Var|- [c1 s] -->> s /quotesingle.Var/quotesingle.Var) [if-true-excl]])}
+            pick-witness proof/quotesingle.VarforL2
+              (!chain->
+              [(p |- [c1 s] -->> s /quotesingle.Var&
+              proof/quotesingle.Var|- [c1 s] -->> s /quotesingle.Var/quotesingle.Var)
+              ==> (s/quotesingle.Var/quotesingle.Var= s/quotesingle.Var) [ih]])
+            }
+            We can test this method as we did with the previous one:
+            >pick-any p:Proof
+              assume (det-property p)
+                conclude (det-property if-true-rule p)
+                (!determinism-if-true-case (if-true-rule p))
+Theorem : (forall ?p:Proof
+(if (forall ?proof2:Proof
+(forall ?c:Cmd
+
+fpmics 2015/12/8 11:38 Page 842 #864
+842 CHAPTER 18. A SIMPLE IMPERATIVE PROGRAMMING LANGUAGE
+(forall ?s:(DMap.DMap Ide N)
+(forall ?s /quotesingle.Var:(DMap.DMap Ide N)
+(forall ?s /quotesingle.Var/quotesingle.Var:(DMap.DMap Ide N)
+(if (and (derives ?p
+(yields (pair ?c
+?s)
+?s/quotesingle.Var))
+(derives ?proof2
+(yields (pair ?c
+?s)
+?s/quotesingle.Var/quotesingle.Var)))
+(= ?s/quotesingle.Var/quotesingle.Var
+?s/quotesingle.Var)))))))
+(forall ?proof2:Proof
+(forall ?c:Cmd
+(forall ?s:(DMap.DMap Ide N)
+(forall ?s /quotesingle.Var:(DMap.DMap Ide N)
+(forall ?s /quotesingle.Var/quotesingle.Var:(DMap.DMap Ide N)
+(if (and (derives (if-true-rule ?p)
+(yields (pair ?c
+?s)
+?s/quotesingle.Var))
+(derives ?proof2
+(yields (pair ?c
+?s)
+?s/quotesingle.Var/quotesingle.Var)))
+(= ?s/quotesingle.Var/quotesingle.Var
+?s/quotesingle.Var)))))))))
+Exercise 18.8: Implement the remaining three methods.
+Exercise 18.9: Recall the formal speciﬁcation of the semantics of seq-rule :
+assert* sequence-semantics :=
+((seq-rule p1 p2) |- [c s] -->> s /quotesingle.Var<==>
+exists c1 c2 is .
+c = c1 ˆ c2 &
+p1 |- [c1 s] -->> is & p2 |- [c2 is] -->> s /quotesingle.Var)
+Why did we existentially quantify over the intermediate sta teis, instead of universall
+quantifying over it? That is, why not express the above in the following simpler format:
+assert* sequence-semantics :=
+((seq-rule p1 p2) |- [c s] -->> s /quotesingle.Var<==>
+exists c1 c2 .
+c = c1 ˆ c2 &
+p1 |- [c1 s] -->> is & p2 |- [c2 is] -->> s /quotesingle.Var)
+
+fpmics 2015/12/8 11:38 Page 843 #865
+18.6. REASONING ABOUT THE LANGUAGE 843
+What, if anything, would go wrong?
+Exercise 18.10: Prove the following:17
+(forall ?B ?C .
+"while ?B do ?C" equivalent "if ?B then
+begin
+?C;
+while ?B do ?C
+end
+else skip")
+In more conventional notation, prove that for all bandc,
+while bdoc
+and
+ifbthen begin c;while bdocend else skip
+have identical semantics.
+A common pattern has emerged in many of these recent proofs. S tarting with a premise
+of the form
+p⊢[c s]֒→s′(18.17)
+we deploy either a semantics axiom or an exclusivity lemma, depending on whether por
+cis structured (a complex term rather than a variable or const ant), and infer the existence
+of appropriate subproofs of pand/or subcommands of c. After picking witnesses for these
+existentially quantiﬁed statements, some of the instantia ted premises might themselves be
+of the form (18.17), and we then repeat the process for those p remises. We keep going until
+we have “unrolled” the structure of all premises that can be u npacked in this manner.
+Consider, for instance, the deﬁnition of the assoc-dir-1 method (p. 836). Starting with
+a premise of the form
+p⊢[(c1;(c2;c3))s1]֒→s2
+and using seq-exlc , we infer the following existence statement:
+∃p1,p2,s′.p=(seq-rule p1p2)&p1⊢[c1s1]֒→s′&p2⊢[(c2;c3)s′]֒→s2
+After picking witnesses for this statement, we repeat the pr ocess for the instantiated
+premise
+p2⊢[(c2;c3)s′]֒→s2
+17 Note that because equivalent is input-expanded to convert strings to Cmdterms via cmd-parser , and because
+our parser understands Athena variables inside expression s, commands, etc., this quantiﬁed sentence is actually
+natively understood by Athena.

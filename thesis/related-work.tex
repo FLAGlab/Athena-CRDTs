@@ -1,0 +1,90 @@
+% $Id: related-work.tex $
+% !TEX root = main.tex
+
+
+\chapter{Related work}\label{cha:related-work}
+%\label{cha:relatedwork}
+
+\textbf{Have to do: Add glue text here explaining what this chapter does.}
+
+\section{Conflict‐Free Replicated Data Types and eventual consistency}
+
+To provide context for CRDT verification, we start by reviewing the main ideas related to Conflict‐Free Replicated Data Types (CRDTs) and their role in Eventually Consistent systems. Replication is a typical strategy for achieving high availability and fault tolerance in distributed systems, however maintaining the consistent aspect of replicated data can be expensive. Traditional approaches that require strong consistency rely on global consensus which may create performance conflicts with availability under network partitions \cite{shapiro2011conflict}. The CAP theorem states that a distributed system can not guarantee availability, partition tolerance and strong consistency at the same time, thus systems often weaken consistency in favour of availability and partition tolerance \cite{zeller2014formal}.
+
+Shapiro et~al. formalised this trade‐off by introducing the model of \emph{Strong Eventual Consistency} (SEC). In the context of a eventually consistent system, updates when executed at one replica are propagated to other replicas asynchronously, possibly in different orders: once all updates have been distributed, all replicas must converge to the same state \cite{shapiro2011conflict}. Under SEC two properties are required: (1) \emph{eventual delivery} which means every update that is delivered to one specific replica eventually is delivered to all replicas and (2) \emph{convergence}, meaning that replicas that have delivered the same updates eventually reach equivalent states \cite{nieto2022modular}. CRDTs are a class of replicated data structures aimed to satisfy SEC by construction. They mix conflict resolution into the data type itself allowing updates in a concurrent state to be applied locally and merged deterministically without any coordination. Early work observed that both state‐based and operation‐based CRDTs can be specified by algebraic conditions: in \emph{state‐based} CRDTs, the state space is a join‐semilattice and the merge operation computes the least upper bound requiring commutativity, associativity and idempotence \cite{zeller2014formal,shapiro2011conflict}, in \emph{operation‐based} CRDTs, updates (operations) are broadcast in causal order and they have to commute so that replicas that apply the same set of operations reach the same state \cite{nieto2022modular}.
+
+Designing CRDTs that guarantee SEC is non trivial. One of the most simple examples such as grow‐only counter can be specified using per replica counters and merged by taking component-wise maxima \cite{zeller2014formal}. Some other and more complex data types such as sets that support both addition and removal require semantics designed to avoid anomalies like resurrecting deleted elements. This innovative work inspired research on CRDT design and verification. \textbf{This section is missing a clear definition of what is operation-based CRDTs and state-based CRDTs, which will be the focus of this work. But need to add them both and make it clear what the difference is}
+
+\section{Formal specification and verification frameworks}
+
+Early verification efforts were conducted to provide machine‐checked proofs that CRDT designs actually satisfy SEC. Zeller, Bieniusa and Poetzsch‐Heffter developed an Isabelle/HOL framework for specifying and verifying CRDTs \cite{zeller2014formal}. Their framework models an specific number of replicas. Their model abstracts over payloads, update operations and merge functions, representing each replica’s state and history with associated metadata and version vectors. This framework enabled the first machine checked convergence proofs for some CRDTs.
+
+While the Isabelle framework is practical, it requires significant manual effort. To reduce this detail, Nagar and Jagannathan formulated a parameterised verification apporach that obtains convergence conditions from a given consistency model \cite{nagar2019automated}. Their engine shows that not all operations must commute to guarantee convergence and produces automated proofs for CRDTs under various weak consistency policies \cite{nagar2019automated}.
+
+Separation logic has been transformed to verify CRDT implementations. Nieto et~al. introduced OpLib and RcbLib libraries that allow modular verification for operation‐based CRDTs using Aneris distributed separation logic. These libraries abstract away low‐level concurrency concerns and provide mechanised Coq proofs for a collection of replicated data structures \cite{nieto2022modular}. The approach was later extended to state‐based CRDTs because states grow monotonically to include all updates, unified specifications can be written without distinguishing between state and operation based designs \cite{nieto2023modular}.
+
+Recent research also uses type systems, domain‐specific languages and program synthesis to guarantee CRDT correctness by construction. Propel is a Scala‐embedded language whose type system reasons about algebraic properties such as commutativity, associativity and idempotence, ensuring that merge functions satisfy these laws \cite{zakhour2023type}. VeriFx takes a complementary approach by integrating verification into a high‐level language: programmers implement replicated data types and specify correctness properties, and the language automatically proves those properties and converts verified implementations to mainstream languages \cite{porre2024verifx}. Liang and Feng observed that strong eventual consistency does not ensure functional correctness and proposed Abstract Converging Consistency (ACC), which augments CRDT specifications with abstract atomic operations, enabling modular verification of both implementations and clients \cite{liang2021abstraction}. Katara automatically generates verified CRDTs from sequential data types by encoding correctness conditions into SMT logic and searching for suitable semilattice representations \cite{laddad2022katara}.
+
+\section{Byzantine fault tolerance and CRDTs}
+
+Kleppmann showed that augmenting CRDT algorithms with signatures, hashes and vector clocks can tolerate an arbitrary number of Byzantine replicas while preserving strong eventual consistency \cite{kleppmann2022making}. More recent work identifies CRDT classes that prevent equivocation; for example, Jacob, Bayreuther and Hartenstein observed that the Matrix Event Graph stores updates in a hash‑based directed acyclic graph and tolerates equivocation without additional coordination \cite{jacob2022byzantine}. Such results highlight both the feasibility and the limits of building Byzantine‑tolerant CRDTs.
+
+Tschudin proposed a ``connectionless'' grow‑only set CRDT that operates over lossy, reorderable channels without the necessity of any persistent connections between nodes. This CRDT uses a single message type and incremental updates to spread state, making it suitable for applications such as peer‑to‑peer compression dictionaries where maintaining per‑node connections is unfeasible \cite{tschudin2022connectionless}. Such innovations widen the scope of the CRDT paradigm to networks where communication can be intermittent. Additional mechanisms may be necessary to handle message loss and ensure eventual convergence.
+
+
+\section{Verification in actor and concurrency frameworks}
+
+Musser and Varela developed a structured reasoning framework for actor systems using the Athena proof language. They established abstract theorems about fairness, persistence, message delivery and progress that hold for any actor system, independently of implementation details \cite{musser2013structured}. Their work demonstrates that high‐level algebraic reasoning can give general properties such as guaranteed message delivery and monotonicity of actor states \cite{musser2013structured}. These results motivate the use of high‑level proof environments when reasoning about replicated data structures.
+
+Formalisation of concurrent languages has also lead to the development of modular semantics used in many proof frameworks. Bereczky, Horpácsi and Thompson presented a machine‑checked formalisation of concurrent Core Erlang using modular frame stack semantics \cite{bereczky2024formalisation}. They proved properties such as determinism, confluence and program equivalence \cite{bereczky2024formalisation} providing a foundation for verifying concurrency properties of actor-based programming languages.
+
+The actor model has also inspired languages for dynamic and open systems. For instance, SALSA compiles to Java and provides primitives for actor creation, asynchronous messaging, state updates, continuations and universal naming to coordinate distributed actors \cite{varela2001programming}. It emphasises disconected message passing and mobility,  repeating with the asynchronous update and merge semantics of CRDTs and illustrate how actor based languages can support reasoning about distributed computations.
+
+
+\subsection{Program Synthesis and Automated CRDT Generation}
+
+Katara (2022) introduced a novel approach to synthesizing CRDTs using verified lifting, allowing developers to generate CRDT implementations automatically from sequential data types. This synthesis approach leverages lightweight ordering constraints and inductive invariants enabling the automated generation and verification of new CRDTs \cite{laddad2022katara}. This automation addresses the inherent difficulty in designing CRDTs manually and offers a way to scale CRDTs to new applications.
+
+\subsection{Comparative Analysis: Defining Grammar, Rule Inference, and Formal Verification}
+
+In order to provide a clearer understanding of the landscape of CRDT research, we summarize the state-of-the-art in a \ref{tab:comparison} that highlights the following dimensions for each paper: (1) Definition of CRDT grammar, (2) Inference of rules or operations, (3) Implementation in programming languages, (4) Formal verification of properties, and (5) Byzantine Fault Tolerance (BFT).
+
+\usepackage{tabularx}
+\usepackage{booktabs}
+
+\begin{table}[h!]
+  \centering
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \caption{Comparison of CRDT research proposals}
+  \label{tab:comparison}
+  \begin{tabular}{lccccc}
+    \toprule
+    \textbf{Paper/Research} & \textbf{Grammar} & \textbf{Rule} &
+    \textbf{Language} & \textbf{Verification} & \textbf{BFT} \\
+    \midrule
+    Zeller et al. (2014)                  & Yes & Yes & Isabelle/HOL          & Yes             & No  \\
+    Katara (2022)                         & Yes & Yes & Automatic (synthesis) & Yes (automated) & No  \\
+    Syncordian (Sanabria \& Cardozo, 2022)& Yes & Yes & Elixir                & Yes (Athena)    & Yes \\
+    Kleppmann (2022)                      & No  & Yes & Not specified         & No              & Yes \\
+    Nagar \& Jagannathan (2019)           & Yes & Yes & Not specified         & Yes (automated) & No  \\
+    Sanjuan et al. (2020, Merkle-CRDTs)   & No  & Yes & IPFS                 & No              & No  \\
+    Liang \& Feng (2021)                  & Yes & Yes & Not specified         & Yes (modular)   & No  \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+
+
+\subsection{Discussion}
+
+From the comparative analysis, it becomes evident that formal verification remains one of the most significant challenges in CRDT development. Early frameworks like Isabelle/HOL provide rigorous correctness guarantees but require expert involvement. Automated approaches such as parameterised verification \cite{nagar2019automated}, separation logic libraries \cite{nieto2022modular}, type systems \cite{zakhour2023type} and domain‐specific languages \cite{porre2024verifx} lower the burden of proof but they are often tailored to specific models. Recent efforts to provide abstractions for functional correctness such as ACC \cite{liang2021abstraction}, and equivocation tolerance in Byzantine environments \cite{jacob2022byzantine} suggest that when CRDTs are used as building blocks in complex systems richer correctness specifications are required.
+
+While many researchers have provided grammars and rules for CRDT operations, fewer have focused on automating the verification process. Tools like Katara and the verification engine developed by Nagar and Jagannathan represent important advances in reducing the complexity of designing and verifying CRDTs \cite{laddad2022katara,nagar2019automated}. Work on Byzantine fault tolerance shows that many CRDT algorithms can be extended to handle malicious replicas through cryptographic techniques \cite{kleppmann2022making} but systematic verification of such extensions remains scarce. While Byzantine Fault Tolerance is gaining importance with the rise of decentralized systems, only a few CRDT implementations focus on this aspect. Kleppmann's work on Byzantine Fault Tolerance provide significant contributions in this regard, but much remains to be explored in ensuring that CRDTs can function reliably in adverse environments \cite{kleppmann2022making}.
+
+\subsection{Conclusion}
+
+The research on CRDTs has advanced significantly over the last decade, particularly in defining the grammar and rules for these data structures and verifying their convergence and consistency. However, challenges like automating the verification process and extending CRDTs to tolerate Byzantine faults remain. As distributed systems continue to evolve, the ability to design, implement, and verify CRDTs will be crucial for building scalable, resilient systems.
+
+
+\endinput

@@ -1,0 +1,1648 @@
+# Fair transition sequence theory
+
+#--------------------------------------------------------------------------
+load "transition.ath"
+load "nat-minus.ath"
+load "strong-induction.ath"
+
+define >= := lambda (x:N y:N) (y N.<= x)
+define > := lambda (x:N y:N) (y N.< x)
+
+module Indexed-Transition-Path {
+open Transition-Path-Relation
+open N
+define [k m n n' n1 n2 n3] := [?k:N ?m:N ?n:N ?n':N ?n1:N ?n2:N ?n3:N]
+
+declare itp: (Id, State) [(TP Id State) N] -> (TP Id State)
+define itp-initial := (forall T . (itp T zero) = T)
+define itp-directly-connected :=
+       (forall T n . (itp T n) -->> (itp T (S n)))
+define Theory :=
+  (theory [Transition-Path-Relation.Theory]
+    [itp-initial itp-directly-connected]
+    'Indexed-Transition-Path)
+define itp-connected :=
+       (forall m n T . m >= n ==> (itp T n) -->>* (itp T m))
+define proof :=
+  method (theorem adapt)
+    let {given := lambda (P) (get-property P adapt Theory);
+         lemma := method (P) (!property P adapt Theory);	  
+         chain := method (L) (!chain-help given L 'none);
+         chain-> := method (L) (!chain-help given L 'last);
+         itp := (adapt itp);
+         L1 := (!lemma ['-->> R*-Reflexive]);
+         L2 := (!lemma ['-->> RR+-inclusion]);
+         L3 := (!lemma ['-->> R+R*-inclusion]);
+         L4 := (!lemma ['-->> TC-Transitivity3])}
+    match theorem {
+      (val-of itp-connected) =>
+      by-induction (adapt theorem) {
+        zero => 
+        pick-any n T 
+          assume A := (zero >= n)
+            let {B := (!chain-> [A ==> (n = zero)  
+				      [N.Less=.zero2]])}
+	    (!chain->
+	     [true
+	      ==> ((itp T zero) -->>* (itp T zero))  [L1]
+	      ==> ((itp T n) -->>* (itp T zero))     [B]])
+      | (S m) =>
+        let {ind-hyp := 
+              (forall ?n ?T . m >= ?n ==> (itp ?T ?n) -->>* (itp ?T m))}
+        pick-any n T
+          assume A := ((S m) >= n)
+            (!two-cases 
+              assume A1 := ((S m) = n)
+	        (!chain->
+		 [true ==> ((itp T n) -->>* (itp T n)) [L1]
+		       ==> ((itp T n) -->>* (itp T (S m))) [A1]])
+              assume A2 := ((S m) =/= n)
+                let {B1 := (!chain->
+			    [A2 ==> (n =/= (S m))          [sym]
+				==> (A & n =/= (S m))      [augment]
+				==> (m >= n)               [N.Less=.S5]
+			        ==> ((itp T n) -->>* (itp T m)) [ind-hyp]])}
+		(!chain->
+		 [true 
+		  ==> ((itp T m) -->> (itp T (S m)))
+		                      [itp-directly-connected]
+		  ==> ((itp T m) -->>+ (itp T (S m)))      [L2]
+		  ==> ((itp T m) -->>* (itp T (S m)))      [L3]
+		  ==> (B1 & (itp T m) -->>* (itp T (S m))) [augment]
+		  ==> ((itp T n) -->>* (itp T (S m)))      [L4]]))
+      }
+   }
+
+(evolve Theory [[itp-connected] proof])
+
+#--------------------------------------------------------------------------
+define unique-ids-persistence :=
+  (forall ?T ?n0 ?n .
+     (unique-ids config (itp ?T ?n0)) & ?n >= ?n0
+     ==> (unique-ids config (itp ?T ?n)))
+
+define proof :=
+  method (theorem adapt)
+    let {given := lambda (P) (get-property P adapt Theory);
+         lemma := method (P) (!property P adapt Theory);  
+         chain-> := method (L) (!chain-help given L 'last);
+         [itp unique-ids config] := (adapt [itp unique-ids config])}
+    pick-any T n0 n
+      let {A1 := (unique-ids config (itp T n0));
+           A2 := (n >= n0)}
+      assume (A1 & A2)
+        let {ITPC := (!lemma itp-connected);
+             B1 := (!chain->
+		    [A2 ==> ((itp T n0) -->>* (itp T n)) [ITPC]]);
+             UIP := (!lemma Transition-Path-Relation.unique-ids-persistence)}
+        (!chain->
+	 [(A1 & B1) ==> (unique-ids config (itp T n)) [UIP]])
+
+(evolve Theory [[unique-ids-persistence] proof])
+
+#--------------------------------------------------------------------------
+define receive-remains-enabled :=
+  (forall T n s id ls fr c .
+    config (itp T n) = s ++ (actor id ls) ++ (message fr id c) &
+    ls ready-to (receive id fr c) &
+    (forall step . 
+      focus step = id & step =/= (receive id fr c) 
+      ==> (next ls step) = ls) &
+    (unique-ids config (itp T n))
+    ==> (itp T (S n)) = (itp T n) then (receive id fr c) |
+        exists s' . 
+          config (itp T (S n)) =
+            s' ++ (actor id ls) ++ (message fr id c) &
+            ls ready-to (receive id fr c))
+
+define proof :=
+  method (theorem adapt)
+    let {given := lambda (P) (get-property P adapt Theory);
+         lemma := method (P) (!property P adapt Theory);	  
+         chain := method (L) (!chain-help given L 'none);
+         chain-> := method (L) (!chain-help given L 'last);
+         ++A := (given ['++ Associative]);
+         ++C := (given ['++ Commutative]);
+         RI := (!lemma ['-->> RR+-inclusion]);
+         [itp LS0 next ready-to new-ls unique-ids before after config] := 
+           (adapt [itp LS0 next ready-to new-ls unique-ids before 
+	 	       after config]);
+         [T-sort _ s-sort id-sort ls-sort _ _] :=
+           (map sort-of (qvars-of (adapt theorem)))}
+   conclude (adapt theorem)
+    pick-any T:T-sort n s:s-sort id:id-sort ls:ls-sort fr:id-sort c:Ide
+      let {act := (actor id ls);
+           act' := (actor' id ls);
+           M := (constrain-sort (One (message' fr LS0 id c)) ++ act);
+           Mbase := match M {(One x) => x};
+           Receive := (receive id fr c);
+           A1 := (config (itp T n) = s ++ act ++ M);
+           A2 := (ls ready-to Receive);
+           A3 := (forall ?step . 
+		   focus ?step = id & ?step =/= Receive 
+		   ==> (next ls ?step) = ls);
+           A4 := (unique-ids config (itp T n))}
+      assume (A1 & A2 & A3 & A4)
+        let {goal1 := ((itp T (S n)) = (itp T n) then Receive);
+             goal2 := (exists ?s' .
+                        config (itp T (S n)) = 
+                          ?s' ++ (actor id ls) ++ M &
+                          ls ready-to Receive);
+             goal := (goal1 | goal2);
+             CE := (!constructor-exhaustiveness "TP");
+             B1 := (!chain->
+		    [true ==> ((itp T (S n)) = Initial | 
+			       exists ?T' ?step' . 
+                                (itp T (S n)) = ?T' then ?step')  
+                                       [CE]])}
+             (!cases B1
+              assume B1a := ((itp T (S n)) = Initial)
+                (!from-complements goal
+		 (!chain->
+		  [true ==> ((itp T n) -->> (itp T (S n))) 
+                                   [itp-directly-connected]
+			==> ((itp T n) -->> Initial)  [B1a]
+			==> ((itp T n) -->>+ Initial) [RI]])
+		 (!chain->
+		  [true ==> (~ (itp T n) -->>+ Initial) 
+			          [nothing-leads-to-Initial]]))
+              assume B1b := (exists ?T' ?step' .
+                              (itp T (S n)) = ?T' then ?step')
+               (!two-cases
+                assume goal1
+                  (!chain-> [goal1 ==> goal  [alternate]])
+                assume (~ goal1)
+                  pick-witnesses T' step' for B1b 
+                  let {B1b-w := ((itp T (S n)) = T' then step');
+                       C1 := (!chain->
+			      [true ==> ((itp T n) -->> (itp T (S n)))
+				             [itp-directly-connected]
+				    ==> ((itp T n) -->> (T' then step'))
+				             [B1b-w]
+				    ==> ((itp T n) = T' & 
+                                         Enabled (T' then step'))
+				             [directly-leads-to]]);
+                       C2 := (!chain-> 
+			      [C1 ==> ((itp T n) = T') [left-and]]);
+                       C3 := (!chain-> 
+			      [C1 ==> (Enabled (T' then step')) [right-and]]);
+                       C4 := (!chain->
+			      [C3 ==> (Enabled ((itp T n) then step')) [C2]
+				  ==> (Enabled (itp T n) & 
+                                       exists ?s1 ?ls1 . 
+                                         (before (itp T n) step' ?s1 ?ls1))
+				  [enabled-step]])}
+                  pick-witnesses s1 ls1 for (!right-and C4) C4-w
+		  let {goal' := (exists ?s2 .
+                                  config ((itp T n) then step') = 
+                                    ?s2 ++ (actor id ls) ++ M &
+                                  ls ready-to Receive);
+		       UI1 := (!lemma unique-ids1);
+        	       ECA := (exclusive-constructors "Actor-Cfg.Actor");
+                       D0 := (!chain
+			      [(config (itp T n))
+			       = (s ++ act ++ M)    [A1]
+			       = ((s ++ M) ++ act)  [++A ++C]]);
+                       ECS := (exclusive-constructors "Step");
+                       D1 := datatype-cases goal' on step' {
+                               (Receive' as (receive id':id-sort fr':id-sort c')) => 
+                                 let {receive-goal := 
+                                       (exists ?s2 .
+                                         config ((itp T n) then Receive') = 
+                                          ?s2 ++ (actor id ls) ++ M &
+                                          ls ready-to Receive);
+                                      M' := (One (message' fr' LS0 id' c'));
+                                      M'base := match M' {(One x) => x};
+                                      (and E2 E3) := 
+				        (!chain->
+					 [C4-w 
+					  ==> 
+					  (before (itp T n) 
+					          Receive' s1 ls1)
+					     [(step' = Receive')]
+					  ==> (config (itp T n) = 
+					        s1 ++ (actor id' ls1) ++ M' &
+					       ls1 ready-to Receive')
+					     [before.receiving]])}
+                                 (!two-cases
+				  assume (id' = id)
+                                    let {F1 := (!chain
+						[(config (itp T n))
+						 = (s1 ++ (actor id' ls1) ++ M')  [E2]
+						 = ((s1 ++ M') ++ (actor id' ls1))
+						                          [++A ++C]]);
+					 F3 := (!chain->
+						[(A4 & F1 & D0 & id' = id) 
+						 ==> (ls1 = ls)         [UI1]])}
+                                    (!two-cases
+				     assume (fr' = fr & c' = c)
+				       let {G1 := (!chain
+						   [((itp T n) then Receive)
+						    = ((itp T n) then Receive')
+						            [(fr' = fr) (c' = c) (id' = id)]
+						    = ((itp T n) then step')
+						            [(step' = Receive')]
+						    = (T' then step')    [C2]
+						    = (itp T (S n))      [B1b-w]])}
+                                       (!from-complements receive-goal (!sym G1) (~ goal1))
+				     assume (~ (fr' = fr & c' = c))
+                                       let {3T := (!lemma Three-Together);
+					    G1 := (!chain->
+						   [(config (itp T n))
+						    = (s1 ++ (actor id' ls1) ++ M')   [E2]
+						    = ((s1 ++ (actor id' ls1)) ++ M') [++A]]);
+                                            G2 := (!chain->
+						   [true ==> (act' =/= M'base) [ECA]
+							 ==> (M'base =/= act') [sym]]);
+					    CI := (!constructor-injectivity message');
+                                            G3 := (!by-contradiction
+						   (M'base =/= Mbase)
+						   assume G3a := (M'base = Mbase)
+                                                     let {G3b := 
+							  (!mp (!left-iff 
+								(!uspec* 
+								 CI [fr' LS0 id' c' fr LS0 id c]))
+								G3a)}
+                                                     (!absurd
+						      (!chain->
+						       [G3b ==> (fr' = fr & c' = c)  
+							      [method (p)
+                                                                (!both (!left-and p)
+								       (!right-and 
+									(!right-and 
+									 (!right-and p))))]])
+						      (~ (fr' = fr & c' = c))));
+					    G4 := (!chain->
+						   [(G1 & A1 & G2 & G3)
+						    ==> (exists ?s3 .
+						          config (itp T n) = ?s3 ++ M' ++ act ++ M)
+						                      [3T]])}
+                                       pick-witness s3 for G4 G4-w
+                                       let {H1 := (!chain
+						   [(config (itp T n))
+						    = (s3 ++ M' ++ act ++ M)   [G4-w]
+						    = ((s3 ++ M) ++ act ++ M') [++A ++C]
+						    = ((s3 ++ M) ++ (actor id' ls1) ++ M')
+							           [(id' = id) (ls1 = ls)]]);
+                                            TR := (!lemma trans-receive);
+                                            H2 := (!chain->
+						   [(H1 & E3)
+						    ==> (config ((itp T n) then Receive')
+							 = ((s3 ++ M) ++ 
+							    (actor id' (next ls1 Receive'))))
+							              [TR]
+							 = (s3 ++ (actor id' (next ls1 Receive')) 
+							       ++ M)  [++A ++C]
+							 = (s3 ++ (actor id (next ls1 Receive')) 
+							       ++ M)  [(id' = id)]]);
+                                            H3a := (!by-contradiction 
+                                                        (Receive' =/= Receive)
+                                                    assume A := (Receive' = Receive)
+                                                      let {CI := (!constructor-injectivity receive);
+							   H3b := (!mp (!left-iff
+									(!uspec* CI [id' fr' c' id fr c]))
+								       A)}
+                                                      (!absurd
+						       (!chain->
+							[H3b ==> (fr' = fr & c' = c)  
+							      [method (p)
+                                                                (!both (!left-and (!right-and p))
+								       (!right-and (!right-and p)))]])
+						      (~ (fr' = fr & c' = c))));
+                                            H3b := (!chain
+						    [(focus Receive')
+						     = id'       [focus-definition]
+						     = id        [(id' = id)]]);
+				            H3 := (!chain->
+						   [(H3b & H3a) 
+						    ==> ((next ls Receive') = ls)  [A3]
+						    ==> ((next ls1 Receive') = ls) [(ls1 = ls)]]);
+                                            H4 := (!chain->
+						   [H2 ==> (config ((itp T n) then Receive')
+							    = (s3 ++ (actor id ls) ++ M))  [H3]])}
+                                       (!chain->
+					[(H4 & A2) ==> receive-goal [existence]]))
+				assume (id' =/= id)
+				  let {OR2 := (!lemma other-receive-2);
+				       F1 := (!chain->
+					      [C3 ==> (Enabled ((itp T n) then Receive'))
+						             [C2 (step' = Receive')]]);
+                                       F2 := (!chain->
+					      [(A1 & F1 & id' =/= id)
+					       ==> (exists ?s3 .
+						     config ((itp T n) then Receive') =
+							?s3 ++ act ++ M)  [OR2]])}
+                                  pick-witness s3 for F2 F2-w
+  				  (!chain-> 
+				   [F2-w ==> (F2-w & A2)  [augment]
+					 ==> receive-goal [existence]]))
+			     | (Send' as (send id':id-sort to':id-sort c')) => 
+                                 let {send-goal := 
+                                         (exists ?s2 .
+                                           config ((itp T n) then Send') = 
+                                            ?s2 ++ (actor id ls) ++ M &
+                                            ls ready-to Receive);
+                                      E1 := (!chain->
+					     [C4-w ==> (before (itp T n) Send' s1 ls1)
+						     [(step' = Send')]
+						   ==> (config (itp T n) = s1 ++ (actor id' ls1) &
+                                                        ls1 ready-to Send')
+						     [before.sending]]);
+                                      E2 := (!chain->
+					     [E1 ==> (config (itp T n) = s1 ++ (actor id' ls1))
+						   [left-and]]);
+                                      E3 := (!chain->
+					     [E1 ==> (ls1 ready-to Send')
+						   [right-and]])}
+                                 (!two-cases
+				  assume (id' = id)
+                                    let {F1 := (!chain->
+						[(A4 & E2 & D0 & id' = id)
+						 ==> (ls1 = ls)   [UI1]]);
+				   	 F2 := (!chain
+						[(config (itp T n))
+						 = ((s ++ M) ++ act)              [D0]
+						 = ((s ++ M) ++ (actor id' ls1))
+				   		                 [(id' = id) (ls1 = ls)]]);
+                                         TS := (!lemma trans-send);
+					 M' := (One (message' id' LS0 to' c'));
+					 F3 := (!chain->
+						[F2 ==> (F2 & E3)  [augment]
+						    ==> (config ((itp T n) then Send')
+							 = (s ++ M) ++ (actor id' (next ls1 Send'))
+							   ++ M')	   [trans-send]
+				   			 = ((s ++ M') ++ (actor id' (next ls1 Send')) 
+							    ++ M)	   [++A ++C]
+				   			 = ((s ++ M') ++ (actor id (next ls Send')) 
+							    ++ M)	   [(id' = id) (ls1 = ls)]]);
+                                         F4a := (!chain
+						 [(focus Send')
+						  = id'        [focus-definition]
+						  = id         [(id' = id)]]);
+                                         F4b := (!chain->
+						 [true ==> (Receive =/= Send') [ECS]
+						       ==> (Send' =/= Receive) [sym]]);
+                                         F4 := (!chain->
+						[(F4a & F4b) 
+						 ==> ((next ls Send') = ls)        [A3]]);
+                                         F5 := (!chain->
+						[F3 ==> (config ((itp T n) then Send')
+				   			 = (s ++ M') ++ (actor id ls) ++ M)    [F4]])}
+                                    (!chain->
+				     [(F5 & A2) ==> send-goal [existence]])
+				  assume (id' =/= id)
+				    let {OS2 := (!lemma other-send-2);
+				         F1 := (!chain->
+						[C3 ==> (Enabled ((itp T n) then Send'))
+				   		      [C2 (step' = Send')]]);
+                                         F2 := (!chain->
+						[(A1 & F1 & id' =/= id)
+				   		 ==> (exists ?s3 .
+				   		       config ((itp T n) then Send') =
+				   			 ?s3 ++ act ++ M)   [OS2]])}
+                                    pick-witness s3 for F2 F2-w
+  				    (!chain-> 
+				     [F2-w ==> (F2-w & A2)  [augment]
+					   ==> send-goal [existence]]))
+                             | (Create' as (create id':id-sort id'':id-sort)) => 
+                                 let {create-goal := 
+                                       (exists ?s2 .
+                                         config ((itp T n) then Create') = 
+                                          ?s2 ++ (actor id ls) ++ M &
+                                          ls ready-to Receive);
+                                      E1 := (!chain->
+					     [C4-w ==> (before (itp T n) Create' s1 ls1)
+						     [(step' = Create')]
+						   ==> (config (itp T n) = s1 ++ (actor id' ls1) &
+                                                        (count id'' config (itp T n)) = zero &
+                                                        ls1 ready-to Create')
+						     [before.creating]]);
+                                      E2 := (!chain->
+					     [E1 ==> (config (itp T n) = s1 ++ (actor id' ls1))
+						   [left-and]]);
+                                      E3 := (!chain->
+					     [E1 ==> ((count id'' config (itp T n)) = zero &
+						      (ls1 ready-to Create'))
+						   [right-and]])}
+                                 (!two-cases
+				  assume (id' = id)
+                                    let {F1 := (!chain->
+						[(A4 & E2 & D0 & id' = id)
+						 ==> (ls1 = ls)   [UI1]]);
+				   	 F2 := (!chain
+						[(config (itp T n))
+				   		 = ((s ++ M) ++ act)              [D0]
+				   		 = ((s ++ M) ++ (actor id' ls1))
+				   		                 [(id' = id) (ls1 = ls)]]);
+                                         TS := (!lemma trans-create);
+					 act'' := (actor id'' (new-ls ls1));
+					 F3 := (!chain->
+						[(F2 & E3)      
+						    ==> (config ((itp T n) then Create')
+				   		         = (s ++ M) ++ 
+                                                           (actor id' (next ls1 Create')) ++ act'')
+				   			     [trans-create]
+				   			 = ((s ++ act'') ++ 
+							    (actor id' (next ls1 Create')) ++ M)
+				   			     [++A ++C]
+				   			 = ((s ++ act'') ++ 
+							    (actor id (next ls1 Create')) ++ M)
+				   			     [(id' = id)]]);
+                                         F4a := (!chain
+						 [(focus Create')
+						  = id'        [focus-definition]
+						  = id         [(id' = id)]]);
+                                         F4b := (!chain->
+						 [true ==> (Receive =/= Create') [ECS]
+						       ==> (Create' =/= Receive) [sym]]);
+					 F4 := (!chain->
+						[(F4a & F4b) ==> ((next ls Create') = ls)   [A3]]);
+                                         F5 := (!chain->
+						[F3 ==> (config ((itp T n) then Create')
+						         = (s ++ act'') ++ (actor id ls) ++ M)
+							     [(ls1 = ls) F4]])}
+                                    (!chain->
+				     [(F5 & A2) ==> create-goal [existence]])
+				  assume (id' =/= id)
+				    let {OC2 := (!lemma other-create-2);
+					 F1 := (!chain->
+						[C3 ==> (Enabled ((itp T n) then Create'))
+				   		      [C2 (step' = Create')]]);
+                                         F2 := (!chain->
+						[(A1 & F1 & id' =/= id)
+						 ==> (exists ?s3 .
+				   		       config ((itp T n) then Create') =
+				   			   ?s3 ++ act ++ M)	   [OC2]])}
+                                    pick-witness s3 for F2 F2-w
+  				    (!chain-> 
+				     [F2-w ==> (F2-w & A2)  [augment]
+					   ==> create-goal  [existence]]))
+                             }}
+                  pick-witness s2 for D1 D1-w
+                    let {D1-w1 := (config ((itp T n) then step') = 
+                                    s2 ++ (actor id ls) ++ M);
+                         D1-w2 := (ls ready-to Receive);
+                         E1 := (!chain
+				[(config (itp T (S n)))
+				 = (config (T' then step'))        [B1b-w]
+				 = (config ((itp T n) then step')) [C2]
+				 = (s2 ++ (actor id ls) ++ M)      [D1-w1]])}
+                    (!chain->
+		     [(E1 & D1-w2) ==> goal2 [existence]
+		                   ==> goal  [alternate]])))
+
+(evolve Theory [[receive-remains-enabled] proof])
+
+#--------------------------------------------------------------------------
+define send-remains-enabled :=
+  (forall T n s id ls to c .
+    config (itp T n) = s ++ (actor id ls) &
+    ls ready-to (send id to c) &
+    (forall step . 
+      focus step = id & step =/= (send id to c) ==> (next ls step) = ls) &
+    (unique-ids config (itp T n))
+    ==> (itp T (S n)) = (itp T n) then (send id to c) |
+        exists s' . 
+          config (itp T (S n)) =
+            s' ++ (actor id ls)  &
+            ls ready-to (send id to c))
+
+define proof :=
+  method (theorem adapt)
+    let {given := lambda (P) (get-property P adapt Theory);
+         lemma := method (P) (!property P adapt Theory);	  
+         chain := method (L) (!chain-help given L 'none);
+         chain-> := method (L) (!chain-help given L 'last);
+         ++A := (given ['++ Associative]);
+         ++C := (given ['++ Commutative]);
+         RI := (!lemma ['-->> RR+-inclusion]);
+         [itp LS0 next ready-to new-ls unique-ids before after config] := 
+           (adapt [itp LS0 next ready-to new-ls unique-ids before 
+	 	       after config]);
+         [T-sort _ s-sort id-sort ls-sort _ _] :=
+           (map sort-of (qvars-of (adapt theorem)))}
+   conclude (adapt theorem)
+    pick-any T:T-sort n s:s-sort id:id-sort ls:ls-sort to:id-sort c:Ide
+      let {act := (actor id ls);
+           act' := (actor' id ls);
+           M := (constrain-sort (One (message' id LS0 to c)) ++ act);
+           Mbase := match M {(One x) => x};
+           A1 := (config (itp T n) = s ++ act);
+           A2 := (ls ready-to (send id to c));
+           A3 := (forall ?step . 
+		   focus ?step = id & ?step =/= (send id to c) ==> (next ls ?step) = ls);
+           A4 := (unique-ids config (itp T n))}
+      assume (A1 & A2 & A3 & A4)
+        let {goal1 := ((itp T (S n)) = (itp T n) then (send id to c));
+             goal2 := (exists ?s' .
+                        config (itp T (S n)) = 
+                          ?s' ++ (actor id ls) &
+                          ls ready-to (send id to c));
+             goal := (goal1 | goal2);
+             CE := (!constructor-exhaustiveness "TP");
+             B1 := (!chain->
+		    [true ==> ((itp T (S n)) = Initial | 
+			       exists ?T' ?step' . 
+                                (itp T (S n)) = ?T' then ?step')  
+                                       [CE]])}
+             (!cases B1
+              assume B1a := ((itp T (S n)) = Initial)
+                (!from-complements goal
+		 (!chain->
+		  [true ==> ((itp T n) -->> (itp T (S n))) 
+                                   [itp-directly-connected]
+			==> ((itp T n) -->> Initial)  [B1a]
+			==> ((itp T n) -->>+ Initial) [RI]])
+		 (!chain->
+		  [true ==> (~ (itp T n) -->>+ Initial) 
+			          [nothing-leads-to-Initial]]))
+              assume B1b := (exists ?T' ?step' .
+                              (itp T (S n)) = ?T' then ?step')
+               (!two-cases
+                assume goal1
+                  (!chain-> [goal1 ==> goal  [alternate]])
+                assume (~ goal1)
+                 pick-witnesses T' step' for B1b 
+                  let {B1b-w := ((itp T (S n)) = T' then step');
+                       C1 := (!chain->
+			      [true ==> ((itp T n) -->> (itp T (S n)))
+				             [itp-directly-connected]
+				    ==> ((itp T n) -->> (T' then step'))
+				             [B1b-w]
+				    ==> ((itp T n) = T' & 
+                                         Enabled (T' then step'))
+				             [directly-leads-to]]);
+                       C2 := (!chain-> 
+			      [C1 ==> ((itp T n) = T') [left-and]]);
+                       C3 := (!chain-> 
+			      [C1 ==> (Enabled (T' then step')) [right-and]]);
+                       C4 := (!chain->
+			      [C3 ==> (Enabled ((itp T n) then step')) [C2]
+				  ==> (Enabled (itp T n) & 
+                                       exists ?s1 ?ls1 . 
+                                         (before (itp T n) step' ?s1 ?ls1))
+				  [enabled-step]])}
+                  pick-witnesses s1 ls1 for (!right-and C4) C4-w
+		    let {goal' := (exists ?s2 .
+                                     config ((itp T n) then step') = 
+                                       ?s2 ++ (actor id ls) &
+                                       ls ready-to (send id to c));
+		         UI1 := (!lemma unique-ids1);
+        		 ECA := (exclusive-constructors "Actor-Cfg.Actor");
+                         ECS := (exclusive-constructors "Step");
+                         D1 := datatype-cases goal' on step' {
+                                 (Receive' as (receive id':id-sort fr':id-sort c')) => 
+                                   let {receive-goal := 
+                                         (exists ?s2 .
+                                           config ((itp T n) then Receive') = 
+                                            ?s2 ++ (actor id ls)  &
+                                            ls ready-to (send id to c));
+                                        M' := (One (message' fr' LS0 id' c'));
+                                        M'base := match M' {(One x) => x};
+                                        E1 := (!chain->
+					       [C4-w ==> (before (itp T n) Receive' s1 ls1)
+						                [(step' = Receive')]
+						     ==> (config (itp T n) = s1 ++ (actor id' ls1) ++ M' &
+                                                          ls1 ready-to Receive')
+						                [before.receiving]]);
+                                        E2 := (!chain->
+					       [E1 ==> (config (itp T n) = s1 ++ (actor id' ls1) ++ M')
+						                [left-and]]);
+                                        E3 := (!chain->
+					       [E1 ==> (ls1 ready-to Receive')
+						                [right-and]])}
+                                   (!two-cases
+				    assume (id' = id)
+                                      let {F0 := (!chain->
+						  [true ==> (Receive' =/= (send id to c))
+							[ECS]]);
+                                           F0' := (!chain
+						   [(focus Receive') 
+						    = id'   [focus-definition]
+						    = id    [(id' = id)]]);
+                                           F0'' := (!chain->
+						    [(F0 & F0') ==> ((next ls Receive') = ls) [A3]]);
+					   F1 := (!chain->
+						  [(config (itp T n))
+						   = (s1 ++ (actor id' ls1) ++ M')  [E2]
+						   = ((s1 ++ M') ++ (actor id' ls1))
+						                          [++A ++C]]);
+					   F3 := (!chain->
+						  [(A4 & F1 & A1 & id' = id) 
+						   ==> (ls1 = ls)         [UI1]]);
+                                           TR := (!lemma trans-receive);
+                                           F4 := (!chain->
+						  [E1 
+						   ==> 
+						   (config ((itp T n) then Receive')
+						    = s1 ++ (actor id' (next ls1 Receive')))  [TR]
+						    = (s1 ++ (actor id (next ls Receive')))   
+						                             [(id' = id) (ls1 = ls)]
+						    = (s1 ++ (actor id ls))  [F0'']])}
+                                      (!chain->
+				       [(F4 & A2) ==> receive-goal [existence]])
+                                    assume (id' =/= id)
+                                       let {G0 := (!chain->
+						   [C3 ==> (Enabled ((itp T n) then step')) [C2]
+						       ==> (Enabled ((itp T n) then Receive')) 
+						                [(step' = Receive')]]);
+                                            OR1 := (!lemma other-receive-1);
+					    G1 := (!chain->
+						   [(id' =/= id)           
+						    ==> (A1 & G0 & id' =/= id) [augment]
+						    ==> (exists ?s1 . 
+                                                          config ((itp T n) then Receive') = 
+							  ?s1 ++ (actor id ls)) [OR1]])}
+                                        pick-witness s1 for G1 G1-w
+                                          (!chain-> [(G1-w & A2) ==> receive-goal  [existence]]))
+			       | (Send' as (send id':id-sort to':id-sort c')) => 
+                                   let {send-goal := 
+                                         (exists ?s2 .
+                                           config ((itp T n) then Send') = 
+                                            ?s2 ++ (actor id ls) &
+                                            ls ready-to (send id to c));
+                                        E1 := (!chain->
+					       [C4-w ==> (before (itp T n) Send' s1 ls1)
+						     [(step' = Send')]
+						     ==> (config (itp T n) = s1 ++ (actor id' ls1) &
+                                                          ls1 ready-to Send')
+						     [before.sending]]);
+                                        E2 := (!chain->
+					       [E1 ==> (config (itp T n) = s1 ++ (actor id' ls1))
+						   [left-and]]);
+                                        E3 := (!chain->
+					       [E1 ==> (ls1 ready-to Send')
+						   [right-and]])}
+                                   (!two-cases
+				    assume (id' = id)
+                                      let {F1 := (!chain->
+				   		  [(A4 & E2 & A1 & id' = id)
+				   		   ==> (ls1 = ls)   [UI1]]);
+                                           M' := (One (message' id' LS0 to' c'));
+				   	   F2 := (!chain
+				   		  [(config (itp T n))
+				   		   = (s ++ act)              [A1]
+				   		   = (s ++ (actor id' ls1))
+				   		                 [(id' = id) (ls1 = ls)]]);
+                                           TS := (!lemma trans-send);
+                                           F3 := (!chain->
+				   		  [F2 ==> (F2 & E3)  [augment]
+				   		      ==> (config ((itp T n) then Send')
+				   		           = (s ++ (actor id' (next ls1 Send')) 
+							      ++ M'))	   [trans-send]
+				   			   = ((s ++ M') ++ 
+							      (actor id' (next ls1 Send')))
+				   			                   [++A ++C]
+				   			   = ((s ++ M') ++ 
+							      (actor id (next ls Send')))
+				   			                   [(id' = id) (ls1 = ls)]]);
+                                           F5 := (!chain
+						   [(focus Send')
+						    = id'        [focus-definition]
+						    = id         [(id' = id)]])}
+                                      (!two-cases
+				       assume (to' = to & c' = c)
+                                         let {G1 := (!chain
+						    [((itp T n) then (send id to c))
+						     = ((itp T n) then Send')
+						     [(id' = id) (to' = to) (c' = c)]
+						     = ((itp T n) then step')
+						     [(step' = Send')]
+						     = (T' then step')    [C2]
+						     = (itp T (S n))      [B1b-w]])}
+					 (!from-complements send-goal (!sym G1) (~ goal1))
+                                       assume (~ (to' = to & c' = c))
+				         let {G0 := (Send' = (send id to c));
+					      CI := (!constructor-injectivity send);
+                                              G1 := (!by-contradiction (~ G0)
+                                                     assume G0
+						       (!absurd
+							(!chain->
+							 [G0 ==> (and (id' = id) (to' = to) (c' = c))
+							     [CI]
+							     ==> (id' = id & to' = to & c' = c)
+							     [and-conv]
+							     ==> (to' = to & c' = c)  [right-and]])
+							(~ (to' = to & c' = c))));
+					      G2 := (!chain->
+						     [(F5 & G1) ==> ((next ls Send') = ls)  
+						                      [A3]]);
+					      G3 := (!chain->
+						     [(config ((itp T n) then Send'))
+						      = ((s ++ M') ++ (actor id (next ls Send'))) 
+						                      [F3]
+						      = ((s ++ M') ++ (actor id ls)) [G2]])}
+                                         (!chain->
+					  [(G3 & A2) ==> send-goal  [existence]]))
+				    assume (id' =/= id)
+				      let {OS1 := (!lemma other-send-1);
+				   	   F1 := (!chain->
+				   		  [C3 ==> (Enabled ((itp T n) then Send'))
+				   		      [C2 (step' = Send')]]);
+                                           F2 := (!chain->
+				   		  [(A1 & F1 & id' =/= id)
+				   		   ==> (exists ?s3 .
+				   			 config ((itp T n) then Send') =
+				   			   ?s3 ++ act)
+				   		   [OS1]])}
+                                      pick-witness s3 for F2 F2-w
+  				   	(!chain-> 
+				   	 [F2-w ==> (F2-w & A2)  [augment]
+				   	       ==> send-goal    [existence]]))
+                               | (Create' as (create id':id-sort id'':id-sort)) => 
+                                   let {create-goal := 
+                                         (exists ?s2 .
+                                           config ((itp T n) then Create') = 
+                                            ?s2 ++ (actor id ls) &
+                                            ls ready-to (send id to c));
+                                        E1 := (!chain->
+					       [C4-w ==> (before (itp T n) Create' s1 ls1)
+						     [(step' = Create')]
+						     ==> (config (itp T n) = s1 ++ (actor id' ls1) &
+                                                          (count id'' config (itp T n)) = zero &
+                                                          ls1 ready-to Create')
+						     [before.creating]]);
+                                        E2 := (!chain->
+					       [E1 ==> (config (itp T n) = s1 ++ (actor id' ls1))
+						   [left-and]]);
+                                        E3 := (!chain->
+					       [E1 ==> ((count id'' config (itp T n)) = zero &
+							(ls1 ready-to Create'))
+						   [right-and]])}
+                                   (!two-cases
+				    assume (id' = id)
+                                      let {F1 := (!chain->
+				   		  [(A4 & E2 & A1 & id' = id)
+				   		   ==> (ls1 = ls)   [UI1]]);
+				   	   F2 := (!chain
+				   		  [(config (itp T n))
+				   		   = (s ++ act)              [A1]
+				   		   = (s ++ (actor id' ls1))
+				   		                 [(id' = id) (ls1 = ls)]]);
+                                           TS := (!lemma trans-create);
+                                           act'' := (actor id'' (new-ls ls1));
+                                           F3 := (!chain->
+				   		  [(F2 & E3)      
+						   ==> (config ((itp T n) then Create')
+							= s ++ (actor id' (next ls1 Create')) 
+							  ++ act'')	   [trans-create]
+				   			= ((s ++ act'') ++ 
+							   (actor id' (next ls1 Create')))
+				   			                   [++A ++C]
+				   			= ((s ++ act'') ++ 
+							   (actor id (next ls1 Create')))
+				   			                   [(id' = id)]]);
+                                           F4a := (!chain
+						   [(focus Create')
+						    = id'        [focus-definition]
+						    = id         [(id' = id)]]);
+                                           F4b := (!chain->
+						   [true ==> ((send id to c) =/= Create') 
+                                                                [ECS]
+							 ==> (Create' =/= (send id to c)) 
+                                                                [sym]]);
+					   F4 := (!chain->
+						  [(F4a & F4b) 
+						   ==> ((next ls Create') = ls)  [A3]]);
+                                           F5 := (!chain->
+						  [F3 ==> (config ((itp T n) then Create')
+						           = (s ++ act'') ++ (actor id ls))
+							   [(ls1 = ls) F4]])}
+                                      (!chain->
+				       [(F5 & A2) ==> create-goal [existence]])
+				    assume (id' =/= id)
+				      let {OC1 := (!lemma other-create-1);
+				   	   F1 := (!chain->
+				   		  [C3 
+						   ==> (Enabled ((itp T n) then Create'))
+				   		      [C2 (step' = Create')]]);
+                                           F2 := (!chain->
+				   		  [(A1 & F1 & id' =/= id)
+				   		   ==> (exists ?s3 .
+				   			 config ((itp T n) then Create') =
+				   			   ?s3 ++ act)
+				   		   [OC1]])}
+                                      pick-witness s3 for F2 F2-w
+  				   	(!chain-> 
+				   	 [F2-w ==> (F2-w & A2)  [augment]
+				   	       ==> create-goal  [existence]]))
+                               }}
+                         pick-witness s2 for D1 D1-w
+                           let {D1-w1 := (config ((itp T n) then step') = 
+                                           s2 ++ (actor id ls));
+                                D1-w2 := (ls ready-to (send id to c));
+                                E1 := (!chain
+				       [(config (itp T (S n)))
+					= (config (T' then step'))        [B1b-w]
+					= (config ((itp T n) then step')) [C2]
+					= (s2 ++ (actor id ls))           [D1-w1]])}
+                           (!chain->
+			    [(E1 & D1-w2) ==> goal2 [existence]
+			                  ==> goal  [alternate]])))
+
+(evolve Theory [[send-remains-enabled] proof])
+
+#--------------------------------------------------------------------------
+# To prove the next theorem, create-remains-enabled, we need a
+# guarantee that if an actor is ready to create a new actor named id1,
+# no other actor can create an actor named id1 first.  This could be
+# achieved by having a name server (another actor) that can be used to
+# "reserve" an id.  Or more simply, we could use a naming scheme in
+# which an actor's own id is incorporated as a prefix in any new id
+# the actor creates; e.g., if the Clock actor in the ticker-clock
+# example creates the ticker actor the name could be Clock-Ticker.
+# More generally, we could just require the property that there is a
+# bijective mapping between created actor ids and those of the
+# creating actors.
+
+# Here, we just make the following general assumption:
+
+define id-reservation-axiom :=
+  (forall T n s id ls id1 .
+    config (itp T n) = s ++ (actor id ls) &
+    ls ready-to (create id id1)
+    ==> ~ exists k id' .
+            k >= n & id' =/= id &
+            (itp T (S k)) = (itp T k) then (create id' id1))
+
+(evolve Theory [[id-reservation-axiom] Axiom])
+
+
+#--------------------------------------------------------------------------
+define create-remains-enabled :=
+  (forall T n s id ls id1 .
+    config (itp T n) = s ++ (actor id ls) &
+    ls ready-to (create id id1) &
+    (forall ls step . 
+      ls ready-to (create id id1) 
+      ==> (next ls step) ready-to (create id id1)) &
+    (unique-ids config (itp T n)) &
+    (count id1 config (itp T n)) = zero 
+    ==> (itp T (S n)) = (itp T n) then (create id id1)
+        | (exists s' ls' . 
+            config (itp T (S n)) = s' ++ (actor id ls') &
+            (count id1 config (itp T (S n))) = zero &
+            ls' ready-to (create id id1)))
+
+define proof :=
+  method (theorem adapt)
+    let {given := lambda (P) (get-property P adapt Theory);
+         lemma := method (P) (!property P adapt Theory);	  
+         chain := method (L) (!chain-help given L 'none);
+         chain-> := method (L) (!chain-help given L 'last);
+         ++A := (given ['++ Associative]);
+         ++C := (given ['++ Commutative]);
+         RI := (!lemma ['-->> RR+-inclusion]);
+         [itp LS0 next ready-to new-ls unique-ids before after config] := 
+           (adapt [itp LS0 next ready-to new-ls unique-ids before 
+	 	       after config]);
+         [T-sort _ s-sort id-sort ls-sort _] :=
+           (map sort-of (qvars-of (adapt theorem)))}
+   conclude (adapt theorem)
+    pick-any T:T-sort n s:s-sort id:id-sort ls:ls-sort id1:id-sort
+      let {act := (actor id ls);
+           act' := (actor' id ls);
+           A1 := (config (itp T n) = s ++ act);
+           A2 := (ls ready-to (create id id1));
+           A3 := (forall ls step . 
+		   ls ready-to (create id id1) 
+		   ==> (next ls step) ready-to (create id id1));
+           A4 := (unique-ids config (itp T n));
+           A5 := ((count id1 config (itp T n)) = zero)}
+      assume (A1 & A2 & A3 & A4 & A5)
+        let {goal1 := ((itp T (S n)) = (itp T n) then (create id id1));
+             goal2 := (exists ?s' ?ls' .
+                        config (itp T (S n)) = ?s' ++ (actor id ?ls') &
+		        (count id1 config (itp T (S n))) = zero & 
+                        ?ls' ready-to (create id id1));
+             goal := (goal1 | goal2);
+             CE := (!constructor-exhaustiveness "TP");
+             B1 := (!chain->
+		    [true ==> ((itp T (S n)) = Initial | 
+			       exists ?T' ?step' . 
+                                (itp T (S n)) = ?T' then ?step')  
+                                       [CE]])}
+             (!cases B1
+              assume B1a := ((itp T (S n)) = Initial)
+                (!from-complements goal
+		 (!chain->
+		  [true ==> ((itp T n) -->> (itp T (S n))) 
+                                   [itp-directly-connected]
+			==> ((itp T n) -->> Initial)  [B1a]
+			==> ((itp T n) -->>+ Initial) [RI]])
+		 (!chain->
+		  [true ==> (~ (itp T n) -->>+ Initial) 
+			          [nothing-leads-to-Initial]]))
+              assume B1b := (exists ?T' ?step' .
+                              (itp T (S n)) = ?T' then ?step')
+               (!two-cases
+                assume goal1
+                  (!chain-> [goal1 ==> goal  [alternate]])
+                assume (~ goal1)
+                 pick-witnesses T' step' for B1b 
+                  let {B1b-w := ((itp T (S n)) = T' then step');
+                       C1 := (!chain->
+			      [true ==> ((itp T n) -->> (itp T (S n)))
+				             [itp-directly-connected]
+				    ==> ((itp T n) -->> (T' then step'))
+				             [B1b-w]
+				    ==> ((itp T n) = T' & 
+                                         Enabled (T' then step'))
+				             [directly-leads-to]]);
+                       C2 := (!chain-> 
+			      [C1 ==> ((itp T n) = T') [left-and]]);
+                       C3 := (!chain-> 
+			      [C1 ==> (Enabled (T' then step')) [right-and]]);
+                       C4 := (!chain->
+			      [C3 ==> (Enabled ((itp T n) then step')) [C2]
+				  ==> (Enabled (itp T n) & 
+                                       exists ?s1 ?ls1 . 
+                                         (before (itp T n) step' ?s1 ?ls1))
+				  [enabled-step]])}
+                  pick-witnesses s1 ls1 for (!right-and C4) C4-w
+		    let {goal' := (exists ?s2 ?ls2 .
+                                     config ((itp T n) then step') = 
+                                       ?s2 ++ (actor id ?ls2) &
+				       (count id1 (?s2 ++ (actor id ?ls2))) = zero &
+                                       ?ls2 ready-to (create id id1));
+                         _ := (!lemma uids-ignore-messages);
+		         UI1 := (!lemma unique-ids1);
+    		         UISP := (!lemma unique-ids-step-persistence);
+        		 ECA := (exclusive-constructors "Actor-Cfg.Actor");
+                         ECS := (exclusive-constructors "Step");
+			 UI0 := (!lemma unique-ids0);
+                         D1 := datatype-cases goal' on step' {
+                                 (Receive' as (receive id':id-sort fr':id-sort c')) => 
+                                   let {receive-goal := 
+                                         (exists ?s2 ?ls2 .
+                                           config ((itp T n) then Receive') = 
+                                            ?s2 ++ (actor id ?ls2) &
+                                           (count id1 (?s2 ++ (actor id ?ls2))) = zero &
+                                           ?ls2 ready-to (create id id1));
+                                        M' := (One (message' fr' LS0 id' c'));
+                                        M'base := match M' {(One x) => x};
+                                        E1 := (!chain->
+					       [C4-w ==> (before (itp T n) 
+								 Receive' s1 ls1)
+						                [(step' = Receive')]
+						     ==> (config (itp T n) = 
+							     s1 ++ (actor id' ls1) ++ M' &
+                                                          ls1 ready-to Receive')
+						                [before.receiving]]);
+                                        E2 := (!chain->
+					       [E1 
+						==> (config (itp T n) = s1 ++ (actor id' ls1) ++ M')
+						                [left-and]]);
+					E2a := (!chain [(config (itp T n))
+							= (s1 ++ (actor id' ls1) ++ M')   [E2]
+							= ((s1 ++ M') ++ (actor id' ls1)) [++A ++C]]);
+                                        E3 := (!chain->
+					       [E1 ==> (ls1 ready-to Receive')
+						                [right-and]])}
+                                   (!two-cases
+				    assume (id' = id)
+                                      let {F0 := (!chain->
+						  [A2 
+						   ==> ((next ls Receive') 
+							ready-to (create id id1))   [A3]]);
+					   F1 := (!chain->
+						  [(config (itp T n))
+						   = (s1 ++ (actor id' ls1) ++ M')  [E2]
+						   = ((s1 ++ M') ++ (actor id' ls1))
+						                          [++A ++C]]);
+                                           TR := (!lemma trans-receive);
+                                           ls3 := (next ls Receive');
+				           F2 := (!chain->
+				   		  [(A4 & E2a & A1 & id' = id) ==> (ls1 = ls)   [UI1]]);
+                                           F4 := (!chain->
+						  [E1 
+						   ==> (config ((itp T n) then Receive')
+						        = s1 ++ (actor id' (next ls1 Receive')))  [TR]
+							= (s1 ++ (actor id ls3))  [(id' = id) F2]]);
+                                           CILS := (!lemma count.ignore-local-state);
+					   F5 := (!chain
+						  [(count id1 (s1 ++ (actor id ls3)))
+						   = (count id1 (s1 ++ (actor id' ls3)))         [(id' = id)]
+						   = (count id1 (s1 ++ (actor id' ls1)))         [CILS]
+						   = (count id1 ((s1 ++ (actor id' ls1)) ++ M')) [count.ignore-messages]
+						   = (count id1 (s1 ++ (actor id' ls1) ++ M'))   [++A]
+						   = (count id1 config (itp T n))                [E2]
+						   = zero                                        [A5]])}
+                                      (!chain->
+				       [(F4 & F5 & F0) ==> receive-goal [existence]])
+                                    assume (id' =/= id)
+                                       let {G0 := (!chain->
+						   [C3 ==> (Enabled ((itp T n) then step')) [C2]
+						       ==> (Enabled ((itp T n) then Receive')) 
+						               [(step' = Receive')]]);
+                                            OR1 := (!lemma other-receive-1);
+                                            (and G1a G1b) :=
+					          (!chain->
+						   [(A1 & G0 & id' =/= id)
+						    ==> ((exists ?s1 . 
+                                                           config ((itp T n) then Receive') = 
+                                                             ?s1 ++ (actor id ls)) &
+                                                         forall ?id2 . 
+                                                           (count ?id2 config ((itp T n) then Receive')) =
+							   (count ?id2 config (itp T n))) [OR1]])}
+                                        pick-witness s1 for G1a G1a-w
+                                          let {H1 := (!chain
+						      [(count id1 (s1 ++ (actor id ls)))
+						       = (count id1 config ((itp T n) then Receive'))  
+						                                          [G1a-w]
+						       = (count id1 config ((itp T n)))   [G1b]
+						       = zero                             [A5]])}
+                                          (!chain-> [(G1a-w & H1 & A2) ==> receive-goal  [existence]]))
+                               | (Send' as (send id':id-sort to':id-sort c':Ide)) => 
+                                   let {send-goal := 
+                                         (exists ?s2 ?ls2 .
+                                           config ((itp T n) then Send') = 
+                                            ?s2 ++ (actor id ?ls2) &
+                                           (count id1 (?s2 ++ (actor id ?ls2))) = zero &
+                                           ?ls2 ready-to (create id id1));
+                                        (and E2 E3) := 
+					  (!chain->
+					   [C4-w ==> (before (itp T n) Send' s1 ls1)
+						          [(step' = Send')]
+						 ==> (config (itp T n) = s1 ++ (actor id' ls1) &
+						      ls1 ready-to Send')
+						          [before.sending]])}
+                                   (!two-cases
+				    assume (id' = id)
+                                      let {F0 := (!chain->
+						  [A2 ==> ((next ls Send') ready-to (create id id1))  [A3]]);
+				           F1 := (!chain->
+				   		  [(A4 & E2 & A1 & id' = id) ==> (ls1 = ls)   [UI1]]);
+                                           M' := (One (message' id' LS0 to' c'));
+                                           TS := (!lemma trans-send);
+                                           F3 := (!chain->
+				   		  [(E2 & E3) 
+						   ==> (config ((itp T n) then Send')
+				   		        = s1 ++ (actor id' (next ls1 Send')) ++ M')
+						              [trans-send]
+						        = ((s1 ++ M') ++ (actor id' (next ls1 Send')))
+						              [++A ++C]
+ 						        = ((s1 ++ M') ++ (actor id (next ls Send')))
+ 						              [(id' = id) F1]]);
+                                           CILS := (!lemma count.ignore-local-state);
+                                           ls3 := (next ls Send');
+                                           ls4 := (new-ls ls3);
+                                           F5 := (!chain
+						  [(count id1 ((s1 ++ M') ++ (actor id ls3)))
+						   = (count id1 ((s1 ++ (actor id ls3)) ++ M'))  [++A ++C]
+						   = (count id1 (s1 ++ (actor id ls3))) [count.ignore-messages]
+						   = (count id1 (s1 ++ (actor id' ls3))) [(id' = id)]
+						   = (count id1 (s1 ++ (actor id' ls1))) [CILS]
+						   = (count id1 config (itp T n))        [E2]
+						   = zero                                [A5]])}
+                                      (!chain->
+				       [(F3 & F5 & F0) ==> send-goal [existence]])
+				    assume (id' =/= id)
+				      let {G0 := (!chain->
+				   		  [C3 ==> (Enabled ((itp T n) then Send'))
+				   		      [C2 (step' = Send')]]);
+                                           OS1 := (!lemma other-send-1);
+				   	   (and G1a G1b) := 
+					         (!chain->
+				   		  [(A1 & G0 & id' =/= id)
+				   		   ==> ((exists ?s1 .
+				   			  config ((itp T n) then Send') =
+				   			    ?s1 ++ act) &
+                                                        forall ?id2 .
+                                                          (count ?id2 config ((itp T n) then Send')) =
+                                                          (count ?id2 config (itp T n)))  [OS1]])}
+                                      pick-witness s1 for G1a G1a-w
+                                        let {H1 := (!chain
+						    [(count id1 (s1 ++ (actor id ls)))
+						     = (count id1 config ((itp T n) then Send')) [G1a-w]
+						     = (count id1 config ((itp T n)))   [G1b]
+						     = zero                             [A5]])}
+  				   	(!chain-> [(G1a-w & H1 & A2)  ==> send-goal  [existence]]))
+			       | (Create' as (create id':id-sort id'':id-sort)) => 
+                                   let {create-goal := 
+                                         (exists ?s2 ?ls2 .
+                                           config ((itp T n) then Create') = 
+                                            ?s2 ++ (actor id ?ls2) &
+					   (count id1 (?s2 ++ (actor id ?ls2))) = zero &
+                                           ?ls2 ready-to (create id id1));
+                                        (and E1 (and E2 E3)) :=
+                                              (!chain->
+					       [C4-w ==> (before (itp T n) Create' s1 ls1)
+						     [(step' = Create')]
+						     ==> (config (itp T n) = s1 ++ (actor id' ls1) &
+                                                          (count id'' config (itp T n)) = zero & 
+                                                          ls1 ready-to Create')
+						                   [before.creating]])}
+                                   (!two-cases
+				    assume (id' = id)
+                                      let {F1 := (!chain->
+				   		  [(A4 & E1 & A1 & id' = id) ==> (ls1 = ls)   [UI1]]);
+                                           act'' := (actor id'' (new-ls ls1));
+                                           TS := (!lemma trans-create);
+                                           ls3 := (next ls Create');
+                                           F3 := (!chain->
+				   		  [(E1 & E2 & E3)
+						   ==> (config ((itp T n) then Create')
+				   		         = (s1 ++ (actor id' (next ls1 Create')) ++ act''))
+				   			             [trans-create]
+				   			   = ((s1 ++ act'') ++ (actor id' (next ls1 Create')))
+				   			             [++A ++C]
+				   			   = ((s1 ++ act'') ++ (actor id ls3))
+				   			             [(id' = id) (ls1 = ls)]])}
+                                      (!two-cases
+				       assume (id'' = id1)
+                                         let {G1 := (!chain
+						    [((itp T n) then (create id id1))
+						     = ((itp T n) then Create')
+						                        [(id' = id) (id'' = id1)]
+						     = ((itp T n) then step')
+						                        [(step' = Create')]
+						     = (T' then step')  [C2]
+						     = (itp T (S n))    [B1b-w]])}
+					 (!from-complements create-goal (!sym G1) (~ goal1))
+				       assume (id'' =/= id1)
+				         let {G0 := (Create' = (create id id1));
+					      G2 := (!chain->
+ 						     [A2 ==> (ls3 ready-to (create id id1))  [A3]]);
+					      CILS := (!lemma count.ignore-local-state);
+					      _ := (!sym (id'' =/= id1));
+					      G3 := (!chain
+						     [(count id1 ((s1 ++ act'') ++ (actor id ls3))) 
+						      = (count id1 ((s1 ++ act'') ++ (actor id ls)))  [CILS]
+						      = (count id1 ((s1 ++ (actor id ls)) ++ act''))  [++A ++C]
+						      = (count id1 (s1 ++ (actor id ls)))             [count.same]
+						      = (count id1 (s1 ++ (actor id' ls1)))           [(id' = id) (ls1 = ls)]
+						      = (count id1 config (itp T n))                  [E1]
+						      = zero                                          [A5]])}
+                                         (!chain->
+					  [(F3 & G3 & G2) ==> create-goal  [existence]]))
+				    assume (id' =/= id)
+                                      (!two-cases
+				       assume (id'' = id1)
+                                         let {F1 := (!chain->
+						     [B1b-w ==> ((itp T (S n)) = (itp T n) then Create')
+							    [C2 (step' = Create')]
+							    ==> ((itp T (S n)) = (itp T n) then (create id' id1))
+							    [(id'' = id1)]]);
+                                              F2 := (!chain->
+						     [true ==> (n >= n) [Less=.reflexive]
+							   ==> (n >= n & id' =/= id & F1)  [augment]
+							   ==> (exists ?k ?id' .
+								 ?k >= n & ?id' =/= id & 
+								 (itp T (S ?k)) = (itp T ?k) then (create ?id' id1))
+							   [existence]]);
+                                              F3 := (!chain->
+						     [(A1 & A2) ==> (~ F2)  [id-reservation-axiom]])}
+                                         (!from-complements create-goal F2 (~ F2))
+                                       assume (id'' =/= id1)								 
+				      let {OC1 := (!lemma other-create-1);
+				   	   F1 := (!chain->
+				   		  [C3 ==> (Enabled ((itp T n) then Create'))
+				   		      [C2 (step' = Create')]]);
+                                           (and F2a (and F2b F2c)) := 
+					         (!chain->
+				   		  [(A1 & F1 & id' =/= id)
+				   		   ==> ((exists ?s3 .
+				   			  config ((itp T n) then Create') =
+				   			    ?s3 ++ act) &
+                                                        (count id'' config ((itp T n) then Create')) = one &
+                                                        (forall ?id2 .
+                                                          (?id2 =/= id'' ==>
+                                                            (count ?id2 config ((itp T n) then Create')) =
+                                                            (count ?id2 config (itp T n)))))  [OC1]])}
+                                      pick-witness s3 for F2a F2a-w
+                                        let {_ := (!sym (id'' =/= id1));
+					     G1 :=  (!chain
+						     [(count id1 (s3 ++ act))
+						      = (count id1 config (itp T n) then Create')  [F2a-w]
+						      = (count id1 config (itp T n))                    [F2c]
+						      = zero                                            [A5]])}
+  				   	(!chain-> [(F2a-w & G1 & A2) ==> create-goal  [existence]])))
+                               }}
+                         pick-witnesses s2 ls2 for D1
+                           let {D1-w1 := (config ((itp T n) then step') = 
+                                           s2 ++ (actor id ls2));
+                                D1-w2 := ((count id1 (s2 ++ (actor id ls2))) = zero);
+                                D1-w3 := (ls2 ready-to (create id id1));
+                                E1 := (!chain
+				       [(config (itp T (S n)))
+					= (config (T' then step'))        [B1b-w]
+					= (config ((itp T n) then step')) [C2]
+					= (s2 ++ (actor id ls2))          [D1-w1]]);
+				E2 := (!chain
+				       [(count id1 config (itp T (S n)))
+					= (count id1 (s2 ++ (actor id ls2)))  [E1]
+					= zero                                [D1-w2]])}
+                           (!chain-> [(E1 & E2 & D1-w3) 
+				      ==> goal2 [existence]
+				      ==> goal  [alternate]])))
+
+(evolve Theory [[create-remains-enabled] proof])
+
+#--------------------------------------------------------------------------
+declare receiver, sender, creator: (Id) [] -> Id
+declare contents: Ide
+
+} # Indexed-Transition-Path
+
+#--------------------------------------------------------------------------
+
+module Infinitely-Often-Enabled {
+open Indexed-Transition-Path
+
+define IOE :=
+  (forall step T n s ls .
+    (unique-ids config (itp T n)) & 
+    (before (itp T n) step s ls)
+    ==> (itp T (S n)) = (itp T n) then step
+        | exists k s' ls' . k > n & 
+            (before (itp T k) step s' ls'))
+
+define Theory :=
+  (theory [Indexed-Transition-Path.Theory] [IOE]
+    'Infinitely-Often-Enabled)
+
+define IOE' :=
+  (forall n' step T n s ls .
+    (unique-ids config (itp T n)) &
+    (before (itp T n) step s ls) &
+    n' >= n
+    ==>
+    (exists k s' ls' . k >= n & k <= n' &
+       (before (itp T k) step s' ls') &
+       (itp T (S k)) = (itp T k) then step)
+    | exists k s' ls' . 
+        k > n' & (before (itp T k) step s' ls'))
+
+define proof :=
+  method (theorem adapt)
+   let {given := lambda (P) (get-property P adapt Theory);
+	lemma := method (P) (!property P adapt Theory);
+        chain-> := method (L) (!chain-help given L 'last);
+        [itp unique-ids config before] :=
+          (adapt [itp unique-ids config before])}
+   match theorem {
+     (val-of IOE') =>
+     let {IOE'' :=
+          # A variation such that it can be proved by 
+          # strong-induction (on m):
+           (forall ?m ?n' ?step ?T ?n ?s ?ls .
+	     (unique-ids config (itp ?T ?n)) &
+	     (before (itp ?T ?n) ?step ?s ?ls) &
+	     ?n' >= ?n &
+	     ?m = ?n' - ?n
+	     ==>
+	     (exists ?k ?s' ?ls' . ?k >= ?n & ?k <= ?n' &
+		     (before (itp ?T ?k) ?step ?s' ?ls') &
+		     (itp ?T (S ?k)) = (itp ?T ?k) then ?step)
+	     | exists ?k ?s' ?ls' . 
+	       ?k > ?n' & 
+	       (before (itp ?T ?k) ?step ?s' ?ls'));
+          theorem' := (adapt IOE'');
+          _ :=
+     (!strong-induction.principle theorem'
+      method (m)
+       assume ind-hyp := (strong-induction.hypothesis theorem' m)
+        conclude (strong-induction.conclusion theorem' m)
+         pick-any n' step T n s ls
+         let {A1 := (unique-ids config (itp T n));
+              A2 := (before (itp T n) step s ls);
+              A3 := (n' >= n);
+              A4 := (m = n' - n)}
+         assume (A1 & A2 & A3 & A4)
+           let {B1 := ((itp T (S n)) = (itp T n) then step);
+                B2 := (exists ?k ?s' ?ls' .
+                        ?k > n &
+                        (before (itp T ?k) step ?s' ?ls'));
+		B3 := (!chain-> [(A1 & A2) ==> (B1 | B2) [IOE]])}
+           (!cases B3
+            assume B1
+              let {C1 := (!chain-> [true ==> (n <= n) [N.Less=.reflexive]])}
+              (!chain->
+	       [B1 ==> (n >= n & n <= n' & A2 & B1)  [augment]
+		   ==> (exists ?k ?s' ?ls' . 
+			 ?k >= n & ?k <= n' & 
+			 (before (itp T ?k) step ?s' ?ls') &
+			 (itp T (S ?k)) = (itp T ?k) then step)
+		   [existence]
+		   ==> ((exists ?k ?s' ?ls' . 
+			 ?k >= n & ?k <= n' & 
+			 (before (itp T ?k) step ?s' ?ls') &
+			 (itp T (S ?k)) = (itp T ?k) then step)
+			| (exists ?k ?s' ?ls' .
+                            ?k > n' &
+                            (before (itp T ?k) step ?s' ?ls')))
+		   [alternate]])
+            assume B2
+              pick-witnesses k s' ls' for B2
+                let {B2-w1 := (k > n);
+                     B2-w2 := (before (itp T k) step s' ls')}
+                (!two-cases
+		 assume (k > n')
+                   (!chain->
+		    [(k > n') 
+		     ==> (k > n' & B2-w2) [augment]
+		     ==> (exists ?k ?s' ?ls' .
+                           ?k > n' & (before (itp T ?k) step ?s' ?ls'))
+		     [existence]
+		     ==> ((exists ?k ?s' ?ls' .
+                           n <= ?k & ?k <= n' & 
+                           (before (itp T ?k) step ?s' ?ls') &
+			   (itp T (S ?k)) = (itp T ?k) then step)
+			  | (exists ?k ?s' ?ls' .
+                              ?k > n' & (before (itp T ?k) step ?s' ?ls')))
+		     [alternate]])
+                 assume (~ k > n')
+                   let {C1 := (!chain->
+			       [(~ k > n')
+				==> (k <= n')  [N.Less=.trichotomy2]]);
+                        C2a := (!chain->
+			       [(C1 & k > n)
+                                ==> (n' - k < n' - n) [N.Minus.comparison]
+                                ==> (n' - k < m)      [A4]
+                                ==> (forall ?n' ?step ?T ?n ?s ?ls .
+				      (unique-ids config (itp ?T ?n)) &
+				      (before (itp ?T ?n) ?step ?s ?ls) &
+				      ?n' >= ?n &
+				      n' - k = ?n' - ?n
+				      ==>
+				      ((exists ?k ?s' ?ls' . ?k >= ?n & ?k <= ?n' &
+					 (before (itp ?T ?k) ?step ?s' ?ls') &
+                                         (itp ?T (S ?k)) = (itp ?T ?k) then ?step)
+ 				       | exists ?k ?s' ?ls' . 
+					   ?k > ?n' & 
+					   (before (itp ?T ?k) ?step ?s' ?ls')))
+				[ind-hyp]]);
+                        C2 := (!instance C2a [n' step T k s' ls']);
+                        UIP := (!lemma unique-ids-persistence);
+		        C3 := (!chain->
+			       [(k > n)
+				==> (k >= n)  [N.Less=.Implied-by-<]
+				==> (A1 & k >= n)    [augment]
+				==> (unique-ids config (itp T k))
+				[UIP]]);
+		        C4 := (!reflex (n' - k));
+                        C5 := (exists ?k1 ?s1 ?ls1 . 
+                                ?k1 >= k & ?k1 <= n' & 
+				(before (itp T ?k1) step ?s1 ?ls1) &
+                                (itp T (S ?k1)) = (itp T ?k1) then step);
+                        C6 := (exists ?k2 ?s2 ?ls2 .
+				?k2 > n' &
+				(before (itp T ?k2) step ?s2 ?ls2));
+                        C7 := (!chain->
+			       [(C3 & B2-w2 & C1 & C4)
+				==> (C5 | C6) [C2]])}
+                   (!cases C7
+                     assume C5
+                       pick-witnesses k1 s1 ls1 for C5
+                         let {C5-w1 := (k1 >= k);
+                              C5-w2 := (k1 <= n');
+			      C5-w3 := (before (itp T k1) step s1 ls1);
+                              C5-w4 := ((itp T (S k1)) = (itp T k1) then step)}
+		         (!chain->
+			  [C5-w1
+			   ==> (k1 >= k & k > n)  [augment]
+			   ==> (k1 > n)           [N.Less=.transitive1]
+			   ==> (k1 >= n)          [N.Less=.Implied-by-<]
+			   ==> (k1 >= n & C5-w2 & C5-w3 & C5-w4) [augment]
+			   ==> (exists ?k1 ?s1 ?ls1 .
+                                 ?k1 >= n & ?k1 <= n' & 
+				 (before (itp T ?k1) step ?s1 ?ls1) &
+                                 (itp T (S ?k1)) = (itp T ?k1) then step)
+			   [existence]
+			   ==> ((exists ?k1 ?s1 ?ls1 .
+                                  ?k1 >= n & ?k1 <= n' & 
+ 				  (before (itp T ?k1) step ?s1 ?ls1) &
+                                  (itp T (S ?k1)) = (itp T ?k1) then step)
+				| C6)   [alternate]])
+                    assume C6
+		      (!chain->
+		       [C6 ==> ((exists ?k1 ?s1 ?ls1 . 
+                                  ?k1 >= n & ?k1 <= n' & 
+                                  (before (itp T ?k1) step ?s1 ?ls1) & 
+				  (itp T (S ?k1)) = (itp T ?k1) then step)
+				| C6)
+			    [alternate]])))))}
+     # Now the proof of IOE' by a simple application of IOE'':
+     pick-any n' step T n s ls
+       let {A1 := (unique-ids config (itp T n));
+            A2 := (before (itp T n) step s ls);
+            A3 := (n' >= n);
+            _ := (!reflex (n' - n))}
+       assume (A1 & A2 & A3)
+         (!chain->
+	  [(A1 & A2 & A3 & n' - n = n' - n)
+	   ==> ((exists ?k ?s' ?ls' . ?k >= n & ?k <= n' &
+                 (before (itp T ?k) step ?s' ?ls') &
+		 (itp T (S ?k)) = (itp T ?k) then step)
+	        | exists ?k ?s' ?ls' . 
+                   ?k > n' & 
+                   (before (itp T ?k) step ?s' ?ls'))  [IOE'']])
+   }
+
+(evolve Theory [[IOE'] proof])
+
+} # Infinitely-Often-Enabled
+
+module Fair-Transition-Path {
+ open Indexed-Transition-Path
+ define ls3 := ?ls3:'LS
+ define fair-transition :=
+      (forall T n1 s ls step .
+        (before (itp T n1) step s ls)
+	==> exists n2 s2 ls2 .
+	     n2 >= n1 & 
+	     ((before (itp T n2) step s2 ls2) &
+	      (itp T (S n2)) = (itp T n2) then step
+	      | ~ exists n3 s3 ls3 .
+                    n3 > n2 & 
+                    (before (itp T n3) step s3 ls3)))
+
+ define Theory :=
+  (theory [Indexed-Transition-Path.Theory] [fair-transition]
+    'Fair-Transition-Path)
+} # Fair-Transition-Path
+
+module IOE-Fair-Transition-Path {
+open Infinitely-Often-Enabled 
+open Fair-Transition-Path
+define Theory := 
+  (theory [Infinitely-Often-Enabled.Theory 
+	   Fair-Transition-Path.Theory]
+    [] 'IOE-Fair-Transition-Path)
+
+define transition-happens :=
+  (forall T n s ls step .
+    (unique-ids config (itp T n)) &
+    (before (itp T n) step s ls)
+    ==> exists k s' ls' .
+          k >= n & 
+          (before (itp T k) step s' ls') &
+          (itp T (S k)) = (itp T k) then step)
+
+define proof :=
+  method (theorem adapt)
+   let {given := lambda (P) (get-property P adapt Theory);
+        lemma := method (P) (!property P adapt Theory);
+        chain-> := method (L) (!chain-help given L 'last);
+        [itp unique-ids before config] := (adapt [itp unique-ids before config])}
+   match theorem {
+    (val-of transition-happens) =>
+       pick-any T n s ls step
+         let {A1 := (unique-ids config (itp T n));
+              A2 := (before (itp T n) step s ls)}
+         assume (A1 & A2)
+           let {goal := (exists ?k ?s' ?ls' .
+ 		          ?k >= n &
+                          (before (itp T ?k) step ?s' ?ls') &
+ 			  (itp T (S ?k)) = (itp T ?k) then step);
+	        B1 := (!chain->
+		       [A2
+			==> (exists ?n2 ?s2 ?ls2 .
+                              ?n2 >= n &
+                              ((before (itp T ?n2) step ?s2 ?ls2) &
+                               (itp T (S ?n2)) = (itp T ?n2) then step
+                               | (~ (exists ?n3 ?s3 ?ls3 .
+                                       ?n3 > ?n2 & 
+                                       (before (itp T ?n3) step ?s3 ?ls3)))))
+			[fair-transition]])}
+           pick-witnesses n2 s2 ls2 for B1
+             let {B1-w1 := (n2 >= n);
+                  B1-w2a := ((before (itp T n2) step s2 ls2) &
+                             (itp T (S n2)) = (itp T n2) then step);
+                  B1-w2b := (~ (exists ?n3 ?s3 ?ls3 .
+                                 ?n3 > n2 &
+                                 (before (itp T ?n3) step ?s3 ?ls3)));
+                  C1 := (exists ?k ?s' ?ls' . 
+                          ?k >= n & ?k <= n2 &
+                          (before (itp T ?k) step ?s' ?ls') &
+                          (itp T (S ?k)) = (itp T ?k) then step);
+                  C2 := (exists ?n3 ?s3 ?ls3 .
+                          ?n3 > n2 &
+                          (before (itp T ?n3) step ?s3 ?ls3));
+                  _ := (!lemma IOE');
+                  C3 := (!chain->
+			 [(A1 & A2 & B1-w1) ==> (C1 | C2) [IOE']])}
+             (!cases C3
+              assume C1
+                pick-witnesses k s' ls' for C1
+                  let {C1-w1 := (k >= n);
+		       C1-w2 := (k <= n2);
+                       C1-w3 := (before (itp T k) step s' ls');
+                       C1-w4 := ((itp T (S k)) = (itp T k) then step)}
+                  (!chain->
+		   [(C1-w1 & C1-w3 & C1-w4)
+		    ==> goal    [existence]])
+              assume C2
+                (!cases (B1-w2a | B1-w2b)
+                 assume B1-w2a
+                   (!chain-> [(B1-w1 & B1-w2a) ==> goal [existence]])
+                 assume B1-w2b
+                   (!from-complements goal C2 B1-w2b)))
+   }
+
+(evolve Theory [[transition-happens] proof])
+
+define receive-happens :=
+      (forall T n s ls c .
+        (unique-ids config (itp T n)) &
+        config (itp T n) = s ++ (actor receiver ls) ++ 
+ 	                     (message sender receiver c) & 
+       	ls ready-to (receive receiver sender c)
+	==>
+	exists k s' ls' .
+	  k >= n & 
+	  config (itp T k) = s' ++ (actor receiver ls') ++ 
+	                       (message sender receiver c) & 
+	  ls' ready-to (receive receiver sender c) &
+	  (itp T (S k)) = (itp T k) then (receive receiver sender c))
+
+define send-happens :=
+       (forall T n s ls c .
+         (unique-ids config (itp T n)) &
+         config (itp T n) = s ++ (actor sender ls) &
+         ls ready-to (send sender receiver c)
+	 ==>
+	 exists k s' ls' .
+           k >= n & 
+	   config (itp T k) = s' ++ (actor sender ls') &
+	   ls' ready-to (send sender receiver c) &
+	   (itp T (S k)) = (itp T k) then (send sender receiver c))
+
+define proofs := 
+  method (theorem adapt)
+    let {given := lambda (P) (get-property P adapt Theory);
+         lemma := method (P) (!property P adapt Theory);
+         chain-> := method (L) (!chain-help given L 'last);
+         [LS0 itp sender receiver unique-ids config ready-to before] :=
+           (adapt [LS0 itp sender receiver unique-ids config ready-to before]);
+         _ := (!lemma transition-happens)}
+    match theorem {
+      (val-of receive-happens) =>
+       pick-any T n s ls c
+        let {step := (receive receiver sender c);
+             M := (One (message' sender LS0 receiver c));
+             A1 := (unique-ids config (itp T n));
+             A2 := (config (itp T n) = s ++ (actor receiver ls) ++ M);
+             A3 := (ls ready-to step)}
+        assume (A1 & A2 & A3)
+          let {B1 := (!chain->
+		      [(A2 & A3) ==> (before (itp T n) step s ls)
+		       [before.receiving]])}
+          (!chain->
+	   [(A1 & B1) 
+	    ==> (exists ?k ?s' ?ls' .
+		  ?k >= n &
+		  (before (itp T ?k) step ?s' ?ls') &
+		  (itp T (S ?k)) = (itp T ?k) then step)
+                               [transition-happens]
+	    ==> (exists ?k ?s' ?ls' .
+	          ?k >= n &
+		  (config (itp T ?k) = ?s' ++ (actor receiver ?ls') ++ M &
+		   ?ls' ready-to step) &
+	          (itp T (S ?k)) = (itp T ?k) then step)
+                       	       [before.receiving]
+	    ==> (exists ?k ?s' ?ls' .
+	          ?k >= n &
+		  config (itp T ?k) = ?s' ++ (actor receiver ?ls') ++ M &
+		  ?ls' ready-to step &
+		  (itp T (S ?k)) = (itp T ?k) then step)
+# Just using taut as a unary method, this is very slow: 5 minutes on a Mac Mini (used to be fast)
+#	    [taut]])
+                               [method (p q) (!mp (!taut (p ==> q)) p)]])
+    | (val-of send-happens) =>
+       pick-any T n s ls c
+        let {step := (send sender receiver c);
+             A1 := (unique-ids config (itp T n));
+             A2 := (config (itp T n) = s ++ (actor sender ls));
+             A3 := (ls ready-to step)}
+        assume (A1 & A2 & A3)
+          let {B1 := (!chain->
+		      [(A2 & A3) ==> (before (itp T n) step s ls)
+		       [before.sending]])}
+          (!chain->
+	   [(A1 & B1) 
+	    ==> (exists ?k ?s' ?ls' .
+		  ?k >= n &
+		  (before (itp T ?k) step ?s' ?ls') &
+		  (itp T (S ?k)) = (itp T ?k) then step)
+                               [transition-happens]
+	    ==> (exists ?k ?s' ?ls' .
+	          ?k >= n &
+		  (config (itp T ?k) = ?s' ++ (actor sender ?ls') &
+		   ?ls' ready-to step) &
+		   (itp T (S ?k)) = (itp T ?k) then step)
+	                       [before.sending]
+	    ==> (exists ?k ?s' ?ls' .
+	          ?k >= n &
+		  config (itp T ?k) = ?s' ++ (actor sender ?ls') &
+		  ?ls' ready-to step &
+		  (itp T (S ?k)) = (itp T ?k) then step)
+# Just using taut as a unary method, this is very slow: 5 minutes on a Mac Mini (used to be fast)
+#	    [taut]])
+                              [method (p q) (!mp (!taut (p ==> q)) p)]])
+    }
+                                       
+(evolve Theory [[receive-happens send-happens] proofs])
+} # IOE-Fair-Transition-Path
+

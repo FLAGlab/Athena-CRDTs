@@ -1,0 +1,32 @@
+load "fairness.ath"
+
+module Test1 {
+
+open IOE-Fair-Transition-Path
+
+assert (theory-axioms Theory)
+
+
+domain Name
+declare Rec, Sen: Name
+
+define naming := (renaming [receiver Rec  sender Sen])
+
+(!property-test IOE' naming Theory)
+(!property-test itp-connected naming Theory)
+(!property-test transition-happens naming Theory)
+(!property-test receive-happens naming Theory)
+(!property-test send-happens naming Theory)
+#(!property-test create-happens naming Theory)
+
+(!property-test IOE-Fair-Transition-Path.unique-ids-persistence
+		naming Theory)
+
+(!property-test receive-remains-enabled naming Theory)
+(!property-test send-remains-enabled naming Theory)
+(!property-test create-remains-enabled naming Theory)
+
+} # Test1
+
+
+

@@ -1,0 +1,49 @@
+load "gcounter_specification"
+load "../../framework/payload"
+module GCounterAdapter {
+  open GCounterSpec
+  open Payload
+  
+  # Convenience wrappers: pass GCounterSpec operations to Payload functions
+  define (gc-init ids) := (init gc-initial ids)
+  define (gc-reduce cfg) := (reduce gc-apply-update cfg)
+  define (gc-reduce* cfg) := (reduce* gc-apply-update cfg)
+  define (gc-broadcast cfg to-actors operation) := (broadcast cfg to-actors operation)
+  define (gc-merge-states left right) := (merge-states gc-merge left right)
+  
+  # Prove that gc-merge satisfies abstract semilattice properties
+  # by instantiating Properties.Commutative, Associative, Idempotent with gc-merge
+  module SemilatticeProofs {
+    # Instantiate abstract Properties with gc-merge
+    define commutative-for-gc-merge :=
+      (forall ?s1:N ?s2:N . (gc-merge ?s1 ?s2) = (gc-merge ?s2 ?s1))
+    
+    define associative-for-gc-merge :=
+      (forall ?s1:N ?s2:N ?s3:N . 
+        (gc-merge (gc-merge ?s1 ?s2) ?s3) = (gc-merge ?s1 (gc-merge ?s2 ?s3)))
+    
+    define idempotent-for-gc-merge :=
+      (forall ?s:N . (gc-merge ?s ?s) = ?s)
+    
+    # Prove these by referencing the theory proofs
+    conclude commutative-holds := commutative-for-gc-merge
+      pick-any s1:N s2:N
+        (!chain [(gc-merge s1 s2)
+               = (gc-merge s2 s1)  [GCounterSpec.Theory.merge-commutative-holds]])
+    
+    conclude associative-holds := associative-for-gc-merge
+      pick-any s1:N s2:N s3:N
+        (!chain [(gc-merge (gc-merge s1 s2) s3)
+               = (gc-merge s1 (gc-merge s2 s3))  [GCounterSpec.Theory.merge-associative-holds]])
+    
+    conclude idempotent-holds := idempotent-for-gc-merge
+      pick-any s:N
+        (!chain [(gc-merge s s)
+               = s  [GCounterSpec.Theory.merge-idempotent-holds]])
+  }
+} 
+(print "\n=== GCounter Payload Adapter ===\n")
+(print "[OK] Operations from GCounterSpec: gc-merge, gc-initial, gc-apply-update\n")
+(print "[OK] Unified payload functions: gc-init, gc-reduce, gc-merge-states\n")
+(print "[OK] Proved semilattice properties: commutative, associative, idempotent\n")
+(print "\n[SUCCESS] Single source of truth - operations defined once, used everywhere!\n")

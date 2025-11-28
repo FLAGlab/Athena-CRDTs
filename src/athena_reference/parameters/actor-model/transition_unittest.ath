@@ -1,0 +1,23 @@
+load "transition.ath"
+
+module Test2 {
+open Transition-Path-Relation
+
+assert (theory-axioms Theory)
+(!property-test trans-receive no-renaming Theory)
+(!property-test trans-send no-renaming Theory)
+(!property-test trans-create no-renaming Theory)
+(!property-test leads-to no-renaming Theory)
+(!property-test unique-ids-step-persistence no-renaming Theory)
+(!property-test unique-ids-persistence no-renaming Theory)
+(!property-test other-receive-1 no-renaming Theory)
+(!property-test other-receive-2 no-renaming Theory)
+(!property-test other-send-1 no-renaming Theory)
+(!property-test other-send-2 no-renaming Theory)
+(!property-test other-create-1 no-renaming Theory)
+(!property-test other-create-2 no-renaming Theory)
+(!property-test actor-persistence no-renaming Theory)
+
+} # Test2
+
+

@@ -1,0 +1,1355 @@
+fpmics 2015/12/8 11:38 Page 445 #467
+8Natural number orderings
+IN THIS chapter we return to the study of proof methods for propertie s of the natural
+number data type. In Chapter 3, we concentrated on equality p roperties, but here we turn
+toordering properties and proof methods suitable for dealing with them . In the process,
+we will be putting into further practice some of the methods w e studied in the previous
+chapters. These ordering properties also prepare us for dea ling with integer addition and
+subtraction in Chapter 9.
+We start by axiomatically deﬁning a “strictly-less-than” o perator, <, on natural num-
+bers, and from it and equality easily obtain deﬁnitions of ot her commonly used ordering
+operators ( ≤,>,≥). Although only a few axioms are required to deﬁne <, there are many
+other properties that can be proved as theorems about it and t he other ordering operators.
+Subtraction of natural numbers is closely related to their o rdering, so we include an
+axiomatization and a few theorems about this operator. Thes e results will be used in deﬁn-
+ing integer addition and subtraction in Chapter 9 and for deﬁ ning quotient and remainder
+operators in Chapter 13.
+We also introduce ordered lists of natural numbers, a subset of the list type we studied in
+Chapter 3. This important subset is deﬁned with the aid of a pr edicate on lists, a technique
+also used in the ﬁnal section of the chapter to deﬁne binary search trees as a subset of
+abinary tree data type. With binary trees that have natural number values in their nodes
+we can take advantage of the natural number ordering propert ies to achieve more efﬁcient
+searching than with the linear list data type we studied in Ch apter 3, as we will see in detail
+in Chapter 11.1But ﬁrst we have to deﬁne binary trees and introduce a corresp onding
+induction principle—distinguished from the induction pri nciples for natural numbers and
+lists in having two induction hypotheses , one for each of a binary tree node’s subtrees—and
+use it in proving several important properties about binary trees, including the concept of
+an “inorder tree walk.” The chapter then concludes with the d eﬁnition of the binary search
+tree subset and the proof of an elegant theorem connecting bi nary search trees, inorder tree
+walks, and ordered lists.
+8.1 Properties of natural number ordering functions
+We begin with properties of a strict ordering operator <. Since the axioms we will use
+for this operator do not involve equality, there is much less of a role in proofs about <
+for equality chaining than there was in Chapter 3. But we will get plenty of practice with
+implication chaining, case analysis, and proof by contradi ction.
+1 In Chapters 14 and 15 we will generalize to binary search tre es over any domain with an ordering relation
+satisfying axioms of a strict weak ordering relation (Secti on 14.8.3).
+
+fpmics 2015/12/8 11:38 Page 446 #468
+446 CHAPTER 8. NATURAL NUMBER ORDERINGS
+To deﬁne strict inequality on natural numbers, we introduce the following symbol decla-
+ration and module nested within module N. Within module N.Less we deﬁne three axioms
+and a number of sentences we intend to prove as theorems:
+1load"nat-plus"
+2
+3extend-module N {
+4openPlus
+5
+6declare <: [N N] -> Boolean
+7
+8define [m n n/quotesingle.Varx y z] := [?m:N ?n:N ?n /quotesingle.Var:N ?x:N ?y:N ?z:N]
+9
+10module Less {
+11
+12assert zero<S := (forall n . zero < (S n))
+13assert not-zero := (forall m .˜(m < zero))
+14assert injective := (forall m n . (S m) < (S n) <==> m < n)
+15
+16define <S := (forall n . n < (S n))
+17define =zero := (forall n .˜zero < n ==> n = zero)
+18define zero< := (forall n . n =/= zero ==> zero < n)
+19define S1 := (forall x y . (S x) < y ==> x < y)
+20define S2 := (forall x y . x < y ==> x < (S y))
+21define S4 := (forall m n . (S m) < n ==> (exists n /quotesingle.Var. n = (S n /quotesingle.Var)))
+22define S-step := (forall x y . x < (S y) & x =/= y ==> x < y)
+23define discrete := (forall n .˜(exists x . n < x & x < (S n)))
+24}# close module Less
+Each of the deﬁned properties (lines 16-23) can be proved by i nduction. The ﬁrst is quite
+easy (this proof and those that follow are expressed within t he scope of module Nextension,
+but outside the scope of module N.Less ):
+by-induction Less.<S {
+  zero => (!chain-> [true ==> (zero < (S zero)) [Less.zero<S]] )
+  | (S n) => (!chain-> [(n < (S n))
+  ==> ((S n) < (S (S n))) [Less.injective]])
+}
+More typically, proofs about <require case-splitting in one or both of the basis case
+and inductive step, and proof by contradiction is also frequ ently useful, as in the following
+proof of Less.S1 .
+by-induction Less.S1 {
+  zero =>
+  conclude (forall ?y . (S zero) < ?y ==> zero < ?y)
+  pick-any y
+    assume less := ((S zero) < y)
+
+fpmics 2015/12/8 11:38 Page 447 #469
+8.1. PROPERTIES OF NATURAL NUMBER ORDERING FUNCTIONS 447
+(!two-cases
+  assume (y = zero)
+    (!by-contradiction (zero < y)
+      assume (˜zero < y)
+        let{not-less :=
+          conclude (˜(S zero) < y)
+          (!chain->
+          [true ==> (˜(S zero) < zero) [Less.not-zero]
+          ==> (˜(S zero) < y) [(y = zero)]])}
+          (!absurd less not-less))
+          assume nonzero := (y =/= zero)
+            let{has-predecessor :=
+              (!chain-> [nonzero ==> (exists ?m . y = (S ?m))
+              [nonzero-S]])}
+              pick-witness mforhas-predecessor
+                (!chain->
+                [true ==> (zero < (S m)) [Less.zero<S]
+                ==> (zero < y) [(y = (S m))]]))
+                | (S n) =>
+                conclude (forall ?y . (S (S n)) < ?y ==> (S n) < ?y)
+                let{induction-hypothesis := (forall ?y . (S n) < ?y ==> n < ?y)}
+                  pick-any y
+                    assume less := ((S (S n)) < y)
+                      (!two-cases
+                        assume (y = zero)
+                          (!by-contradiction ((S n) < y)
+                            assume (˜(S n) < y)
+                              let{not-less :=
+                                (!chain->
+                                [true
+                                ==> (˜(S (S n)) < zero) [Less.not-zero]
+                                ==> (˜(S (S n)) < y) [(y = zero)]])}
+                                (!absurd less not-less))
+                                assume nonzero := (y =/= zero)
+                                  let{has-predecessor :=
+                                    (!chain->
+                                    [nonzero
+                                    ==> (exists ?m . y = (S ?m)) [nonzero-S]])}
+                                    pick-witness mforhas-predecessor witnessed
+                                      (!chain->
+                                      [((S (S n)) < y)
+                                      ==> ((S (S n)) < (S m)) [witnessed]
+                                      ==> ((S n) < m) [Less.injective]
+                                      ==> (n < m) [induction-hypothesis]
+                                      ==> ((S n) < (S m)) [Less.injective]
+                                      ==> ((S n) < y) [(y = (S m))]]))
+                                    }
+
+fpmics 2015/12/8 11:38 Page 448 #470
+448 CHAPTER 8. NATURAL NUMBER ORDERINGS
+Note that in both the basis case and the inductive step we prov e the the existentially
+quantiﬁed sentence (exists ?m . y = (S ?m)) and pick a witness, m, for it. We will return
+to this example shortly to see a simpler way of writing these p arts of the proof.
+The proof of Less.S2 is much simpler:
+by-induction Less.S2 {
+  zero =>
+  conclude (forall ?y . zero < ?y ==> zero < (S ?y))
+  pick-any y
+    assume (zero < y)
+      (!chain-> [true ==> (zero < (S y)) [Less.zero<S]])
+      | (S m) =>
+      conclude (forall ?y . (S m) < ?y ==> (S m) < (S ?y))
+      pick-any y
+        (!chain [((S m) < y) ==> (m < y) [Less.S1]
+        ==> ((S m) < (S y)) [Less.injective]])
+      }
+      The key point to note about this proof is that in the inductive step the induction hypoth-
+      esis wasn’t needed. We didn’t really need to set up the proof w ithby-induction at all;
+      we could have written it instead with case analysis, and in th e nonzero case proved
+      (exists ?m . y = (S ?m)) and picked a witness for it, just as we did in the proof of
+      Less.S1 . But by comparison with the above proof, the result would be a bit longer and
+      more complex. There is a third alternative that retains the s implicity of the above proof
+      but makes clearer that there’s no induction involved: using Athena’s datatype-cases form
+      instead of by-induction . There is no other change needed in the proof:
+      datatype-cases Less.S2 {
+        zero =>
+        conclude (forall ?y . zero < ?y ==> zero < (S ?y))
+        pick-any y
+          assume (zero < y)
+            (!chain-> [true ==> (zero < (S y)) [Less.zero<S]])
+            | (S m) =>
+            conclude (forall ?y . (S m) < ?y ==> (S m) < (S ?y))
+            pick-any y
+              (!chain [((S m) < y) ==> (m < y) [Less.S1]
+              ==> ((S m) < (S y)) [Less.injective]])
+            }
+            Returning to Less.S1 , we can use datatype-cases for the case splitting within both the
+            basis case and the inductive step, thus signiﬁcantly simpli fying the proof:
+            by-induction Less.S1 {
+              zero =>
+              datatype-cases (forall ?y . (S zero) < ?y ==> zero < ?y) {
+                zero =>
+                assume is-less := ((S zero) < zero)
+
+fpmics 2015/12/8 11:38 Page 449 #471
+8.1. PROPERTIES OF NATURAL NUMBER ORDERING FUNCTIONS 449
+let{is-not-less := (!chain->
+  [true ==> (˜(S zero) < zero)
+  [Less.not-zero]])}
+  (!from-complements (zero < zero) is-less is-not-less)
+  | (S m) =>
+  assume ((S zero) < (S m))
+    (!chain-> [true ==> (zero < (S m)) [Less.zero<S]])
+  }
+  | (S n) =>
+  let{induction-hypothesis := (forall ?y . (S n) < ?y ==> n < ?y)}
+    datatype-cases (forall ?y . (S (S n)) < ?y ==> (S n) < ?y) {
+      zero =>
+      assume less := ((S (S n)) < zero)
+        let{not-less := (!chain->
+          [true ==> (˜(S (S n)) < zero)
+          [Less.not-zero]])}
+          (!from-complements ((S n) < zero) less not-less)
+          | (S m) =>
+          (!chain [((S (S n)) < (S m))
+          ==> ((S n) < m) [Less.injective]
+          ==> (n < m) [induction-hypothesis]
+          ==> ((S n) < (S m)) [Less.injective]])
+        }
+      }
+      Exercise 8.1: ProveLess.S-step ,without usingdatatype-cases for case analysis.
+      Exercise 8.2: ProveLess.S-step , with case-splitting done using datatype-cases in each
+      of the basis case and inductive step.
+      *Exercise 8.3: ProveLess.discrete .Hint: In each of the basis case and inductive step,
+      start immediately into a proof by contradiction. This yield s an existential premise; pick a
+      witnessxand split into zero and nonzero cases of x.
+      .1.1 Transitive, irreﬂexive, and asymmetric properties
+      The next collection of properties of <concerns transitivity:
+      extend-module Less {
+        define transitive := (forall x y z . x < y & y < z ==> x < z)
+        define transitive1 := (forall x y z . x < y &˜z < y ==> x < z)
+        define transitive2 := (forall x y z . x < y &˜x < z ==> z < y)
+        define transitive3 := (forall x y z .˜y < x & y < z ==> x < z)
+      }# close module Less
+
+fpmics 2015/12/8 11:38 Page 450 #472
+450 CHAPTER 8. NATURAL NUMBER ORDERINGS
+If we attempt to prove transitive by straightforwardly inducting on x, it turns out that
+within both the basis case and inductive step, case-splitti ng on zero and nonzero values is
+required for both yandz. While it is possible to obtain the proof in this way (see Exer -
+cise 8.26), such proofs can be tedious both to write and to rea d. In such circumstances,
+it is sometimes helpful to try inducting on another variable rather than the ﬁrst, to see if
+that allows a simpler proof. Athena’s by-induction form does not provide a direct way
+to specify the variable to induct on, but we can get around thi s technical limitation sim-
+ply by restating the property with a different order of the qu antiﬁers, proving the restated
+property by induction on its ﬁrst variable, then deriving th e originally stated property by
+substitution. We follow this approach in the following proo f:
+conclude Less.transitive
+let
+{transitive0 :=
+# A version with the easiest-to-induct-on variable first:
+(forall ?z ?x ?y . ?x < ?y & ?y < ?z ==> ?x < ?z);
+_ :=by-induction transitive0 {
+zero =>
+pick-any x y
+  assume (x < y & y < zero)
+    let{not-less := (!chain->
+      [true ==> (˜y < zero) [Less.not-zero]])}
+      (!from-complements (x < zero) (y < zero) not-less)
+      | (S n) =>
+      let{induction-hypothesis :=
+        (forall ?x ?y . ?x < ?y & ?y < n ==> ?x < n)}
+        pick-any x y
+          assume (x < y & y < (S n))
+            conclude (x < (S n))
+            let{_ :=conclude (x < n)
+              (!two-cases
+                assume (y = n)
+                  (!chain->
+                  [(x < y) ==> (x < n) [(y = n)]])
+                  assume (y =/= n)
+                    (!chain->
+                    [(y =/= n)
+                    ==> (y < (S n) & y =/= n) [augment]
+                    ==> (y < n) [Less.S-step]
+                    ==> (x < y & y < n) [augment]
+                    ==> (x < n) [induction-hypothesis]]))}
+                    (!chain-> [(x < n) ==> (x < (S n)) [Less.S2]])
+                  }}
+                  pick-any x y z
+                    (!chain [(x < y & y < z) ==> (x < z) [transitive0]])
+
+fpmics 2015/12/8 11:38 Page 451 #473
+8.1. PROPERTIES OF NATURAL NUMBER ORDERING FUNCTIONS 451
+How can we discover which variable is easiest to induct on, ot her than just by trying them
+one by one? In Section 13.2, we will discuss a heuristic that i s often useful in making the
+choice.
+Exercise 8.4: ProveLess.transitive1 .
+Exercise 8.5: ProveLess.transitive2 .
+Exercise 8.6: ProveLess.transitive3 .
+Other key properties of <include irreﬂexivity andasymmetry :
+extend-module Less {
+  define irreflexive := (forall n .˜n < n)
+  define asymmetric := (forall m n . m < n ==>˜n < m)
+}# close module Less
+Less.irreflexive , having only a single quantiﬁed variable, has a simple induc tive proof:
+by-induction Less.irreflexive {
+  zero =>
+  (!chain-> [true ==> (˜zero < zero) [Less.not-zero]])
+  | (S n) =>
+  (!chain-> [(˜n < n) ==> (˜(S n) < (S n)) [Less.injective]])
+}
+And, with the transitive and irreﬂexive properties at hand t o use as lemmas,
+Less.asymmetric doesn’t even require induction:
+conclude Less.asymmetric
+pick-any x y
+  assume (x < y)
+    (!by-contradiction (˜y < x)
+      assume (y < x)
+        let{less := (!chain->
+          [(y < x)
+          ==> (x < y & y < x) [augment]
+          ==> (x < x) [Less.transitive]]);
+          not-less := (!chain->
+          [true ==> (˜x < x) [Less.irreflexive]])}
+          (!absurd less not-less))
+          That asymmetry can be proved from transitivity and irreﬂexi vity without induction sug-
+          gests the relation between these properties has greater gen erality than just for the natural
+          numbers. In fact, transitivity and irreﬂexivity are the deﬁ ning axioms of what mathemati-
+          cians call a strict partial order , which has a myriad of useful instances. We will encounter
+          the general case of strict partial orders in Chapter 14 as par t of our study of proofs at an
+          abstract level.
+
+fpmics 2015/12/8 11:38 Page 452 #474
+452 CHAPTER 8. NATURAL NUMBER ORDERINGS
+The following property is an easy consequence of Less.S1 and irreﬂexivity:
+extend-module Less {
+  define S-not-< := (forall n .˜(S n) < n)
+}# close module Less
+conclude Less.S-not-<
+pick-any n
+  (!by-contradiction (˜(S n) < n)
+    assume ((S n) < n)
+      (!absurd
+      (!chain-> [((S n) < n) ==> (n < n) [Less.S1]])
+      (!chain-> [true ==> (˜n < n) [Less.irreflexive]])))
+      .1.2 Trichotomy properties
+      Strict inequality deﬁnes a total ordering on the natural numbers. The property expressing
+      this is called trichotomy , reﬂecting the fact that one of three possibilities always h olds.
+      While it could be expressed as a disjunction of the three poss ibilities, other forms that are
+      often more convenient in proofs are stated here:
+      extend-module Less {
+        define trichotomy := (forall m n .˜m < n & m =/= n ==> n < m)
+        define trichotomy1 := (forall m n .˜m < n &˜n < m ==> m = n)
+        define trichotomy2 := (forall m n . m = n <==>˜m < n &˜n < m)
+      }
+      We give the proof of only the ﬁrst and leave the other two as exe rcises.
+      by-induction Less.trichotomy {
+        zero =>
+        pick-any n
+          assume (˜zero < n & zero =/= n)
+            conclude (n < zero)
+            let{has-predecessor :=
+              (!chain->
+              [(zero =/= n)
+              ==> (n =/= zero) [sym]
+              ==> (exists ?k . n = (S ?k)) [nonzero-S]])}
+              pick-witness kforhas-predecessor
+                let{Less := (!chain->
+                  [true ==> (zero < (S k)) [Less.zero<S]
+                  ==> (zero < n) [(n = (S k))]]);
+                  not-Less := (˜zero < n)}
+                  (!from-complements (n < zero) Less not-Less)
+                  | (S m) =>
+                  let{induction-hypothesis :=
+
+fpmics 2015/12/8 11:38 Page 453 #475
+8.1. PROPERTIES OF NATURAL NUMBER ORDERING FUNCTIONS 453
+(forall ?n . (˜m < ?n & m =/= ?n) ==> ?n < m)}
+datatype-cases (forall ?n .˜(S m) < ?n & (S m) =/= ?n ==>
+  ?n < (S m))
+  { zero =>
+  assume (˜(S m) < zero & (S m) =/= zero)
+    (!chain-> [true ==> (zero < (S m)) [Less.zero<S]])
+    | (S k) =>
+    assume A := (˜(S m) < (S k) & (S m) =/= (S k))
+      (!chain->
+      [A ==> (˜m < k & m =/= k) [Less.injective injective]
+      ==> (k < m) [induction-hypothesis]
+      ==> ((S k) < (S m)) [Less.injective]])
+    }
+  }
+  Exercise 8.7: ProveLess.trichotomy1 (usingLess.trichotomy as a lemma).
+  Exercise 8.8: ProveLess.trichotomy2 (usingLess.trichotomy1 as a lemma).
+  .1.3 Less-equal properties
+  Other ordering operators— ≤,>,≥—can be deﬁned in terms of <and=. We restrict our
+  attention here to ≤and at once introduce a substantial collection of its proper ties:
+  declare <=: [N N] -> Boolean
+  module Less= {
+    openLess
+    assert definition := (forall x y . x <= y <==> x < y | x = y)
+    define Implied-by- < := (forall m n . m < n ==> m <= n)
+    define Implied-by-equal := (forall m n . m = n ==> m <= n)
+    define reflexive := (forall n . n <= n)
+    define zero<= := (forall n . zero <= n)
+    define S-zero-S-n := (forall n . (S zero) <= (S n))
+    define injective := (forall n m . (S n) <= (S m) <==> n <= m)
+    define not-S := (forall n .˜(S n) <= n)
+    define S-not-equal := (forall k n . (S k) <= n ==> (k =/= n))
+    define discrete := (forall m n . m < n ==> (S m) <= n)
+    define transitive := (forall x y z . x <= y & y <= z ==> x <= z)
+    define transitive1 := (forall x y z . x < y & y <= z ==> x < z)
+    define transitive2 := (forall x y z . x <= y & y < z ==> x < z)
+    define S1 := (forall n m . n <= m ==> n < (S m))
+    define S2 := (forall n m . n <= m ==> n <= (S m))
+    define S3 := (forall n . n <= (S n))
+    define trichotomy1 := (forall m n .˜n <= m ==> m < n)
+
+fpmics 2015/12/8 11:38 Page 454 #476
+454 CHAPTER 8. NATURAL NUMBER ORDERINGS
+define trichotomy2 := (forall m n .˜n < m ==> m <= n)
+define trichotomy3 := (forall m n . n < m ==>˜m <= n)
+define trichotomy4 := (forall m n . n <= m ==>˜m < n)
+define trichotomy5 := (forall m n . m <= n & n <= m ==> m = n)
+define Plus-cancellation :=
+(forall k m n . m + k <= n + k ==> m <= n)
+define Plus-k := (forall k m n . m <= n ==> m + k <= n + k)
+define k-Less= := (forall k m n . n = m + k ==> m <= n)
+define zero2 := (forall n . n <= zero ==> n = zero)
+define not-S-zero := (forall n .˜(S n) <= zero)
+define S4 :=
+(forall m n . (S m) <= n ==> exists n /quotesingle.Var. n = (S n /quotesingle.Var))
+define S5 := (forall n m . n <= S m & n =/= S m
+==> n <= m)
+define =zero := (forall m . m < one ==> m = zero)
+define zero<=one := (forall m . m = zero ==> m <= one)
+}# close module Less=
+OnlyLess=.definition needs to be asserted as an axiom; they rest are theorems prova ble
+from the Less=.definition and properties of <and equality. It should be noted that induc-
+tion isn’t necessary for any of the proofs. Instead, they pro vide good practice working with
+disjunctions and, in many cases, using proof by contradicti on.
+We consider here only a few of the proofs and leave the rest as e xercises. The ﬁrst two
+properties follow simply from the deﬁnition, but offer exam ples of use of the alternate
+method in implication chains.
+  conclude Less=.Implied-by- <
+  pick-any m n
+    (!chain [(m < n) ==> (m < n | m = n) [alternate]
+    ==> (m <= n) [Less=.definition]])
+    conclude Less=.Implied-by-equal
+    pick-any m:N n:N
+      (!chain [(m = n) ==> (m < n | m = n) [alternate]
+      ==> (m <= n) [Less=.definition]])
+      To prove Less=.zero<= , we split into zero and nonzero cases, for which the best tool at
+      hand isdatatype-cases :
+      datatype-cases Less=.zero<= {
+        zero =>
+        (!chain->
+        [(zero = zero) ==> (zero <= zero) [Less=.Implied-by-equal] ])
+        | (S n) =>
+        (!chain->
+        [true ==> (zero < (S n)) [Less.zero<S]
+        ==> (zero <= (S n)) [Less=.Implied-by- <]])
+
+fpmics 2015/12/8 11:38 Page 455 #477
+8.1. PROPERTIES OF NATURAL NUMBER ORDERING FUNCTIONS 455
+}
+Exercise 8.9: ProveLess=.S-zero-S-n .Hint: Split into zero and nonzero cases using
+datatype-cases .
+  Proof of the next property, Less=.injective , provides a nice illustration of the power of
+  equivalence chaining:
+  conclude Less=.injective
+  pick-any n:N m:N
+    (!chain
+    [((S n) <= (S m))
+    <==> ((S n) < (S m) | (S n) = (S m)) [Less=.definition]
+    <==> (n < m | n = m) [Less.injective injective]
+    <==> (n <= m) [Less=.definition]])
+    SinceLess=.not-S is a (quantiﬁed) negation, we use proof by contradiction:
+    conclude Less=.not-S
+    pick-any n
+      (!by-contradiction (˜(S n) <= n)
+        assume hyp := ((S n) <= n)
+          let{disjunction :=
+            (!chain->
+            [hyp ==> ((S n) < n | (S n) = n) [Less=.definition]])}
+            (!cases disjunction
+              assume hyp1 := ((S n) < n)
+                let{not-hyp1 := (!chain-> [true ==> (˜hyp1)
+                  [Less=.S-not-<]])}
+                  (!absurd hyp1 not-hyp1)
+                  assume hyp2 := ((S n) = n)
+                    let{not-hyp2 := (!chain->
+                      [true ==> (˜hyp2) [S-not-same]])}
+                      (!absurd hyp2 not-hyp2)))
+                      The following proof of Less=.discrete provides an interesting example of generating
+                      an existential property in order to contradict the negated o ne inLess.discrete :
+                      conclude Less=.discrete
+                      pick-any m n
+                        assume (m < n)
+                          (!by-contradiction ((S m) <= n)
+                            assume p := (˜(S m) <= n)
+                              let{in-between := (exists ?n . m < ?n & ?n < (S m))}
+                                (!absurd
+
+fpmics 2015/12/8 11:38 Page 456 #478
+456 CHAPTER 8. NATURAL NUMBER ORDERINGS
+(!chain->
+[p ==> (˜((S m) < n | (S m) = n)) [Less=.definition]
+==> (˜(S m) < n & (S m) =/= n) [dm]
+==> (n < (S m)) [Less=.trichotomy]
+==> (m < n & n < (S m)) [augment]
+==> in-between [existence]])
+(!chain->
+[true ==> (˜in-between) [Less.discrete]])))
+Proving the remaining Less= properties stated thus far is left to the additional exercis es
+section.
+.1.4 Combining ordering and arithmetic
+We conclude this chapter by considering a simple case of inte raction between natural num-
+ber addition and ordering operators.
+define k := ?k:N
+extend-module Less {
+  define Plus-cancellation :=
+  (forall k m n . m + k < n + k ==> m < n)
+  define Plus-k := (forall k m n . m < n ==> m + k < n + k)
+}# close module Less
+extend-module Less= {
+  define Plus-cancellation :=
+  (forall k m n . m + k <= n + k ==> m <= n)
+  define Plus-k := (forall k m n . m <= n ==> m + k <= n + k)
+}# close module Less=
+We introduce these properties together since it is useful in proving them to consider both
+cancellation properties ﬁrst, then the other two.
+by-induction Less.Plus-cancellation {
+  zero =>
+  pick-any m n
+    (!chain [(m + zero < n + zero)
+    ==> (m < n) [Plus.right-zero]])
+    | (S k) =>
+    let{induction-hypothesis :=
+      (forall ?m ?n . ?m + k < ?n + k ==> ?m < ?n)}
+      pick-any m n
+        (!chain
+        [(m + (S k) < n + (S k))
+        ==> ((S (m + k)) < (S (n + k))) [Plus.right-nonzero]
+        ==> (m + k < n + k) [Less.injective]
+        ==> (m < n) [induction-hypothesis]])
+
+fpmics 2015/12/8 11:38 Page 457 #479
+8.2. NATURAL NUMBER SUBTRACTION 457
+}
+Exercise 8.10: Prove the following cancellation property of N.+:
+extend-module Plus {
+  define =-cancellation :=
+  (forall k m n . m + k = n + k ==> m = n)
+}# close module Plus
+}# close module N
+Exercise 8.11: ProveLess=.Plus-cancellation .Hint: Not only Less.Plus-cancellation
+but alsoPlus.=-cancellation (Exercise 8.10) is likely to be of use.
+For proof of Less.Plus-k we useLess=.Plus-cancellation as well as a couple of the
+trichotomy properties.
+conclude Less.Plus-k
+pick-any k m n
+  assume hyp1 := (m < n)
+    let{goal := (m + k < n + k)}
+      (!by-contradiction goal
+        (!chain
+        [(˜goal) ==> (n + k <= m + k) [Less=.trichotomy2]
+        ==> (n <= m) [Less=.Plus-cancellation]
+        ==> (˜m < n) [Less=.trichotomy4]
+        ==> (hyp1 &˜m < n) [augment]
+        ==> false [prop-taut]]))
+        Exercise 8.12: ProveLess=.Plus-k .
+        .2 Natural number subtraction
+        In this section we deﬁne subtraction on the natural numbers a nd prove some useful results
+        about it.
+        Customary subtraction is not closed on the natural numbers: when the second argument
+        is larger than the ﬁrst, the result is not a natural number but a negative integer. For instance,
+        subtracting 5 from 3 yields −2. In Chapter 9 we will study proof methods for integers, but
+        here we continue to deal only with natural numbers and stipul ate that when the second
+        argument is larger than the ﬁrst, the result is 0. For all othe r arguments nandm, the result
+
+fpmics 2015/12/8 11:38 Page 458 #480
+458 CHAPTER 8. NATURAL NUMBER ORDERINGS
+will be, as expected, the difference n−m.2The deﬁnition can be given by three axioms,
+the ﬁrst two handling the cases when one of the two arguments i s 0, and the third for the
+case when both arguments are greater than zero.
+extend-module N {
+  declare -: [N N] -> N [200]
+  module Minus {
+    define [x y z] := [?x:N ?y:N ?z:N]
+    assert* axioms :=
+    [(zero - x = zero)
+    (x - zero = x)
+    ((S x) - (S y) = x - y)]
+    define [zero-left zero-right both-nonzero] := axioms
+  }# close module Minus
+  These axioms can be used to compute the value of n-mfor any canonical terms nandm.
+  For instance, here is a proof that subtracting 3 from 4 yields 1:
+  >(!chain [((S S S S zero) - (S S S zero))
+  = ((S S S zero) - (S S zero)) [both-nonzero]
+  = ((S S zero) - (S zero)) [both-nonzero]
+  = ((S zero) - zero) [both-nonzero]
+  = (S zero) [zero-right]]);;
+Theorem : (= (N.- (S (S (S (S zero))))
+(S (S (S zero))))
+(S zero))
+Thus, when both arguments are nonzero, of the form (Sn)and(Sm), then
+((S m) - (S n))is identical to the result of recursively computing (n-m). If the second
+argument is larger than the ﬁrst, successive recursions wil l eventually bring down the ﬁrst
+argument to zero while the second is still non- zero, and at that point Minus.zero-right
+will produce zero as the result. (We will prove this formally by induction shor tly.) We can
+use the evaluator to test the axioms on various other inputs:
+>(eval ((S S zero) - zero))
+Term: (S (S zero))
+>(eval ((S S S S zero) - (S zero)))
+Term: (S (S (S zero)))
+>(eval ((S S S S zero) - (S S S S zero)))
+The function just described is sometimes called the monus operation.
+
+fpmics 2015/12/8 11:38 Page 459 #481
+8.2. NATURAL NUMBER SUBTRACTION 459
+Term: zero
+An important property of subtraction is the following form o fcancellation : when the
+second argument yis no larger than the ﬁrst, x, then
+x=(x−y)+y.
+That is, if we ﬁrst subtract yfrom xand then add yback to the result, we get xagain.
+define Plus-Cancel := (forall y x . y <= x ==> x = (x - y) + y)
+This simple property is quite useful in arithmetic proofs. T o prove it we use structural
+induction on the outer universally quantiﬁed variable. We b egin with a proof sketch, setting
+up the induction cases but using force for the inductive step case so that we can go ahead
+and test the basis case proof:
+by-induction Plus-Cancel {
+  zero =>
+  conclude (forall ?x . zero <= ?x ==> ?x = (?x - zero) + zero)
+  pick-any x
+    assume (zero <= x)
+      (!sym (!chain [((x - zero) + zero)
+      = (x + zero) [zero-right]
+      = x [Plus.right-zero]]))
+      | (S y) =>
+      let{ind-hyp := (forall ?x . y <= ?x ==> ?x = (?x - y) + y)}
+        (!force
+        (forall ?x . (S y) <= ?x ==> ?x = (?x - (S y)) + (S y)))
+      }
+      In the basis case,
+      (forall ?x . zero <= ?x ==> ?x = (?x - zero) + zero)
+      the assumption (zero <= ?x) is not actually needed (and it is true for all ?xanyway), but in
+      the proof we assume it in order to match the form of the sentenc e we are proving. To prove
+      the conclusion using chain , we start with the more complex right hand side and reduce it
+      to the left hand side, then reverse the resulting identity us ing symmetry.
+      We’ve seen that in many cases we can prove an identity, if not d irectly by equality-
+      chaining then by an induction in which both basis case and the inductive step are proved
+      by equality-chaining. Here we’ve succeeded with the basis c ase equality, but when we
+      examine the equality to be proved in the inductive step, name ly
+      (x = (x - (S y)) + (S y))
+
+fpmics 2015/12/8 11:38 Page 460 #482
+460 CHAPTER 8. NATURAL NUMBER ORDERINGS
+we again cannot ﬁnd any axiom that would apply. Of course, we s hould also examine our
+stock of previously proved results about these functions—i .e., about N.+andN.-—to see
+whether any of them can help us to prove our goal. But none of th e theorems we have
+proved about N.+helps, and we have not yet proven any results involving N.-.
+In this situation a useful heuristic is attempting another c ase-analysis, further breaking
+into cases in which equality chaining or some other method ca n ﬁnally be employed. But
+where can we look for guidance for choosing how to break the pr oblem down into cases?
+Let us look closely at the Minus axioms, to try to see how to introduce cases in which they
+could be applied.
+In order to rewrite the underlined subterm in
+((x - (S y)) + y) (8.1)
+usingMinus.zero-left , we need xto bezero. To rewrite it using Minus.both- nonzero , we
+needxto of the form (S x/quotesingle.Var)for some x/quotesingle.Var. We can most easily break the proof into these
+two cases using datatype-cases . We initially write a proof sketch using force in each of
+the two cases.
+by-induction Plus-Cancel {
+  zero =>
+  conclude (forall ?x . zero <= ?x ==> ?x = (?x - zero) + zero)
+  pick-any x
+    assume (zero <= x)
+      (!sym (!chain [((x - zero) + zero)
+      = (x + zero) [zero-right]
+      = x [Plus.right-zero]]))
+      | (S y) =>
+      let{ind-hyp := (forall ?x . y <= ?x ==> ?x = (?x - y) + y)}
+        datatype-cases
+          (forall ?x . (S y) <= ?x ==> ?x = (?x - (S y)) + (S y)) {
+          zero =>
+          (!force
+          ((S y) <= zero ==> (zero = (zero - (S y)) + (S y))))
+          | (S x) =>
+          (!force
+          ((S y) <= (S x) ==> ((S x) = ((S x) - (S y)) + (S y))))
+        }
+      }
+      Now the proof can get more traction because one or more of the d eﬁning axioms of Minus
+      are directly applicable—we made sure they were by splitting the proof into these two
+      cases!—and hence we can now start using chaining or other pro of tools and see how far
+      we get.
+      It turns out we can get quite far. In the zero case, we can use proof by contra-
+      diction, since the assumption ((S y) <= zero) contradicts the natural number property
+
+fpmics 2015/12/8 11:38 Page 461 #483
+8.2. NATURAL NUMBER SUBTRACTION 461
+Less=.not-S-zero . (See page 453.) We can thus derive the desired conclusion (o r, in fact,
+any conclusion) using from-complements :
+assume A := ((S y) <= zero)
+  (!from-complements (zero = (zero - (S y)) + (S y))
+  A (!chain-> [true ==> (˜A) [Less=.not-S-zero]]))
+  In the(S x) case,
+  (((S x) - (S y)) + (S y))
+  can be reduced to ((x - y) + (S y)) usingMinus.both-nonzero , and then to
+  (S ((x - y) + y)) usingPlus.right-zero . At this point the key is to realize that the
+  inductive hypothesis might be applicable to the subterm ((x - y) + y) , because the term
+  which we are subtracting and then adding is y, which is smaller than the term (S y) on
+  which we are currently inducting. Indeed, all we have to do to apply the inductive hypoth-
+  esis is make sure that the corresponding antecedent holds, n amely, that we have (y <= x) .
+  But this follows easily from the assumption ((S y) <= (S x)) , usingLess=.injective .
+  (Again, see page 453.) Thus the following suceeds in proving the(S y) subcase of the
+  inductive step:
+  assume A := ((S y) <= (S x))
+    let{C := (!chain-> [A ==> (y <= x) [Less=.injective]])}
+      (!sym (!chain
+      [(((S x) - (S y)) + (S y))
+      = ((x - y) + (S y)) [both-nonzero]
+      = (S ((x - y) + y)) [Plus.right-nonzero]
+      = (S x) [C ind-hyp]]))
+      Substituting these proofs for the uses of force in our proof sketch, we obtain a complete
+      proof:
+      by-induction Plus-Cancel {
+        zero =>
+        conclude (forall ?x . zero <= ?x ==> ?x = (?x - zero) + zero)
+        pick-any x
+          assume (zero <= x)
+            (!sym (!chain [((x - zero) + zero)
+            = (x + zero) [zero-right]
+            = x [Plus.right-zero]]))
+            | (S y) =>
+            let{ind-hyp := (forall ?x . y <= ?x ==> ?x = (?x - y) + y)}
+              datatype-cases
+                (forall ?x . (S y) <= ?x ==> ?x = (?x - (S y)) + (S y)) {
+                zero =>
+                conclude
+                ((S y) <= zero ==> (zero = (zero - (S y)) + (S y)))
+
+fpmics 2015/12/8 11:38 Page 462 #484
+462 CHAPTER 8. NATURAL NUMBER ORDERINGS
+assume A := ((S y) <= zero)
+  (!from-complements (zero = (zero - (S y)) + (S y))
+  A
+  (!chain-> [true ==> (˜A) [Less=.not-S-zero]]))
+  | (S x) =>
+  conclude
+  ((S y) <= (S x) ==> ((S x) = ((S x) - (S y)) + (S y)))
+  assume A := ((S y) <= (S x))
+    let{C := (!chain-> [A ==> (y <= x) [Less=.injective]])}
+      (!sym (!chain
+      [(((S x) - (S y)) + (S y))
+      = ((x - y) + (S y)) [both-nonzero]
+      = (S ((x - y) + y)) [Plus.right-nonzero]
+      = (S x) [C ind-hyp]]))
+    }
+  }
+  Generalizing, we arrive at the following very useful princi ple:
+  Heuristic 8.1: When the proof goal involves a function fthat is conditionally deﬁned
+  according to a number of mutually exclusive and jointly exha ustive conditions C1,...,Cn,
+  try to structure the proof as a case analysis that distinguis hesnappropriate instances
+  C′
+  ,...,C′
+  nof the conditions C1,...,Cn.
+  In this case the function was -and the relevant conditions were two, depending on whether
+  the second argument to -iszero or not. We will soon encounter more occasions illustrating
+  this powerful heuristic.
+  UsingMinus.Plus-Cancel , we can derive the following alternative characterization of
+  <=:
+  define alt-<=-characterization :=
+  (forall x y . x <= y <==> exists z . y = x + z)
+  The proof is left as an exercise:
+  Exercise 8.13: Provealt-<=-characterization .Hint: Review properties of N.<= (see
+  page 453) for possible application in this proof.
+  Another fundamental property of subtraction is that if the s econd argument is greater
+  than zero but no greater than the ﬁrst, then the result of the s ubtraction will be strictly less
+  than the ﬁrst argument:
+  <y≤x=⇒(x−y) <x.
+  We can state and prove this result as follows:
+
+fpmics 2015/12/8 11:38 Page 463 #485
+8.2. NATURAL NUMBER SUBTRACTION 463
+define <-left := (forall x y . zero < y & y <= x ==> x - y < x)
+conclude <-left
+pick-any x y
+  assume A := (zero < y & y <= x)
+    let{goal := ((x - y) < x)}
+      (!by-contradiction goal
+        assume (˜goal)
+          (!absurd
+          (!chain-> [(zero < y)
+          ==> (zero + x < y + x) [Less.Plus-k]
+          ==> (x < y + x) [Plus.left-zero]])
+          (!chain-> [(˜goal)
+          ==> (x <= x - y) [Less=.trichotomy1]
+          ==> (x + y <= (x - y) + y) [Less=.Plus-k]
+          ==> (x + y <= x) [(y <= x) Plus-Cancel]
+          ==> (˜x < x + y) [Less=.trichotomy4]
+          ==> (˜x < y + x) [Plus.commutative]])))
+          The next two results pertain to the cases when the second argu ment is equal to or greater
+          than the ﬁrst argument. In both cases, the result of the subtr action is zero. We start with the
+          case when both arguments are identical.
+          define second-equal := (forall x . x - x = zero)
+          by-induction second-equal {
+            zero => (!chain [(zero - zero) = zero [zero-left]])
+            | (S x) =>
+            let{ind-hyp := (x - x = zero)}
+              (!chain [((S x) - (S x)) = (x - x) [both-nonzero]
+              = zero [ind-hyp]])
+            }
+            It is possible, and an interesting exercise, to prove second-equal without using induction:
+            Exercise 8.14: Provesecond-equal without using induction. Hint: Start with (x <= x) and
+            usePlus-Cancel and some properties of <=.
+            In general, many results whose proofs would require inducti on if given directly from ﬁrst
+            principles (deﬁning axioms), can be derived by non-inducti ve proofs if they make use of
+            some previous results that were proved inductively. In the f ollowing case, however, when
+            the second argument is greater than the ﬁrst, we are unable to usePlus-Cancel because
+            its precondition is not satisﬁed. Accordingly, the result i s proved by induction, where, in
+            the inductive step case we proceed as we did in the proof of Plus-Cancel with a further
+            case-analysis based on whether the remaining variable is zero or non-zero:
+
+fpmics 2015/12/8 11:38 Page 464 #486
+464 CHAPTER 8. NATURAL NUMBER ORDERINGS
+define second-greater := (forall x y . x < y ==> x - y = zero)
+by-induction second-greater {
+  zero =>
+  conclude (forall ?y . zero < ?y ==> zero - ?y = zero)
+  pick-any y
+    assume (zero < y)
+      (!chain [(zero - y) = zero [zero-left]])
+      | (S x) =>
+      let{ind-hyp := (forall ?y . x < ?y ==> x - ?y = zero)}
+        datatype-cases (forall ?y . (S x) < ?y ==> (S x) - ?y = zero)
+          {
+          zero =>
+          assume A := ((S x) < zero)
+            (!from-complements ((S x) - zero = zero)
+            A
+            (!chain-> [true ==> (˜A) [Less.S-not-<-zero]]))
+            | (S y) =>
+            assume A := ((S x) < (S y))
+              let{C := (!chain-> [A ==> (x < y) [Less.injective]])}
+                (!chain [((S x) - (S y))
+                = (x - y) [both-nonzero]
+                = zero [C ind-hyp]])
+              }
+            }
+            It is convenient to formulate a more general result that appl ies whenever the second is
+            greater than orequal to the ﬁrst:
+            define second-greater-or-equal :=
+            (forall x y . x <= y ==> x - y = zero)
+            conclude second-greater-or-equal
+            pick-any x:N y
+              assume A := (x <= y)
+                let{C := (!chain-> [A ==> (x < y | x = y) [Less=.definition]])}
+                  (!cases C
+                    (!chain [(x < y) ==> (x - y = zero) [second-greater]])
+                    assume (x = y)
+                      (!chain [(x - y) = (x - x) [(x = y)]
+                      = zero [second-equal]]))
+                      We will also need the following simple property:
+                      ∀x,y,z.x=y+z=⇒ x−y=z
+                      define Plus-Minus-property :=
+                      (forall x y z . x = y + z ==> x - y = z)
+
+fpmics 2015/12/8 11:38 Page 465 #487
+8.3. ORDERED LISTS 465
+conclude Plus-Minus-property
+pick-any x y z
+  assume A := (x = y + z)
+    let{C1 :=
+      (!chain->
+      [A ==> (y <= x) [Less=.k-Less=]
+      ==> (x = (x - y) + y) [Plus-Cancel]]);
+      C2 := (!chain-> [A ==> (x = z + y) [Plus.commutative]])}
+      (!chain->
+      [((x - y) + y) = x [C1]
+      = (z + y) [C2]
+      ==> ((x - y) = z) [Plus.=-cancellation]])
+      Exercise 8.15: Prove the following (within module N.Minus):
+      define cancellation := (forall x y . (x + y) - x = y)
+      Another result of interest is the property of distributivit y of multiplication over subtrac-
+      tion:
+      x·y−x·z=x·(y−z).
+      Exercise 8.16: Apply properties of *and results of this section to prove:
+      define Times-Distributivity :=
+      (forall x y z . x * y - x * z = x * (y - z))
+      While induction is not necessary, case analysis (using two-cases ) is.
+      .3 Ordered lists
+      In Section 3.9, we introduced a data type List-N and dealt with equations between such
+      lists. Later in that section, we generalized the data type to (List T), for an arbitrary type
+      T. Actually, in asserting and proving equalities between suc h lists, Tcannot be completely
+      arbitrary since we use properties of the equality operator, =, on elements of T. But since the
+      equality properties are built into Athena’s logic and proof methods ( chain in particular),
+      we sometimes overlook the important role that they play. Wit h ordering properties of <,
+      on the other hand, there are no such built in assumptions—and there shouldn’t be, since
+      there are important domains (such as complex numbers) that l ack a natural ordering (but
+      may be ordered artiﬁcially in several different ways). In th is section, we consider lists of
+
+fpmics 2015/12/8 11:38 Page 466 #488
+466 CHAPTER 8. NATURAL NUMBER ORDERINGS
+natural numbers and use the order operators <and<=on natural numbers we have already
+axiomatized and developed proofs about in the preceding sec tions. Later, in Chapter 14, we
+will see how to deal with (List T), where the element type Tcan be any type that satisﬁes
+certain minimal ordering axioms (speciﬁcally, those of a strict weak ordering ) that are just
+sufﬁcient to allow algorithms for such operations as mergin g and sorting to work correctly.
+In preparation for deﬁning ordered lists, we ﬁrst introduce a couple of predicates that
+will be used in their deﬁnition and some lemmas about them. Fi rst, we deﬁne a membership
+predicate on lists as follows (the following code is to be emb edded in an extension of the
+List module).
+extend-module List {
+  declare in: (T) [T (List T)] -> Boolean
+  module in {
+    assert empty := (forall x .˜x in nil)
+    assert nonempty := (forall x y L . x in (y :: L) <==> x = y | x in L)
+  }# close module in
+  Exercise 8.17: Prove the following lemmas:
+  extend-module in {
+    define head := (forall x L . x in (x :: L))
+    define tail := (forall x y L . x in L ==> x in (y :: L))
+  }
+  Exercise 8.18: Prove the following theorem, in.of-join :
+  extend-module in {
+    define of-join :=
+    (forall L M x . x in (L join M) <==> x in L | x in M)
+  }# close module in
+  We introduce ordered lists of natural numbers not as a new dat a type but as a subset of
+  (List N) values deﬁned by a predicate ,List.ordered . We deﬁne this predicate axiomat-
+  ically by ﬁrst introducing the following binary predicate t hat compares an Nvalue with a
+  (List N) value:
+  declare <=L: [N (List N)] -> Boolean
+  We deﬁne (x<=L L)ifxis less than or equal to the ﬁrst element of L(true if Lis empty):
+
+fpmics 2015/12/8 11:38 Page 467 #489
+8.3. ORDERED LISTS 467
+module <=L {
+  assert empty := (forall x . x <=L nil)
+  assert nonempty := (forall x y L . x <=L (y :: L) <==> x <= y)
+}# close module <=L
+Each of the following simple lemmas about <=Lwas suggested by a subgoal in one of
+the proofs about ordered lists that come later in this sectio n. Although their proofs make
+good exercises (and are given as such in the Additional Exerc ises section), you may want
+skip even reading them at this point and attempt to work in a mo re top-down manner (i.e.,
+wait until you are working on those later proofs to see if you r ecognize the need for such
+lemmas, then state and prove them at that point).
+extend-module <=L {
+  define left-transitive :=
+  (forall L x y . x <= y & y <=L L ==> x <=L L)
+  define before-all-implies-before-first :=
+  (forall L x . (forall y . y in L ==> x <= y) ==> x <=L L)
+  define append :=
+  (forall L M x . x <=L L & x <=L M ==> x <=L (L join M))
+}# close module <=L
+Now we can deﬁne the List.ordered predicate as follows:
+declare ordered: [(List N)] -> Boolean
+module ordered {
+  assert empty := (ordered nil)
+  assert nonempty :=
+  (forall L x . ordered (x :: L) <==> x <=L L & ordered L)
+}# close module ordered
+Exercise 8.19: Prove the following lemmas (the proofs are short and easy):
+extend-module ordered {
+  define head := (forall L x . (ordered (x :: L)) ==> x <=L L)
+  define tail := (forall L x . (ordered (x :: L)) ==> (ordered L))
+}# close module ordered
+Here are some useful theorems about ordered lists:
+extend-module ordered {
+  define first-to-rest-relation :=
+  (forall L x y . ordered (x :: L) & y in L ==> x <= y)
+
+fpmics 2015/12/8 11:38 Page 468 #490
+468 CHAPTER 8. NATURAL NUMBER ORDERINGS
+define cons :=
+(forall L x . ordered L & (forall y . y in L ==> x <= y)
+==> ordered (x :: L))
+define append :=
+(forall L M . ordered L & ordered M &
+(forall x y . x in L & y in M ==> x <= y)
+==> ordered (L join M))
+}# close module ordered
+and here is a proof of the ﬁrst:
+extend-module ordered {
+  by-induction first-to-rest-relation {
+    nil =>
+    pick-any x:N y:N
+      assume i := ((ordered (x :: nil)) & y in nil)
+        let{not-in := (!chain->
+          [true ==> (˜y in nil) [in.empty]])}
+          (!from-complements (x <= y) (y in nil) not-in)
+          | (z:N :: M:(List N)) =>
+          let{ind-hyp := (forall ?x ?y .
+            ordered (?x :: M) & ?y in M ==> ?x <= ?y)}
+            conclude (forall ?x ?y .
+            ordered (?x :: (z :: M)) & ?y in (z :: M)
+            ==> ?x <= ?y)
+            pick-any x:N y:N
+              assume ((ordered (x :: (z :: M))) & y in (z :: M))
+                let{p0 :=
+                  (!chain->
+                  [(ordered (x :: (z :: M)))
+                  ==> (x <=L (z :: M) & ordered (z :: M))
+                  [nonempty]
+                  ==> (x <=L (z :: M) & z <=L M & ordered M)
+                  [nonempty]
+                  ==> (x <= z & z <=L M & ordered M)
+                  [<=L.nonempty]]);
+                  p1 :=
+                  (!chain-> [p0 ==> (ordered M) [prop-taut]]);
+                  p2 :=
+                  (!chain->
+                  [p0 ==> (x <= z & z <=L M) [prop-taut]
+                  ==> (x <=L M) [<=L.left-transitive]
+                  ==> (x <=L M & ordered M) [augment]
+                  ==> (ordered (x :: M)) [nonempty]]);
+                  p3 :=
+                  (!chain->
+                  [(y in (z :: M))
+                  ==> (y = z | y in M) [in.nonempty]])}
+                  (!cases (y = z | y in M)
+                    assume (y = z)
+
+fpmics 2015/12/8 11:38 Page 469 #491
+8.4. BINARY SEARCH TREES 469
+(!chain-> [p0 ==> (x <= z) [left-and]
+==> (x <= y) [(y = z)]])
+(!chain [(y in M)
+==> (p2 & y in M) [augment]
+==> (x <= y) [ind-hyp]]))
+}
+}# close module ordered
+Exercise 8.20: ProveList.ordered.cons .
+*Exercise 8.21: ProveList.ordered.append .
+.4 Binary search trees
+Another important data type related to ordering properties isbinary search trees , a subset
+of binary trees satisfying a predicate relating elements of the tree by their order. First, let’s
+deﬁne binary trees:
+datatype (BinTree S) := null | (node (BinTree S) S (BinTree S))
+assert (datatype-axioms "BinTree")
+Here, as we did with the List type in Chapter 3, we have deﬁned BinTree with a type (or
+sort) parameter, S. The declaration says that any value of type (BinTree S) is either the con-
+stantnull or a term with constructor node and three arguments: two of type (BinTree S) ,
+recursively, and one of type S. We wish to interpret null as an empty tree (no elements),
+and(node L x R)as a tree with element xat its root, Las its “left subtree,” and Ras its
+“right subtree.” See Figure 8.1 for an example.
+The ﬁrst function we deﬁne on binary trees is a predicate for t esting whether a value of
+typeSis present in a (BinTree S) . (The corresponding membership predicate for (List S)
+was introduced in Exercises 8.17 and 8.18.)
+module BinTree {
+  openList
+  define [x x/quotesingle.Vary T L R] :=
+  [?x:'S ?x/quotesingle.Var:'S ?y:'S
+  ?T:(BinTree 'S) ?L:(BinTree 'S) ?R:(BinTree 'S)]
+  declare in: (S) [S (BinTree S)] -> Boolean
+  module in {
+    assert empty := (forall x .˜x in null)
+    assert nonempty :=
+    (forall x L y R .
+
+fpmics 2015/12/8 11:38 Page 470 #492
+470 CHAPTER 8. NATURAL NUMBER ORDERINGS
+define tree1 :=
+(node (node null
+(node (node null
+null)
+null))
+(node (node null
+null)
+null))7
+Figure 8.1
+A binary tree with Intelements, together with a corresponding graphical depicti on.
+x in (node L y R) <==> x = y | x in L | x in R)
+}# close module in
+There is, of course, an induction principle for binary trees that we will come to momen-
+tarily, but in the following exercise it is not required; imp lication chaining sufﬁces for the
+proofs.
+Exercise 8.22: Prove the following simple lemmas:
+extend-module in {
+  define root := (forall x L y R . x = y ==> x in (node L y R))
+  define left := (forall x L y R . x in L ==> x in (node L y R))
+  define right := (forall x L y R . x in R ==> x in (node L y R))
+}# close module in
+Next we look at one of the “tree walk” operations for traversi ng through all the nodes
+of a tree, called an “inorder” walk (the other main tree walks are called “preorder” and
+“postorder”). We deﬁne a function inorder from(BinTree S) to(List S) that produces a
+list of the tree elements ordered so that the root element app ears between the elements of
+the left subtree and those of the right subtree, and recursiv ely the elements are in this order
+within each subtree.
+extend-module BinTree {
+  declare inorder: (S) [(BinTree S)] -> (List S)
+  define in := (overload-binary List.in BinTree.in)
+
+fpmics 2015/12/8 11:38 Page 471 #493
+8.4. BINARY SEARCH TREES 471
+module inorder {
+  assert empty := ((inorder null) = nil)
+  assert nonempty :=
+  (forall L R x .
+  (inorder (node L x R)) = (inorder L) join (x :: (inorder R)))
+  As an example, we can apply inorder to the binary tree in Figure 8.1.
+  >(eval (inorder tree1))
+Term: (:: 2
+(:: 3
+(:: 5
+(:: 7
+(:: 11
+(:: 13
+nil:(List Int)))))))
+We ﬁrst relate BinTree.inorder toBinTree.in :
+define in-correctness := (forall T x . x in (inorder T) <==> x in T)
+Exercise 8.23: The ﬁrst occurrence of inin the theorem in-correctness meansList.in
+while the second occurrence means BinTree.in . Explain why.
+To prove BinTree.in-correctness , we can separately prove each of the implications,
+then combine the results with equiv .
+define in-correctness-1 := (forall T x . x in (inorder T) ==> x in T)
+define in-correctness-2 := (forall T x . x in T ==> x in (inorder T))
+To prove each of these implications, we’ll need induction. F or binary trees we have
+a mathematical induction principle whose clauses correspo nd to the two tree construc-
+tors: there is a basis case corresponding to null and an induction step with two induction
+hypotheses corresponding to the “left” subtree Land “right” subtree Rin(node L x R):
+Principle 8.1: (Mathematical Induction for Binary Trees )To prove (∀T.(P T)), where
+Tranges over binary trees, it sufﬁces to prove:
+. (Basis Case )(Pnull)
+. (Induction Step )(∀L R.(P L)and(P R)=⇒(∀x.(P(node L x R)))
+
+fpmics 2015/12/8 11:38 Page 472 #494
+472 CHAPTER 8. NATURAL NUMBER ORDERINGS
+In the induction step, the assumptions (P L)and(P R)are called the induction hypotheses .
+As we have seen with the natural number and list types, Athena ’sby-induction proof
+construct is able to derive from the form of the binary tree co nstructors the corresponding
+cases that it requires to be proved when proving a theorem abo ut binary trees. Also it
+automatically enters both induction hyptheses into the ass umption base so that they are
+available without having to explicitly assume them in the in ductive step case. Here is a
+proof of in-correctness-1 :
+by-induction in-correctness-1 {
+  null =>
+  pick-any x
+    assume (x in (inorder null))
+      let{A := (!chain->
+        [(x in (inorder null))
+        ==> (x in nil) [empty]]);
+        B := (!chain-> [true ==> (˜(x in nil)) [List.in.empty]])}
+        (!from-complements (x in null) A B)
+        | (node L y R) =>
+        let{ind-hyp1 := (forall ?x . ?x in (inorder L) ==> ?x in L);
+          ind-hyp2 := (forall ?x . ?x in (inorder R) ==> ?x in R)}
+          pick-any x
+            assume A := (x in (inorder (node L y R)))
+              let{B := (!chain->
+                [A ==> (x in ((inorder L) join (y :: (inorder R))))
+                [nonempty]
+                ==> (x in (inorder L) |
+                (x in (y :: (inorder R))))
+                [List.in.of-join]
+                ==> (x in (inorder L) | x = y |
+                x in (inorder R)) [List.in.nonempty]])}
+                (!cases B
+                  (!chain [(x in (inorder L))
+                  ==> (x in L) [ind-hyp1]
+                  ==> (x in (node L y R)) [in.left]])
+                  (!chain [(x = y)
+                  ==> (x in (node L y R)) [in.root]])
+                  (!chain [(x in (inorder R))
+                  ==> (x in R) [ind-hyp2]
+                  ==> (x in (node L y R)) [in.right]]))
+                }
+                *Exercise 8.24: Provein-correctness-2 and combine the result with in-correctness-1
+                to conclude in-correctness .
+                Exercise 8.25: (a) Deﬁne a function List.count , for counting the number of occurrences
+                of a given value in a given list, as follows:
+
+fpmics 2015/12/8 11:38 Page 473 #495
+8.4. BINARY SEARCH TREES 473
+extend-module List {
+  declare count: (S) [S (List S)] -> N
+  module count {
+    define [x x'L M] := [?x: 'S ?x/quotesingle.Var:'S ?L:(List 'S) ?M:(List 'S)]
+    assert empty := (forall x . (count x nil) = zero)
+    assert more := (forall x x 'L .
+    x = x/quotesingle.Var==> (count x (x /quotesingle.Var:: L)) = (S (count x L)))
+    assert same := (forall x x 'L .
+    x =/= x /quotesingle.Var==> (count x (x /quotesingle.Var:: L)) = (count x L))
+  }# close module count
+}# close module List
+Then prove the following theorem:
+extend-module List {
+  extend-module count {
+    define of-join :=
+    (forall L M x . (count x (L join M)) = (count x L) + (count x M))
+  }# close module count
+}# close module List
+(b) Similarly, deﬁne BinTree.count with the signature:
+extend-module BinTree {
+  declare count: (S) [S (BinTree S)] -> N
+}# close module BinTree
+(c) Then prove the following theorem:
+extend-module BinTree {
+  extend-module inorder {
+    define count := (overload-binary List.count BinTree.count)
+    define count-correctness :=
+    (forall T x . (count x (inorder T)) = (count x T))
+  }# close module inorder
+}# close module BinTree
+Finally, we focus on binary search trees, a subset of the bina ry tree type: those trees
+satisfying a predicate, BST. A general deﬁnition for elements of any type for which an
+appropriate comparison function is deﬁned will be given in S ection 15.1, but here we deﬁne
+BSTfor elements of type N:
+
+fpmics 2015/12/8 11:38 Page 474 #496
+474 CHAPTER 8. NATURAL NUMBER ORDERINGS
+extend-module BinTree {
+  define [x y z T L R] := [?x:N ?y:N ?z:N ?T:(BinTree N) ?L:(BinTree N)
+  ?R:(BinTree N)]
+  declare BST: [(BinTree N)] -> Boolean
+  module BST {
+    define < := N.<
+    define <= := N.<=
+    assert empty := (BST null)
+    assert nonempty :=
+    (forall L y R .
+    (BST (node L y R)) <==>
+    (BST L) & (forall x . x in L ==> x <= y) &
+    (BST R) & (forall z . z in R ==> y <= z))
+    The binary tree in Figure 8.1 is an example of a natural number binary search tree, if you
+    replace its Intvalues by corresponding Nvalues.
+    In Chapter 11, we will introduce a binary search function whose domain is binary search
+    trees. Aside from its importance as a more efﬁcient search al gorithm than is possible with
+    lists, this function will also provide a nice ﬁrst example of signiﬁcant issues in specifying
+    and proving algorithm correctness.
+    .5 Summary and a connecting theorem
+    In this chapter we have focused on:
+    • Deﬁning inequality relations on natural numbers with axio ms and using proofs of
+    selected theorems about these relations for further practi ce with induction, case-analysis,
+    implication chaining, and proof by contradiction. Looking ahead, we will see in Chap-
+    ter 14 how we can raise some of these theorems to an abstract le vel, from which they
+    have many instantiations to other concrete domains.
+    • Deﬁning subtraction of natural numbers and proving theore ms that will be useful in
+    deﬁning integer addition and subtraction in Chapter 9 and di vision operators in Chap-
+    ter 13.
+    • Extending the discussion in Chapter 3 of the List datatype to properties of ordered lists
+    over the natural numbers.
+    • Introducing binary trees over the natural numbers and a cor responding induction princi-
+    ple.
+    • Deﬁning for natural number elements the binary-search-tr ee subset of binary trees, in
+    preparation for our ﬁrst example of algorithm speciﬁcation and correctness issues in
+    Chapter 11.
+
+fpmics 2015/12/8 11:38 Page 475 #497
+8.5. SUMMARY AND A CONNECTING THEOREM 475
+We conclude this chapter with the statement and proof of a the orem connecting three of the
+main ordering concepts we have studied—namely, that the inorder function applied to a
+binary search tree produces an ordered list. (Proved here on ly for natural number elements.)
+define is-ordered := (forall T . BST T ==> (List.ordered (inorder T) ))
+by-induction is-ordered {
+  null:(BinTree N) =>
+  assume (BST null)
+    (!chain->
+    [true ==> (ordered nil:(List N)) [empty]
+    ==> (ordered (inorder null:(BinTree N))) [inorder.empty] ])
+    | (node L:(BinTree N) y:N R:(BinTree N)) =>
+    let{ind-hyp1 := ((BST L) ==> (ordered (inorder L)));
+      ind-hyp2 := ((BST R) ==> (ordered (inorder R)));
+      smaller-in-left := (forall ?x . ?x in L ==> ?x <= y);
+      larger-in-right := (forall ?z . ?z in R ==> y <= ?z)}
+      assume A := (BST (node L y R))
+        conclude goal := (ordered (inorder (node L y R)))
+        let{C1 := (!chain->
+          [A ==>
+          ((BST L) & smaller-in-left & (BST R) & larger-in-right)
+          [nonempty]]);
+          C2 := (!chain-> [C1 ==> (BST L) [left-and]
+          ==> (ordered (inorder L)) [ind-hyp1]]);
+          C3 := (!chain-> [C1 ==> (BST R) [prop-taut]
+          ==> (ordered (inorder R)) [ind-hyp2]]);
+          C4 := (!chain-> [C1 ==> smaller-in-left [prop-taut]]);
+          C5 := (!chain-> [C1 ==> larger-in-right [prop-taut]]);
+          C6 :=conclude
+          (forall ?x ?y .
+          ?x in (inorder L) & ?y in (y :: (inorder R))
+          ==> ?x <= ?y)
+          pick-any u v
+            assume A1 := (u in (inorder L) &
+              v in (y :: (inorder R)))
+              let{D1 :=
+                (!chain->
+                [A1 ==> (u in (inorder L) &
+                (v = y | v in (inorder R)))
+                [List.in.nonempty]
+                ==> (u in L & (v = y | v in R))
+                [inorder.in-correctness]
+                ==> ((u in L & v = y) |
+                (u in L & v in R)) [prop-taut]])}
+                (!cases D1
+                  assume (u in L & v = y)
+                    (!chain->
+                    [(u in L) ==> (u <= y) [smaller-in-left]
+                    ==> (u <= v) [(v = y)]])
+                    (!chain [(u in L & v in R)
+
+fpmics 2015/12/8 11:38 Page 476 #498
+476 CHAPTER 8. NATURAL NUMBER ORDERINGS
+==> (u <= y & y <= v) [smaller-in-left
+larger-in-right]
+==> (u <= v) [Less=.transitive]]));
+C7 :=conclude (forall ?z . ?z in (inorder R) ==> y <= ?z)
+pick-any z
+  (!chain [(z in (inorder R))
+  ==> (z in R) [inorder.in-correctness]
+  ==> (y <= z) [larger-in-right]])}
+  (!chain->
+  [C3 ==> (C3 & C7) [augment]
+  ==> (ordered (y :: (inorder R))) [List.ordered.cons]
+  ==> (C2 & (ordered (y :: (inorder R)))) [augment]
+  ==> (C2 & (ordered (y :: (inorder R))) & C6) [augment]
+  ==> (ordered ((inorder L) join (y :: (inorder R))))
+  [List.ordered.append]
+  ==> goal [inorder.nonempty]])
+}# by-induction
+}# close module BST
+}# close module BinTree
+.6 Additional exercises
+*Exercise 8.26: In Section 8.1.1 we proved Less.transitive by reordering its quantiﬁers
+so thatzwas ﬁrst, inducting on z, and then getting the property with the original quantiﬁer
+ordering by substitution. Instead, prove it directly by ind ucting on its ﬁrst quantiﬁed vari-
+able,x.Hint: Case-splitting may be necessary on zero and nonzero cases of bothyandz.
+It is easiest to do all such inner case splits with datatype-cases .
+Exercise 8.27: ProveN.Less=.not-S .
+Exercise 8.28: ProveN.Less=.S-not-equal .
+Exercise 8.29: ProveN.Less=.transitive .
+Exercise 8.30: ProveN.Less=.S1 .
+Exercise 8.31: ProveN.Less=.S2 andN.Less=.S3 .
+Exercise 8.32: ProveN.Less=.trichotomy1 andN.Less=.trichotomy2 .
+Exercise 8.33: ProveN.Less=.trichotomy3 andN.Less=.trichotomy4 .
+Exercise 8.34: ProveN.Less=.trichotomy5 .
+
+fpmics 2015/12/8 11:38 Page 477 #499
+8.7. CHAPTER NOTES 477
+Exercise 8.35: We can deﬁne a function returning the maximum of a pair of natural num-
+bers as follows:
+extend-module N {
+  declare Max: [N N] -> N
+  module Max {
+    assert less2 := (forall x y . y < x ==> (Max x y) = x)
+    assert not-less2 := (forall x y .˜y < x ==> (Max x y) = y)
+  }# close module Max
+}# close module N
+The names less2 andnot-less2 are short for “the second argument of Maxis (is not) less
+than the ﬁrst.”
+(a) Prove that Maxisidempotent ; i.e.,(forall x . (Max x x) = x) .
+(b) Prove that Maxis commutative.
+⋆(c) Prove that Maxis associative.
+Exercise 8.36: ProveList.<=L.left-transitive .
+Exercise 8.37: ProveList.<=L.before-any-implies-before-first .
+Exercise 8.38: ProveList.<=L.append .
+.7 Chapter notes
+In this chapter we have deﬁned ordering relations on natural numbers axiomatically and
+used proofs of selected theorems about these relations both for further practice with high
+level proof methods and for preparation for later generaliz ation to an abstract level (in
+Chapters 14 and 15).
+For these purposes we have not been concerned with automated proofs, but in some
+contexts more automation would be desirable, such as softwa re veriﬁcations or test case
+generation, where there may be many speciﬁc and complex conj ectures involving inequal-
+ity relations that need to be proved or falsiﬁed. Shostak’s 1 977 paper [68] discusses some
+of the earliest work on a class of formulas called Presburger Arithmetic and improves
+an approach called the Sup-Inf method into an efﬁcient decis ion procedure for an impor-
+tant subclass of Presburger formulas. An even more restrict ed but still useful subset of
+inequalities called separation formulas is decided by Shos tak’s 1981 method based on
+computing loop residues [67]. More recently, researchers s uch as Strichman et al. [78],
+have turned away from procedures speciﬁcally developed for such formulas in favor of
+transforming them into propositional satisﬁability (SAT) problems, taking advantage of
+remarkable advances in the efﬁciency of SAT solvers. Athena provides interfaces to two
+
+fpmics 2015/12/8 11:38 Page 478 #500
+478 CHAPTER 8. NATURAL NUMBER ORDERINGS
+such SAT solvers, Yices 2 [72] and CVC4 [60]. /a\}⌊ra⌋ketle{tD: Need to say more here, depending
+on what is done with the section on SAT currently in chapter 4 b ut probably being
+moved to a document on proofcentral.org. /a\}⌊ra⌋ketri}ht

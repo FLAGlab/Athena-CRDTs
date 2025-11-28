@@ -1,0 +1,1903 @@
+fpmics 2015/12/8 11:38 Page 633 #655
+14Abstract structures
+IN THIS chapter, we introduce abstract axioms and theorems via para meterized methods
+and show how to organize them using a structured theory data structure that will also
+be used for abstract algorithm properties. We begin with alg ebraic theories that general-
+ize some of the concrete data structures we have encountered in previous chapters. These
+algebraic theories are the mathematical basis of many kinds of numeric and nonnumeric
+computation, and readers are encouraged to explore beyond t he examples given in this and
+the next chapter. In Section 14.8, we turn to theories that ge neralize concrete ordering rela-
+tions such as <and≤on natural numbers or integers. These theories provide a sou nd basis
+for generalization of searching and sorting algorithms to a n abstract level. We will see only
+a couple of examples, both binary-search algorithms, one in the next chapter for searching
+binary trees and the other in Chapter 16 for searching a range of memory locations, but
+Section 16.11 contains suggestions for further study.
+14.1 Group properties
+In Chapter 9 we studied two distinct datatypes, Z(integers) and ZPS(formal power series
+with integer coefﬁcients). Focusing on properties of their respective addition operators, Z.+
+andZPS.+ , we see that they share several common properties:
+• Associative
+define [a b c] := [?a ?b ?c]
+(forall a b c . (a Z.+ b) Z.+ c = a Z.+ (b Z.+ c))
+(forall a b c . (a ZPS.+ b) ZPS.+ c = a ZPS.+ (b ZPS.+ c))
+• Left and Right Identity
+(forall a . Z.zero Z.+ a = a)
+(forall a . a Z.+ Z.zero = a)
+(forall a . ZPS.zero ZPS.+ a = a)
+(forall a . a ZPS.+ ZPS.zero = a)
+• Left and Right Inverses
+(forall a . (Z.Negate a) Z.+ a = Z.zero)
+(forall a . a Z.+ (Z.Negate a) = Z.zero)
+(forall a . (ZPS.Negate a) ZPS.+ a = ZPS.zero)
+(forall a . a ZPS.+ (ZPS.Negate a) = ZPS.zero)
+
+fpmics 2015/12/8 11:38 Page 634 #656
+634 CHAPTER 14. ABSTRACT STRUCTURES
+In each case, the properties are the same except for the funct ion names. We have already
+seen how such similarities, called homomorphisms , can be exploited in proofs, when we
+used the additive homomorphism property between the signed and pair representations of
+integers in Section 9.5. Yet these two structures are obviou sly not the same in the sense
+of having all other properties related homomorphically, th e most notable difference being
+that there is no mapping from ZPSontoZPSthat preserves addition.
+Such observations have long held a special interest for math ematicians, for they have far-
+reaching consequences for understanding different mathem atical structures and being able
+to conjecture and prove additional properties about them. I n mathematics, a set of axioms
+together with theorems that follow from the axioms is called atheory . In this chapter and
+the next we will explore how we can deﬁne and use theories in co mputer science, beginning
+with ones based on traditional numeric, algebraic, and rela tional notions, but continuing
+with ones inspired by recognition of commonalities among al gorithms and other software
+components.
+A structure that has function symbols with associative, ide ntity, and inverse properties
+is called a group . While the two examples ZandZPSare both numeric in nature, there
+are many completely nonnumeric examples; we study one such n onnumeric case in Sec-
+tion 14.7. We could formally introduce group theory in Athena as follows (temporarily;
+we’ll show a better way shortly):
+module Group {
+  declare +: (T) [T T] -> T [200]
+  declare <0>: (T) [] -> T
+  declare U-: (T) [T] -> T # Unary minus
+  define [x y z] := [?x ?y ?z]
+  define Associative := (forall x y z . (x + y) + z = x + (y + z))
+  define Left-Identity := (forall x . <0> + x = x)
+  define Right-Identity := (forall x . x + <0> = x)
+  define Left-Inverse := (forall x . (U- x) + x = <0>)
+  define Right-Inverse := (forall x . x + (U- x) = <0>)
+}# close module Group
+Although we regard the properties listed in the module as the axioms of group theory, we
+do not assert them into the assumption base. Instead, if we ha veproved that a homomorphic
+image of each of these properties is a theorem, then we will be able to use proof methods
+associated with the theory to prove new theorems, rather tha n having to write their proofs
+repeatedly for every structure that models the theory.
+Let us assume that the proofs shown in Chapter 9 have been done in the current session,
+but not exercises such as 9.10, which were to show several add ition properties to be integer
+theorems. We can then say
+
+fpmics 2015/12/8 11:38 Page 635 #657
+14.2. THEORY REFINEMENT 635
+openGroup
+define ZAdditive-Group := (renaming [+ Z.+ <0> Z.zero U- Z.Negate - Z.-])
+>(!claim (ZAdditive-Group Associative))
+Theorem : (forall ?x:Z
+(forall ?y:Z
+(forall ?z:Z
+(= (Z.+ (Z.+ ?x ?y)
+?z)
+(Z.+ ?x
+(Z.+ ?y ?z))))))
+Here, using the Athena procedure renaming , we deﬁned ZAdditive-Group as a mapping of
+symbols +toZ.+,<0>toZ.zero , andU-toZ.Negate . We call such a mapping an adapter .
+We then applied this adapter to one of the Group axioms, in the claim method call, which
+succeeds because we proved it earlier in the session.
+Similarly, with respect to the power series structure ZPSfrom Section 9.7, we can say
+define ZPSAdditive-Group :=
+(renaming [+ ZPS.+ <0> ZPS.zero U- ZPS.Negate - ZPS.-])
+>(!claim (ZPSAdditive-Group Associative))
+Theorem : (forall ?x:(ZPS.Fun N Z)
+(forall ?y:(ZPS.Fun N Z)
+(forall ?z:(ZPS.Fun N Z)
+(= (ZPS.+ (ZPS.+ ?x
+?y)
+?z)
+(ZPS.+ ?x
+(ZPS.+ ?y
+?z))))))
+We will shortly see how to perform a check that for each axiom o f a theory, its adapted
+instance is in the assumption base.
+14.2 Theory reﬁnement
+Before we go further with group properties, however, we shou ld note that that there are
+many interesting structures that have some, but not all, of t he properties group theory
+requires. While Zis a group under addition, it is not under multiplication (th e inverse
+properties fail to hold); and the structure we have studied m ost, the natural numbers, is
+not a group even under addition (again because the inverse pr operties fail). As a non-
+numeric example, consider lists under concatenation (the List.join function deﬁned in
+
+fpmics 2015/12/8 11:38 Page 636 #658
+636 CHAPTER 14. ABSTRACT STRUCTURES
+Section 3.9): List.join is associative, and nilacts as a left and right identity, but once
+again there are no inverses.
+So we see that having the properties of associativity and lef t and right identities, but not
+inverses, is common to several structures. There being in fa ct many such structures, math-
+ematicians have invented a theory that unites them: monoid . As a consequence, another
+way of deﬁning group theory is to say that it is monoid theory ( i.e., it requires the monoid
+properties, associativity and left and right identity) and also requires left and right inverses.
+This relationship between group and monoid is called reﬁnement : theory Bis a reﬁnement
+of theory Aif it requires all of the properties of Aplus additional properties (ones that are
+not theorems of A).
+Theory reﬁnement is an important notion:
+1. If Bis a reﬁnement of Aandpis a theorem derivable from the axioms of A, then it is
+also derivable from the axioms of B. This follows from the facts that (1) the axioms of
+Bare a superset of those of A; and (2) classical logic is monotonic, which means (as we
+noted in Section 4.3), any property derivable from some βis also derivable from every
+superset β′⊇β. Thus, there is no need to reprove pforB; we can rely on the proof
+already recorded for A.
+2. We can take 1 as a basis for extending our approach to organi zing a library of axioms,
+theorems, and proofs. The essential idea is to associate eac h theorem and its proof with
+a certain theory in a theory reﬁnement hierarchy , chosen as the one that has just the
+axioms needed in the proof—and no more.
+Consequently, rather than deﬁning group theory monolithic ally as we did above, we
+prefer to deﬁne it hierarchically in a data structure we call astructured theory , as follows:
+module Semigroup {
+  declare +: (T) [T T] -> T [200]
+  define [x y z] := [?x ?y ?z]
+  define Associative := (forall x y z . (x + y) + z = x + (y + z))
+  define Theory := (theory [] [Associative] 'Semigroup)
+}
+module Identity {
+  openSemigroup
+  declare <0>: (T) [] -> T
+  define Left-Identity := (forall x . <0> + x = x)
+  define Right-Identity := (forall x . x + <0> = x)
+  define Theory := (theory [] [Left-Identity Right-Identity] 'Identity)
+}
+module Monoid {
+  openIdentity
+  define Theory := (theory [Semigroup.Theory Identity.Theory] [] 'Monoid)
+}
+
+fpmics 2015/12/8 11:38 Page 637 #659
+14.3. WRITING PROOFS AT THE LEVEL OF A THEORY 637
+module Group {
+  openMonoid
+  declare U-: (T) [T] -> T # Unary minus
+  declare -: (T) [T T] -> T # Binary minus
+  define Right-Inverse := (forall x . x + (U- x) = <0>)
+  define Minus-Definition := (forall x y . x - y = x + (U- y))
+  define Theory :=
+  (theory [Monoid.Theory] [Right-Inverse Minus-Definitio n]'Group)
+}
+In these deﬁnitions we use Athena’s theory procedure. Speciﬁcally,
+(theory superiors axioms theory-name )
+deﬁnes a structured theory with name theory-name , (new) axioms , and superiors —theories
+of which the new theory is a direct reﬁnement. The set of axiom s of the theory so deﬁned is
+the union of new axioms and, recursively, the sets of axioms o f the superiors. In the case of
+Semigroup , there is a single axiom, named Associative , and there are no superiors. Monoid
+reﬁnes superiors Semigroup andIdentity , andGroup reﬁnesMonoid .
+.3 Writing proofs at the level of a theory
+It may seem there is a mistake in deﬁning Group : we left out the Left-Inverse axiom. We
+did that intentionally, however, because we can prove theLeft-Inverse property from the
+other group theory axioms, and extend the theory with the the orem and its proof. There are
+in fact several useful theorems we can prove from the group ax ioms:
+extend-module Group {
+  define Left-Inverse := (forall x . (U- x) + x = <0>)
+  define Double-Negation := (forall x . (U- (U- x)) = x)
+  define Unique-Negation := (forall x y . x + y = <0> ==> (U- x) = y)
+  define Neg-Plus := (forall x y .
+  (U- (x + y)) = (U- y) + (U- x))
+  For the ﬁrst of these theorems, we present a method that carri es out its proof:
+  define Left-Inverse-proof :=
+  method (theorem adapt)
+    let{given := lambda (P) (get-property P adapt Theory);
+      lemma := method (P) (!property P adapt Theory);
+      chain := method (L) (!chain-help given L /quotesingle.Varnone);
+      [+ U- <0>] := (adapt [+ U- <0>])}
+      conclude (adapt theorem)
+      pick-any x
+        (!chain
+        [((U- x) + x)
+
+fpmics 2015/12/8 11:38 Page 638 #660
+638 CHAPTER 14. ABSTRACT STRUCTURES
+<-- (((U- x) + x) + <0>) [Right-Identity]
+--> ((U- x) + (x + <0>)) [Associative]
+<-- ((U- x) + (x + ((U- x) + (U- (U- x))))) [Right-Inverse]
+<-- ((U- x) + (( x + (U- x)) + (U- (U- x)))) [Associative]
+--> ((U- x) + (<0> + (U- (U- x)))) [Right-Inverse]
+<-- (((U- x) + <0>) + (U- (U- x))) [Associative]
+--> ((U- x) + (U- (U- x))) [Right-Identity]
+--> <0> [Right-Inverse]])
+Before discussing the conventions used in deﬁning the metho d, we note that we can extend
+the list of properties associated with Group theory to include the Left-Inverse theorem and
+its proof method using Athena’s evolve procedure:
+(evolve Theory [[Left-Inverse] Left-Inverse-proof])
+}# close module Group
+In general,
+(evolve T[L M])
+extends theory Twith [ L M], where Lis a list of sentences and Mis a method capable
+of proving each of the sentences in L. The precise form that Mmust take is described in
+Section 14.5.
+Having thus deﬁned and evolved Theory (which is Group.Theory in this example), we
+can at any time retrieve an instance one of the Group axioms or theorems with Athena’s
+get-property procedure. For example, with ZAdditive-Group as deﬁned above,
+>(get-property Left-Identity ZAdditive-Group Group.The ory)
+Sentence: (forall ?x:Z
+(= (Z.+ Z.zero ?x)
+?x))
+In general,
+(get-property P adapt starting-theory )
+searches the theory reﬁnement hierarchy for P, using starting-theory as the starting point
+for the search. Pis anamed-sentence , which is either a sentence or a list of the form [i P′],
+where iis a meta-id and P′is, recursively, a named-sentence. The role of the latter fo rm
+is explained in Section 14.6.2. The top-level sentences of starting-theory are searched,
+followed by a recursive search of each superior of starting-theory . Ifget-property ﬁnds
+a sentence equivalent to P, it applies the adapt mapping to it and returns the result. It is
+an error if the search ends without ﬁnding P, or if applying adapt results in an ill-typed
+sentence.
+
+fpmics 2015/12/8 11:38 Page 639 #661
+14.3. WRITING PROOFS AT THE LEVEL OF A THEORY 639
+Whileget-property is just a procedure, there is a corresponding method —property ,
+which takes the same arguments and conducts the same search a nd adaptation—that tries
+to prove the resulting proposition. Again, let us assume tha t the proofs shown in Chapter 9
+have been done in the current session, but not Exercise 9.8 or 9.9, which were to prove the
+left inverse property (with or without using the commutativ e property). Here we can prove
+it just by adapting the abstract-level proof:
+>(!property Group.Left-Inverse ZAdditive-Group Group.T heory)
+Theorem : (forall ?x:Z
+(= (Z.+ (Z.Negate ?x) ?x)
+Z.zero))
+We can also apply the property method to axioms:
+>(!property Group.Left-Identity ZAdditive-Group Group. Theory)
+Theorem : (forall ?x:Z
+(= (Z.+ Z.zero ?x)
+?x))
+We can easily check whether a theory axiom instance is in the a ssumption base:
+(!claim (get-property Group.Associative ZAdditive-Grou p Group.Theory))
+Theorem : (forall ?x:Z
+(forall ?y:Z
+(forall ?z:Z
+(= (Z.+ (Z.+ ?x ?y)
+?z)
+(Z.+ ?x
+(Z.+ ?y ?z))))))
+For complete checking of all of a theory’s axioms, we can use t he Athena procedure
+print-instance-check :
+>(print-instance-check ZAdditive-Group Group.Theory)
+Checking
+(forall ?x:Z
+(= (Z.+ ?x
+(Z.Negate ?x))
+Z.zero))
+Checking
+(forall ?x:Z
+(forall ?y:Z
+(= (Z.- ?x ?y)
+(Z.+ ?x
+
+fpmics 2015/12/8 11:38 Page 640 #662
+640 CHAPTER 14. ABSTRACT STRUCTURES
+(Z.Negate ?y)))))
+Checking
+(forall ?x:Z
+(forall ?y:Z
+(forall ?z:Z
+(= (Z.+ (Z.+ ?x ?y)
+?z)
+(Z.+ ?x
+(Z.+ ?y ?z))))))
+Checking
+(forall ?x:Z
+(= (Z.+ Z.zero ?x)
+?x))
+Checking
+(forall ?x:Z
+(= (Z.+ ?x Z.zero)
+?x))
+Term: true
+Exercise 14.1: Show that lists as deﬁned in Chapter 3 are a monoid under conca tenation,
+by deﬁning an appropriate theory instance and calling print-instance-check with it.
+14.4 Dynamic evolution of theories
+Like modules, structured theories are dynamic : one can extend such a theory at any time by
+adding new theorems and their proofs. With modules we do this withextend-module ; with
+theories we use evolve . An important aspect of the design of the Athena implementat ion
+of theories is that theory evolution respects theory reﬁnement . That is, if theory Bis a
+reﬁnement of theory A(directly or indirectly), and we evolve Awith new theorems and
+their proofs, then these theorems and proofs are available t o all instances of Bas well as
+those of A.
+As a simple example, consider the following property
+(forall w x y z . ((w + x) + y) + z = w + (x + (y + z)))
+This property depends only on associativity of +, and thus in the theory hierarchy it can be
+introduced and its proof can be done at the level of Semigroup :
+
+fpmics 2015/12/8 11:38 Page 641 #663
+14.4. DYNAMIC EVOLUTION OF THEORIES 641
+extend-module Semigroup {
+  define w := ?w
+  define Swing-right :=
+  (forall w x y z . ((w + x) + y) + z = w + (x + (y + z)))
+  define Swing-right-proof :=
+  method (theorem adapt)
+    let{given := lambda (P) (get-property P adapt Theory);
+      chain := method (L) (!chain-help given L /quotesingle.Varnone);
+      + := (adapt +)}
+      conclude (adapt theorem)
+      pick-any w x y z
+        (!chain [(((w + x) + y) + z)
+        --> ((w + (x + y)) + z) [Associative]
+        --> (w + ((x + y) + z)) [Associative]
+        --> (w + (x + (y + z))) [Associative]])
+        (evolve Theory [[Swing-right] Swing-right-proof])
+      }# close module Semigroup
+      We can now beneﬁt from this theorem and proof when working wit h any reﬁnement of
+      Semigroup ; for example:
+      >(!property Semigroup.Swing-right ZAdditive-Group Grou p.Theory)
+Theorem : (forall ?w:Z
+(forall ?x:Z
+(forall ?y:Z
+(forall ?z:Z
+(= (Z.+ (Z.+ (Z.+ ?w ?x)
+?y)
+?z)
+(Z.+ ?w
+(Z.+ ?x
+(Z.+ ?y ?z))))))))
+Here, the search for the property Swing-right has gone up the hierarchy from its starting
+point inGroup.Theory toMonoid.Theory , and ﬁnally to Semigroup.Theory . The proof found
+there is then adapted using the ZAdditive-Group adapter, which includes the renaming of
+Group.+ toZ.+. While executing the proof, Associative is looked up, adapted to be in terms
+ofZ.+, and determined to be in the assumption base (having been pro ved in the Zdatatype
+development). This allows all applications of associativi ty in thechain call to succeed, thus
+proving the goal equation.
+In short, we have the ability to incrementally develop a theory library without having to
+edit the ﬁles containing the original deﬁnitions, and we can do so with great economy by
+associating theorems and their proofs with the most abstrac t theory—the one closest the
+base of the hierarchy—that provides the axioms and theorems used in its proof.
+
+fpmics 2015/12/8 11:38 Page 642 #664
+642 CHAPTER 14. ABSTRACT STRUCTURES
+14.5 Abstract proof method conventions
+There are a few conventions that need to be followed in progra mming a proof method to
+prove theorems at an abstract level. In explaining these con ventions, we illustrate them with
+theLeft-Inverse-proof method from page 638, and a single proof method that includes
+the proofs of each of the other three Group.Theory theorems:
+1define proofs :=
+2method (theorem adapt)
+3 let{given := lambda (P) (get-property P adapt Theory);
+4 lemma := method (P) (!property P adapt Theory);
+5 chain := method (L) (!chain-help given L /quotesingle.Varnone);
+6 chain-> := method (L) (!chain-help given L /quotesingle.Varlast);
+7 [+ U- <0>] := (adapt [+ U- <0>])}
+8 matchtheorem {
+9 (val-of Double-Negation) =>
+10 conclude (adapt theorem)
+11 pick-any x:(sort-of <0>)
+12 (!chain [(U- (U- x))
+13 <-- (<0> + (U- (U- x))) [Left-Identity]
+14 <-- ((x + (U- x)) + (U- (U- x))) [Right-Inverse]
+15 --> (x + ((U- x) + (U- (U- x)))) [Associative]
+16 --> (x + <0>) [Right-Inverse]
+17 --> x [Right-Identity]])
+18 | (val-of Unique-Negation) =>
+19 conclude (adapt theorem)
+20 pick-any x:(sort-of <0>) y:(sort-of <0>)
+21 let{LI := (!lemma Left-Inverse)}
+22 assume A := (x + y = <0>)
+23 (!chain [(U- x)
+24 <-- ((U- x) + <0>) [Right-Identity]
+25 <-- ((U- x) + (x + y)) [A]
+26 <-- (((U- x) + x) + y) [Associative]
+27 --> (<0> + y) [LI]
+28 --> y [Left-Identity]])
+29 | (val-of Neg-Plus) =>
+30 conclude (adapt theorem)
+31 pick-any x y
+32 let{UN := (!lemma Unique-Negation);
+33 A := (!chain
+34 [((x + y) + ((U- y) + (U- x)))
+35 <-- (x + ((y + (U- y)) + (U- x))) [Associative]
+36 --> (x + (<0> + (U- x))) [Right-Inverse]
+37 --> (x + (U- x)) [Left-Identity]
+38 --> <0> [Right-Inverse]])}
+39 (!chain->
+40 [A ==> ((U- (x + y)) = ((U- y) + (U- x))) [UN]])
+41 }
+42
+
+fpmics 2015/12/8 11:38 Page 643 #665
+14.5. ABSTRACT PROOF METHOD CONVENTIONS 643
+43(evolve Theory [[Double-Negation Unique-Negation Neg-Pl us] proofs])
+44}# close module Group
+The following conventions may seem complex and hard to remem ber, so it’s often easiest
+just to copy the deﬁnitions from an existing proof method, li ke the one above, and make
+revisions (usually minor) as needed.
+First, the method should accept exactly two parameters, theorem andadapt , where the-
+orem is a sentence and adapt is a function-symbol renaming. The goal of the method is to
+prove(adapt theorem ). The method may contain multiple proofs, in which case theorem
+is used in a match form to select one of the proofs, as in lines 8–41 in the proofs method
+above.
+Theadapt parameter should be applied to each of the symbols declared i n the module
+containing the theory (including those imported from super ior theories with open), as in
+line 7.
+The other bit of preparation that is needed is to introduce a p rocedure, given , and meth-
+odslemma andchain (and, if needed, chain-> andchain<- ), which are handy tools for
+simplifying the way that external properties can be named in proof steps that need them.
+Thelemma method (line 4) simply calls the property method (see p. 639), passing it P
+(lemma ’s argument), adapt (one of the enclosing proof method’s arguments), and the the ory
+to be used as the starting point in the theory structure for se arches for P(Theory in line 4,
+which in this context means Group.Theory ). Thus, it ﬁnds the ﬁrst occurrence of Pand uses
+the proof method accompanying it to prove (adapt P) .
+Thegiven procedure (line 3) is similar but only retrieves Pusingget-property (p. 638);
+it is used in an abstract-level proof when Pis known either to be an axiom of the theory or
+to have already been proved using lemma (orproperty directly). Thus, in either case, Pis
+already in the assumption base.
+Usually one does not invoke given directly, but with the locally-deﬁned version of chain
+(orchain-> andchain<- ). As shown in lines 5 and 6, these methods are deﬁned in terms
+of the predeﬁned method chain-help , which uses given to convert every occurrence it
+encounters of a property Pto(given P). This is what allows one to write chain-step jus-
+tiﬁcations like [Right-Identity] instead of the more verbose [(given Right-Identity)]
+or
+[(get-property Right-Identity adapt Theory)] .
+The last argument to chain-help is/quotesingle.Varnone,/quotesingle.Varfirst , or/quotesingle.Varlast, corresponding to chain ,
+chain<- , orchain-> , respectively.
+
+fpmics 2015/12/8 11:38 Page 644 #666
+644 CHAPTER 14. ABSTRACT STRUCTURES
+14.6 Group theory reﬁnements
+Mathematicians have devised many useful reﬁnements of grou p theory. Let us take a few
+of these as examples of extending the small reﬁnement hierar chy we have so far.
+14.6.1 Abelian group theory
+First, consider commutativity:
+(forall x y . x + y = y + x)
+We should ﬁrst ask whether the group axioms imply this proper ty, in which case we should
+simply evolve Group.Theory to include it as a theorem along with its proof. While the
+integer operator Z.+and the power-series operator ZPS.+ both have this property (and we
+proved it in Chapter 9), there are structures that have all th e group properties but for which
+commutativity fails. (One example is invertible square mat rices under multiplication.) This
+means that commutativity is independent of the group axioms, so it makes sense to deﬁne
+a reﬁnement of group theory that includes this axiom. And in f act,Abelian monoid and
+Abelian group1add only this property and nothing more:
+module Abelian-Monoid {
+  openMonoid
+  define Commutative := (forall x y . x + y = y + x)
+  define Theory := (theory [Monoid.Theory] [Commutative] 'Abelian-Monoid)
+}
+module Abelian-Group {
+  openGroup
+  define Commutative := (forall x y . x + y = y + x)
+  define Theory := (theory [Group.Theory] [Commutative] 'Abelian-Group)
+}
+Commutativity allows a shorter proof for Left-Inverse and a more natural statement of
+Neg-Plus .
+extend-module Abelian-Group {
+  define Left-Inverse-proof :=
+  method (theorem adapt)
+    let{given := lambda (P) (get-property P adapt Theory);
+      chain := method (L) (!chain-help given L /quotesingle.Varnone);
+      [+ U- <0>] := (adapt [+ U- <0>])}
+      pick-any x
+        (!chain [((U- x) + x)
+        --> (x + (U- x)) [Commutative]
+        Named for Norwegian mathematician Niels Henrik Abel (1802 -1829).
+
+fpmics 2015/12/8 11:38 Page 645 #667
+14.6. GROUP THEORY REFINEMENTS 645
+10 --> <0> [Right-Inverse]])
+11(evolve Theory [[Left-Inverse] Left-Inverse-proof])
+12
+13define Neg-Plus := (forall x y . (U- (x + y)) = (U- x) + (U- y))
+14
+15define Neg-Plus-proof :=
+16method (theorem adapt)
+17 let{given := lambda (P) (get-property P adapt Theory);
+18 chain := method (L) (!chain-help given L /quotesingle.Varnone);
+19 [+ U- <0>] := (adapt [+ U- <0>])}
+20 pick-any x y
+21 let{Group-version := (!property Group.Neg-Plus adapt Group. Theory)}
+22 (!chain [(U- (x + y))
+23 --> ((U- y) + (U- x)) [Group-version]
+24 --> ((U- x) + (U- y)) [Commutative]])
+25(evolve Theory [[Neg-Plus] Neg-Plus-proof])
+26}# close module Abelian-Group
+Note that the evolve call in line 11 places a new occurrence of Left-Inverse in
+the reﬁnement hierarchy and it is the one that will be found in when starting from
+Abelian-Group.Theory . Thus its associated proof, Left-Inverse-proof , will be executed.
+When starting at the Group.Theory level, on the other hand, the old occurrence of
+Left-Inverse and its associated proof will be found, and that proof does no t depend on
+commutativity.
+In the case of Neg-Plus , in line 21 we still ﬁnd and execute the Group level proof, then
+use commutativity to ﬁnish the proof of the restated propert y.
+14.6.2 Multiplicative theories
+The next reﬁnement step we take is from Group toRing, a theory that captures many of
+the properties of numeric and algebraic structures like Z,ZPS, polynomials in one or more
+variables, etc.—not only the properties of their addition o perator but also of their multipli-
+cation operator. For this and other purposes we often need a v ersion of a theory in which
+the original function symbols are replaced with new ones. Th is is similar to adapting a
+theory, but instead of a concrete instance we want the result to be another theory that is iso-
+morphic to the original. To do so in Athena, we can declare the new symbols and not assert
+any axioms about them, just as with the original symbols, and in a new theory deﬁnition
+express the name correspondence together with the original theory in the superior list:
+module Multiplicative-Semigroup {
+  openSemigroup
+  declare *: (T) [T T] -> T [300]
+  define Theory :=
+  (theory [[Semigroup.Theory /quotesingle.Var* [+ *]]] [] 'Multiplicative-Semigroup)
+}
+
+fpmics 2015/12/8 11:38 Page 646 #668
+646 CHAPTER 14. ABSTRACT STRUCTURES
+The theory deﬁnition can be written more succintly using the Athena procedure
+theory-clone :
+define Theory :=
+(theory-clone [Semigroup.Theory /quotesingle.Var* [+ *]] 'Multiplicative-Semigroup)
+The single superior speciﬁed is [Semigroup /quotesingle.Var* [+ *]] , which means for each axiom of
+Semigroup (there is only one in this case), there is an axiom of Multiplicative-Semigroup
+adapted to use *in place of +, and named with preﬁx /quotesingle.Var*; i.e.,[/quotesingle.Var*P], where Pis the original
+axiom. Thus, the deﬁnition is equivalent to
+module Multiplicative-Semigroup {
+  openSemigroup
+  declare *: (T) [T T] -> T [300]
+  define Associative := (forall x y z . (x * y) * z = x * (y * z))
+  define Theory :=
+  (theory [] [Associative] 'Multiplicative-Semigroup)
+}
+In the above example, the original theory, Semigroup , has no superiors, but in the fol-
+lowing example the original theory, Monoid , does have Semigroup as its superior, and the
+renaming is applied there as well as to the top-level axioms, as shown by listing the new
+theory with the procedure print-theory .
+module Multiplicative-Monoid {
+  openMultiplicative-Semigroup
+  openMonoid
+  declare <1>: (T) [] -> T
+  define Theory :=
+  (theory-clone [Monoid.Theory /quotesingle.Var* [+ * <0> <1>]] 'Multiplicative-Monoid)
+}
+>(print-theory Multiplicative-Monoid.Theory)
+Multiplicative-Monoid:
+Monoid.Associative:
+(forall ?x: 'S
+(forall ?y: 'S
+(forall ?z: 'S
+(= (Multiplicative-Semigroup.*
+(Multiplicative-Semigroup.* ?x ?y)
+?z)
+(Multiplicative-Semigroup.*
+?x
+(Multiplicative-Semigroup.* ?y ?z))))))
+Monoid.Left-Identity:
+
+fpmics 2015/12/8 11:38 Page 647 #669
+14.6. GROUP THEORY REFINEMENTS 647
+(forall ?x: 'S
+(= (Multiplicative-Semigroup.* Multiplicative-Identit y.<1> ?x)
+?x))
+Monoid.Right-Identity:
+(forall ?x: 'S
+(= (Multiplicative-Semigroup.* ?x Multiplicative-Ident ity.<1>)
+?x))
+Although we will not need it for ring theory, we could also wri te:
+module Multiplicative-Group {
+  openMultiplicative-Monoid
+  openGroup
+  declare Inv: (T) [T] -> T
+  declare /: (T) [T T] -> T
+  define Theory :=
+  (theory-clone [Group.Theory /quotesingle.Var* [+ * <0> <1> U- Inv - / ]]
+  'Multiplicative-Group)
+}
+.6.3 Ring theory
+We can now deﬁne ring theory as follows:
+module Ring {
+  openAbelian-Group
+  openMultiplicative-Semigroup
+  define Right-Distributive :=
+  (forall x y z . (x + y) * z = x * z + y * z)
+  define Left-Distributive :=
+  (forall x y z . z * (x + y) = z * x + z * y)
+  define Theory :=
+  (theory [Abelian-Group.Theory Multiplicative-Semigrou p.Theory]
+  [Right-Distributive Left-Distributive]
+  'Ring)
+}
+In this case, there are two superiors in the reﬁnement hierar chy:Abelian-Group , which
+brings in the Abelian group properties of the additive opera tors+,<0>,U-, and -; and
+Multiplicative-Semigroup , which brings in the associative property of *. The two dis-
+tributive properties are then speciﬁed at the top level.
+There are several other important reﬁnements of Ring, given here with the names com-
+monly used in mathematical writing.
+
+fpmics 2015/12/8 11:38 Page 648 #670
+648 CHAPTER 14. ABSTRACT STRUCTURES
+module Commutative-Ring {
+  openRing
+  define *Commutative := (forall x y . x * y = y * x)
+  define Theory :=
+  (theory [Ring.Theory] [*Commutative] 'Commutative-Ring)
+}
+module Ring-With-Identity {
+  openMultiplicative-Monoid
+  openRing
+  define Theory :=
+  (theory [Multiplicative-Monoid.Theory Ring.Theory]
+  []'Ring-With-Identity)
+}
+module Commutative-Ring-With-Identity {
+  openMultiplicative-Monoid
+  openCommutative-Ring
+  define Theory :=
+  (theory [Multiplicative-Monoid.Theory Commutative-Rin g.Theory]
+  []'Commutative-Ring-With-Identity)
+}
+Thus, in the name “commutative ring” the adjective refers to commutativity of the ring’s
+multiplication operator. Similarly, in the name “ring with identity” the identity is that of
+multiplication.
+An example of a ring with identity that is not commutative is s quare matrices with
+real coefﬁcients under matrix addition and multiplication . (Earlier we mentioned invert-
+ible square matrices as an example of a non-Abelian group, bu t here we are only requiring
+monoid properties of the multiplication operator, so it is u nnecessary to restrict the domain
+to invertible matrices.)
+The following exercises extend the development of the integ er datatype begun in Chap-
+ter 9 to prove that is a commutative ring with identity.
+Exercise 14.2: Extend module Zwith a declaration of *as a binary operator on Zand
+deﬁne a module Times holding its properties, initialized with axioms that deter mine its
+meaning as integer multiplication.
+We begin with proving commutativity of Z.*. Note that we could wait to prove this until
+we have proved that the integer datatype is a ring, leaving it as the ﬁnal step of showing it
+is a commutative ring, but it is useful to do it ﬁrst as a “warmu p” exercise before tackling
+associativity, which has the extra complexity of a third var iable.
+Exercise 14.3: ExtendZ.*with the commutative property and prove it. Hint: Unlike the
+case with addition, the sign of the product of two signed numb ers is determined inde-
+pendently of the sizes of the numbers, so the proof does not re quire considering so many
+
+fpmics 2015/12/8 11:38 Page 649 #671
+14.6. GROUP THEORY REFINEMENTS 649
+different cases. Thus, it is not necessary to map to and from t he pair representation, NN, of
+Section 9.4. (But we will come to another situation where the mapping approach is best, in
+Exercises 14.5-14.7.)
+*Exercise 14.4: ExtendZ.*with the associative property and prove it. Hint: As in the
+previous exercise, this associative property can best be pr oved in the signed integer repre-
+sentation, Z. (Although there are eight sign-combination cases, each is straightforward.)
+The last two properties needed in order to have a ring are the t wo distributive properties.
+Due to the presence of addition in these properties, a proof d irectly in terms of Zwould be
+complicated by the number of sign combinations and natural n umber inequality cases to
+consider. Instead, the following exercises develop a proof based on mapping each distribu-
+tive property to the pair representation, proving it there, and mapping back. We can use the
+mappings already deﬁned, and their inverse relation, from S ection 9.4.
+*Exercise 14.5: Deﬁne the multiplication operator Z.NN.*/quotesingle.Varfor integers in the pair repre-
+sentation Z.NN. As a deﬁnition, you can assert it into the assumption base, b ut you must then
+show that it is consistent with the deﬁnition of Z.*: deﬁne a multiplicative-homomorphism
+analogous to the additive-homomorphism introduced in Sect ion 9.5, and show that Z.*and
+yourZ.NN.*/quotesingle.Varjointly satisfy it.
+*Exercise 14.6: ExtendZ.NN.Times with the right distributive property and prove it.
+*Exercise 14.7: ExtendZ.Times with the distributive properties and prove them. Hints:
+Prove the right distributive property by mapping to Z.NN and back, as was done with the
+commutative and associative properties of Z.+in Section 9.6. The left distributive property
+then follows easily by commutativity.
+Upon completion of these exercises, we are able to check that Zis a commutative ring:
+>define Integer-Ring :=
+(renaming [Ring.+ Z.+ Ring.* Z.*
+Ring.<0> Z.zero Ring.U- Z.Negate Ring.- Z.-])
+Procedure Integer-Ring defined.
+>(print-instance-check Integer-Ring Commutative-Ring. Theory)
+Checking
+(forall ?x:Z
+(forall ?y:Z
+(= (Z.* ?x:Z ?y:Z)
+(Z.* ?y:Z ?x:Z))))
+Checking
+(forall ?x:Z
+(forall ?y:Z
+(forall ?z:Z
+(= (Z.* (Z.+ ?x:Z ?y:Z)
+
+fpmics 2015/12/8 11:38 Page 650 #672
+650 CHAPTER 14. ABSTRACT STRUCTURES
+?z:Z)
+(Z.+ (Z.* ?x:Z ?z:Z)
+(Z.* ?y:Z ?z:Z))))))
+...
+Checking
+(forall ?x:Z
+(forall ?y:Z
+(forall ?z:Z
+(= (Z.* (Z.* ?x:Z ?y:Z)
+?z:Z)
+(Z.* ?x:Z
+(Z.* ?y:Z ?z:Z))))))
+Term: true
+Exercise 14.8: ExtendZ.*with right and left identity properties and prove them, then use
+print-instance-check to check that Zis a commutative ring with identity.
+14.6.4 Integral domain
+A datatype Twith additive identity 0 and multiplication operator ×is said to have zero
+divisors if there are nonzero x,y∈Tsuch that x×y=0. InZthere are no zero divisors,
+and this property of the integers is the inspiration for furt her reﬁnements of ring theory
+(one of which, Integral-Domain , expresses the connection in its name).
+module No-Zero-Divisors {
+  openRing
+  define No-Zero-Divisors :=
+  (forall x y . x * y = <0> ==> x = <0> | y = <0>)
+  define Theory := (theory [] [No-Zero-Divisors] 'No-Zero-Divisors)
+}
+module Ring-With-No-Zero-Divisors {
+  openRing
+  define Theory :=
+  (theory [Ring.Theory] [No-Zero-Divisors.Theory]
+  'Ring-With-No-Zero-Divisors)
+}
+module Integral-Domain {
+  openCommutative-Ring-With-Identity
+  openNo-Zero-Divisors
+  define Theory :=
+  (theory [Commutative-Ring-With-Identity.Theory
+  No-Zero-Divisors.Theory]
+  []'Integral-Domain)
+}# close module Integral-Domain
+
+fpmics 2015/12/8 11:38 Page 651 #673
+14.7. PERMUTATIONS AS A GROUP 651
+Exercise 14.9: ExtendZ.*with a property expressing that Zhas no zero divisors, and
+prove it. Then use print-instance-check to check that Zis an integral domain.
+14.6.5 Algebraic theory diagram
+Figure 14.1 depicts the theory hierarchy developed in the pr eceding sections. A rectangular
+node represents a theory, while an oval represents a single a xiom that has not (though it
+could have) been encapsulated in its own theory. A directed a rrow means the target node is
+a reﬁnement of the source node.
+14.7 Permutations as a group
+In this section we develop yet another group example, permutations . We will see three
+important differences from the additive integer group of th e previous section. First, it is a
+nonnumeric example, further illustrating the generality o f group theory. Second, we can
+develop permutations not just as a single new instance of gro up theory, but as a whole
+family of instances, by doing the development at an abstract level: a permutation theory ,
+which itself has many nonisomorphic instances.
+The third difference is a more technical one: we deﬁne a permu tation as a certain kind
+of function, called a bijective function, and to describe the relevant properties in a strai ght-
+forward way it is useful to be able to quantify over functions . This would appear to require
+working in a second-order logic, but Athena’s logic is restr icted to ﬁrst order. The solution
+taken here is to embed a limited formulation of higher-order properties of functions into
+ﬁrst-order logic by deﬁning function application via an exp licitapply operation, as we did
+in Section 9.7 in deﬁning power series.
+
+fpmics 2015/12/8 11:38 Page 652 #674
+652 CHAPTER 14. ABSTRACT STRUCTURES
+Semigroup
+MonoidMultiplicative
+Semigroup
+Group
+Multiplicative
+MonoidMultiplicative
+GroupAbelian
+Group
+Ring
+Ring With
+IdentityCommutativity
+Multiplicative
+Commutativity
+Commutative
+RingRing With
+No Zero Divisors
+Commutative Ring
+With Identity
+Integral
+DomainNo Zero Divisors
+Figure 14.1
+Reﬁnement Hierarchy of Algebraic Theories
+
+fpmics 2015/12/8 11:38 Page 653 #675
+14.7. PERMUTATIONS AS A GROUP 653
+Following this approach, we ﬁrst develop a function theory m ainly in terms of proper-
+ties of function application and composition, then reﬁne it to obtain a permutation theory
+in which permutation composition, identity, and inversion obey the group theory require-
+ments.
+14.7.1 Function theory
+We begin with declarations of function application, identi ty, and composition, and a few
+axioms relating them.
+module Function {
+  domain (Fun Domain Codomain)
+  declare apply: (C, D) [(Fun D C) D] -> C
+  declare identity: (D) [] -> (Fun D D)
+  declare o: (D, C, B) [(Fun C B) (Fun D C)] -> (Fun D B)
+  define [f g h x x /quotesingle.Vary] := [?f ?g ?h ?x ?x /quotesingle.Var?y]
+  define identity-definition := (forall x . (apply identity x) = x)
+  define compose-definition :=
+  (forall f g x . (apply (f o g) x) = (apply f (apply g x)))
+  define Function-Equality :=
+  (forall f g . f = g <==> (forall x . (apply f x) = (apply g x)))
+  define Theory :=
+  (theory [] [identity-definition compose-definition Func tion-Equality]
+  'Function)
+  Our eventual goal is showing that the subclass of functions c alled permutations form a
+  group under composition, so we look ﬁrst at associativity an d identity properties.
+  define Associative := (forall f g h . (f o g) o h = f o (g o h))
+  define Right-Identity := (forall f . f o identity = f)
+  define Left-Identity := (forall f . identity o f = f)
+  define Monoid-theorems := [Associative Right-Identity Left-Ide ntity]
+  The proof of Associative just requires repeated use of the deﬁnition of oto prove the
+  associativity propery when the compositions are applied to a valuex, then extracting the
+  desired equality using the Function-Equality axiom.
+  define proofs :=
+  method (theorem adapter)
+    let{given := lambda (P) (get-property P adapter Theory);
+      chain := method (L) (!chain-help given L /quotesingle.Varnone);
+      chain-> := method (L) (!chain-help given L /quotesingle.Varlast);
+      [apply o identity] := (adapter [apply o identity]);
+      cd := compose-definition;
+      id := identity-definition}
+      matchtheorem {
+
+fpmics 2015/12/8 11:38 Page 654 #676
+654 CHAPTER 14. ABSTRACT STRUCTURES
+(val-of Associative) =>
+pick-any f g h
+  let{all-x := pick-any x
+    (!chain
+    [(apply ((f o g) o h) x)
+    --> (apply (f o g) (apply h x)) [cd]
+    --> (apply f (apply g (apply h x))) [cd]
+    <-- (apply f (apply (g o h) x)) [cd]
+    <-- (apply (f o (g o h)) x) [cd]])}
+    (!chain-> [all-x ==> ((f o g) o h = f o (g o h))
+    [Function-Equality]])
+    | (val-of Right-Identity) => (! force(adapt theorem))
+    | (val-of Left-Identity) => (! force(adapt theorem))
+  }
+  (evolve Theory [Monoid-theorems proofs])
+  Exercise 14.10: Fill in the proofs of Right-Identity andLeft-Identity ; i.e., replace the
+  uses offorce with actual proofs.
+  Exercise 14.11: Show that functions as deﬁned in Function are a monoid under compo-
+  sition, by deﬁning an appropriate theory instance and calli ngprint-instance-check with
+  it.
+  The next step toward showing we have a group is deﬁning invers es, but not all functions
+  have inverses. To proceed, we must somehow restrict ourselv es to the subclass of func-
+  tions that do have inverses. The key conditions for deﬁning t his class are captured in the
+  following predicates (under the same names as are commonly u sed in mathematics texts):
+  declare surjective , injective, bijective: (D, C) [(Fun D C)] -> Bool ean
+  define surjective-definition :=
+  (forall f . surjective f <==> forall y . exists x . (apply f x) = y )
+  define injective-definition :=
+  (forall f . injective f <==>
+  forall x x /quotesingle.Var. (apply f x) = (apply f x /quotesingle.Var) ==> x = x /quotesingle.Var)
+  define bijective-definition :=
+  (forall f . bijective f <==> surjective f & injective f)
+  (evolve Theory [[surjective-definition injective-defin ition
+  bijective-definition] Axiom])
+  We will prove in the next subsection that in order for a functi on to have an inverse it is
+  sufﬁcient for it to be bijective. In preparation, we have the following theorems:
+
+fpmics 2015/12/8 11:38 Page 655 #677
+14.7. PERMUTATIONS AS A GROUP 655
+define identity-surjective := (surjective identity)
+define identity-injective := (injective identity)
+define identity-bijective := (bijective identity)
+define compose-surjective-preserving :=
+(forall f g . (surjective f) & (surjective g) ==> (surjective (f o g)))
+define compose-injective-preserving :=
+(forall f g . (injective f) & (injective g) ==> (injective (f o g)))
+define compose-bijective-preserving :=
+(forall f g . (bijective f) & (bijective g) ==> (bijective (f o g)))
+The proofs of the ﬁrst and fourth theorems are included in the following method:
+define proofs :=
+method (theorem adapt)
+  let{given := lambda (P) (get-property P adapt Theory);
+    chain := method (L) (!chain-help given L /quotesingle.Varnone);
+    chain-> := method (L) (!chain-help given L /quotesingle.Varlast);
+    [apply o identity] := (adapt [apply o identity]);
+    cd := compose-definition;
+    id := identity-definition}
+    matchtheorem {
+    (val-of identity-surjective) =>
+    let{all-y :=
+      pick-any y
+        (!chain->
+        [(apply identity y) --> y [id]
+        ==> (exists ?x . (apply identity ?x) = y)
+        [existence]])}
+        (!chain->
+        [all-y ==> (surjective identity) [surjective-definition ]])
+        | (val-of identity-injective) => (! force(adapt theorem))
+        | (val-of identity-bijective) => (! force(adapt theorem))
+        | (val-of compose-surjective-preserving) =>
+        pick-any f g
+          assume (surjective f & surjective g)
+            let{f-case :=
+              (!chain->
+              [(surjective f)
+              ==> (forall ?y . exists ?x . (apply f ?x) = ?y)
+              [surjective-definition]]);
+              g-case :=
+              (!chain->
+              [(surjective g)
+              ==> (forall ?y . exists ?x . (apply g ?x) = ?y)
+              [surjective-definition]]);
+              all-y :=
+              pick-any y
+                let{f-case-y :=
+                  (!chain->
+                  [true ==> (exists ?y /quotesingle.Var. (apply f ?y /quotesingle.Var) = y)
+                  [f-case]])}
+
+fpmics 2015/12/8 11:38 Page 656 #678
+656 CHAPTER 14. ABSTRACT STRUCTURES
+pick-witness y/quotesingle.Varforf-case-y
+  let{g-case-y /quotesingle.Var:=
+    (!chain->
+    [true ==> (exists ?x . (apply g ?x) = y /quotesingle.Var)
+    [g-case]])}
+    pick-witness xforg-case-y /quotesingle.Var
+      (!chain->
+      [(apply (f o g) x)
+      --> (apply f (apply g x)) [cd]
+      --> (apply f y /quotesingle.Var) [((apply g x) = y /quotesingle.Var)]
+      --> y [((apply f y /quotesingle.Var) = y)]
+      ==> (exists ?x . (apply (f o g) ?x) = y)
+      [existence]])}
+      (!chain-> [all-y ==> (surjective (f o g))
+      [surjective-definition]])
+      | (val-of compose-injective-preserving) => (! force(adapt theorem))
+      | (val-of compose-bijective-preserving) => (! force(adapt theorem))
+    }
+    (evolve Theory [Inverse-theorems proofs])
+  }# close module Function
+  Exercise 14.12: Fill in the proofs of identity-injective andidentity-bijective .
+  Exercise 14.13: Fill in the proof of compose-injective-preserving .
+  Exercise 14.14: Fill in the proof of compose-bijective-preserving .
+  .7.2 Permutation theory
+  To continue toward our goal of showing permutations form a gr oup under composition,
+  we deﬁne a new parameterized domain (Perm D) as the basis of a reﬁnement of Function
+  theory. This reﬁnement we call Bijective-Function because its main axiom is one that
+  says that a permutation—a (Perm D) value—when considered as a function—a (Fun D D)
+  value—is bijective.
+  module Bijective-Function {
+    openFunction
+    domain (Perm D)
+    declare as-fun: (D) [(Perm D)] -> (Fun D D)
+    declare as-perm: (D) [(Fun D D)] -> (Perm D)
+    define [p q r f x y] := [?p:(Perm 'D) ?q:(Perm 'D) ?r:(Perm 'D)
+    ?f:(Fun 'D'D) ?x:'D ?y:'D]
+    define is-bijective := (forall p . (bijective (as-fun p)))
+
+fpmics 2015/12/8 11:38 Page 657 #679
+14.7. PERMUTATIONS AS A GROUP 657
+define as-perm-as-fun := (forall p . (as-perm (as-fun p)) = p)
+define as-fun-as-perm :=
+(forall f . (bijective f) ==> (as-fun (as-perm f)) = f)
+define Theory :=
+(theory [Function.Theory] [is-bijective as-perm-as-fun as-fun-as-perm]
+'Bijective-Function)
+}# close module Bijective-Function
+The functions as-fun andas-perm aresort conversions (also called type conversions ),
+which map (Perm D) values to (Fun D D) values and vice-versa. The use of such conver-
+sions is a technical means for treating (Perm D) as a subsort (orsubtype ) of(Fun D D) .
+Note that the second axiom says that we can convert any permut ation to a function and
+back to a permutation, obtaining the same permutation. The o ther way, however, as stated
+in the third axiom, requires starting with a bijective funct ion. This is a condition that must
+be discharged at any point in a proof where the (as-fun (as-perm ?f)) appears, as we will
+see below.
+We now introduce Permutation as a further reﬁnement of Bijective-Function . We have
+Permutation versions of the (Fun D D) functions Function.o andFunction.identity . Each
+of these new functions is axiomatized in terms of its Function counterpart, with the aid of
+the sort conversions. We are also now in a position to introdu ce an inverse function. It is
+axiomizatized in terms of the apply function of the superior theory, again with the aid of
+the sort conversions.
+module Permutation {
+  openBijective-Function
+  declare o: (D) [(Perm D) (Perm D)] -> (Perm D)
+  declare identity: (D) [] -> (Perm D)
+  declare inverse: (D) [(Perm D)] -> (Perm D)
+  define o/quotesingle.Var:= Function.o
+  define identity /quotesingle.Var:= Function.identity
+  define compose-definition :=
+  (forall p q . (p o q) = (as-perm ((as-fun p) o /quotesingle.Var(as-fun q))))
+  define identity-definition := (identity = (as-perm identity /quotesingle.Var))
+  define inverse-definition :=
+  (forall p x y .
+  (apply (as-fun p) x) = y ==> (apply (as-fun (inverse p)) y) = x)
+  declare div: (D) [(Perm D) (Perm D)] -> (Perm D)
+  define div-definition := (forall p q . p div q = p o inverse q)
+
+fpmics 2015/12/8 11:38 Page 658 #680
+658 CHAPTER 14. ABSTRACT STRUCTURES
+define Theory :=
+(theory [Bijective-Function.Theory]
+[compose-definition identity-definition
+inverse-definition div-definition] 'Permutation)
+The ﬁrst set of theorems we state and prove are the monoid prop erties.
+define Associative := (forall p q r . (p o q) o r = p o (q o r))
+define Right-Identity := (forall p . p o identity = p)
+define Left-Identity := (forall p . identity o p = p)
+define Monoid-theorems := [Associative Right-Identity Left-Ide ntity]
+The proof of the associative property uses an intricate comb ination of the function deﬁni-
+tions from the Permutation level; the is-bijective contraint from the Bijective-Function
+level; and the compose-associative andcompose-bijective- preserving properties from
+theFunction level. These properties are woven together with the sort con versions as-fun
+andas-perm .
+define proofs :=
+method (theorem adapt)
+  let{given := lambda (P) (get-property P adapt Theory);
+    lemma := method (P) (!property P adapt Theory);
+    chain := method (L) (!chain-help given L /quotesingle.Varnone);
+    chain-> := method (L) (!chain-help given L /quotesingle.Varlast);
+    [identity /quotesingle.Varo/quotesingle.Varidentity o as-perm as-fun] :=
+    (adapt [identity /quotesingle.Varo/quotesingle.Varidentity o as-perm as-fun])}
+    matchtheorem {
+    (val-of Associative) =>
+    let{compose-assoc := (!lemma Function.Associative);
+      CBP := (!lemma compose-bijective-preserving)}
+      pick-any p:(Perm 'S) q:(Perm 'S) r:(Perm 'S)
+        let{_ := (!chain->
+          [true ==> (bijective (as-fun q)) [is-bijective]]);
+          _ := (!chain->
+          [true
+          ==> (bijective (as-fun p)) [is-bijective]
+          ==> ((bijective (as-fun p)) & (bijective (as-fun q)))
+          [augment]
+          ==> (bijective ((as-fun p) o /quotesingle.Var(as-fun q)))
+          [CBP]]);
+          _ := (!chain->
+          [true
+          ==> (bijective (as-fun r)) [is-bijective]
+          ==> ((bijective (as-fun q)) & (bijective (as-fun r)))
+          [augment]
+          ==> (bijective ((as-fun q) o /quotesingle.Var(as-fun r)))
+          [CBP]])}
+          (!combine-equations
+
+fpmics 2015/12/8 11:38 Page 659 #681
+14.7. PERMUTATIONS AS A GROUP 659
+(!chain
+[((p o q) o r)
+--> ((as-perm ((as-fun p) o /quotesingle.Var(as-fun q))) o r)
+[compose-definition]
+--> (as-perm ((as-fun (as-perm ((as-fun p) o /quotesingle.Var(as-fun q))))
+o/quotesingle.Var(as-fun r))) [compose-definition]
+--> (as-perm (((as-fun p) o /quotesingle.Var(as-fun q))
+o/quotesingle.Var(as-fun r))) [as-fun-as-perm]
+--> (as-perm ((as-fun p) o /quotesingle.Var((as-fun q) o /quotesingle.Var(as-fun r))))
+[compose-assoc]])
+(!chain
+[(p o (q o r))
+--> (p o (as-perm ((as-fun q) o /quotesingle.Var(as-fun r))))
+[compose-definition]
+--> (as-perm ((as-fun p) o /quotesingle.Var
+(as-fun (as-perm
+((as-fun q) o /quotesingle.Var(as-fun r))))))
+[compose-definition]
+--> (as-perm ((as-fun p) o /quotesingle.Var
+((as-fun q) o /quotesingle.Var(as-fun r))))
+[as-fun-as-perm]]))
+| (val-of Right-Identity) => (! force(adapt theorem))
+| (val-of Left-Identity) => (! force(adapt theorem))
+}
+(evolve Theory [Monoid-theorems proofs])
+}# close module Permutation
+Exercise 14.15: Fill in the proofs of Right-Identity andLeft-Identity .
+Next, we come to the inverse properties:
+define Consistent-Inverse :=
+(forall p y . (exists-unique x . (apply (as-fun p) x) = y))
+define As-Fun-Right-Inverse :=
+(forall p . (as-fun p) o /quotesingle.Var(as-fun inverse p) = identity /quotesingle.Var)
+define Right-Inverse := (forall p . (p o inverse p) = identity)
+define Inverse-theorems :=
+[Consistent-Inverse As-Fun-Right-Inverse Right-Invers e]
+The ﬁrst two of these theorems prepare the way for the third, w hich is the actual (right-)
+inverse property for permutations. Consistent-Inverse justiﬁes the deﬁnition of inverse, in
+the sense of showing that deﬁning inverse as was done in the inverse-definition axiom
+does not introduce any inconsistency. Right-Inverse then relates inverse toFunction.o
+via theas-fun sort conversion.
+
+fpmics 2015/12/8 11:38 Page 660 #682
+660 CHAPTER 14. ABSTRACT STRUCTURES
+The task of proving Consistent-Inverse is interesting in that we must prove not only
+existence but also uniqueness of a value satisfying a predicate. We use the Athena method
+show-unique-existence , which is deﬁned by
+define show-unique-existence :=
+method (P)
+  matchP {
+  (exists ( some-var x) (some-prop Q)) =>
+  pick-witness wforP
+    let{v := (fresh-var (sort-of x))}
+      (!egen-unique (exists-unique v (replace-var x v Q)) w)
+    }
+    Thus,show-unique-existence expects its argument Pto be in the assumption base and
+    of the form (exists ?x . (Q ?x)) . The primitive method egen-unique also expects the
+    uniqueness condition
+    (forall ?x ?x /quotesingle.Var?y . Q ?x = ?y & Q ?x /quotesingle.Var= ?y ==> ?x = ?x /quotesingle.Var)
+    to be in the assumption base, and this is what the ﬁrst part of o ur proof below is aimed at
+    establishing.
+    define proofs :=
+    method (theorem adapt)
+      let{given := lambda (P) (get-property P adapt Theory);
+        lemma := method (P) (!property P adapt Theory);
+        chain := method (L) (!chain-help given L /quotesingle.Varnone);
+        chain-> := method (L) (!chain-help given L /quotesingle.Varlast);
+        [identity /quotesingle.Varo/quotesingle.Varidentity o as-perm as-fun] :=
+        (adapt [identity /quotesingle.Varo/quotesingle.Varidentity o as-perm as-fun]);
+        inverse := (adapt inverse)}
+        matchtheorem {
+        (val-of Consistent-Inverse) =>
+        pick-any p
+          let{(and surj inj) :=
+            (!chain->
+            [true
+            ==> (bijective (as-fun p)) [is-bijective]
+            ==> ((surjective (as-fun p)) & (injective (as-fun p)))
+            [bijective-definition]])}
+            pick-any y
+              let{_ :=conclude (forall ?x ?x /quotesingle.Var.
+                (apply (as-fun p) ?x) = y &
+                (apply (as-fun p) ?x /quotesingle.Var) = y ==>
+                ?x = ?x /quotesingle.Var)
+                pick-any x x/quotesingle.Var
+                  let{px := (apply (as-fun p) x);
+                    px/quotesingle.Var:= (apply (as-fun p) x /quotesingle.Var)}
+                    assume (px = y & px /quotesingle.Var= y)
+                      let{ii := (!chain [px = y [(px = y)]
+
+fpmics 2015/12/8 11:38 Page 661 #683
+14.7. PERMUTATIONS AS A GROUP 661
+= px/quotesingle.Var[(px/quotesingle.Var= y)]]);
+iii := (!chain->
+[inj
+==> (forall ?x ?x /quotesingle.Var.
+(apply (as-fun p) ?x) =
+(apply (as-fun p) ?x /quotesingle.Var)
+==> ?x = ?x /quotesingle.Var)
+[injective-definition]])}
+(!chain-> [ii ==> (x = x /quotesingle.Var) [iii]]);
+AyEx := (forall ?y .
+(exists ?x . (apply (as-fun p) ?x) = ?y));
+Ex := (!chain->
+[surj ==> AyEx [surjective-definition]
+==> (exists ?x . (apply (as-fun p) ?x) = y)
+[(specify y)]])}
+(!show-unique-existence Ex)
+| (val-of As-Fun-Right-Inverse) => (! force(adapt theorem))
+| (val-of Right-Inverse) => (! force(adapt theorem))
+}
+(evolve Theory [Inverse-theorems proofs])
+}# close module Permutation
+*Exercise 14.16: Fill in the proofs of As-Fun-Right-Inverse andRight-Inverse .
+We can now achieve the goal of showing permutations form a gro up:
+load"group"
+load"algebra/permutation"
+openPermutation
+define perm-group :=
+(renaming [Group.+ o Group.<0> identity
+Group.U- inverse Group.- div])
+assert (theory-axioms Permutation.Theory)
+define perm-prop := method (P) (!property P no-renaming Permutation.Theory)
+(!perm-prop Consistent-Inverse)
+(!perm-prop Associative)
+(!perm-prop Right-Identity)
+(!perm-prop Left-Identity)
+(!perm-prop As-Fun-Right-Inverse)
+(!perm-prop Right-Inverse)
+(print-instance-check perm-group Group.Theory)
+
+fpmics 2015/12/8 11:38 Page 662 #684
+662 CHAPTER 14. ABSTRACT STRUCTURES
+The output from the print-instance-check call is
+Checking
+(forall ?x:(Bijective-Function.Perm 'T38389)
+(= (Permutation.o ?x
+(Permutation.inverse ?x))
+Permutation.identity))
+Checking
+(forall ?x:(Bijective-Function.Perm 'T38401)
+(forall ?y:(Bijective-Function.Perm 'T38401)
+(= (Permutation.div ?x
+?y)
+(Permutation.o ?x
+(Permutation.inverse ?y)))))
+Checking
+(forall ?x:(Bijective-Function.Perm 'T38418)
+(forall ?y:(Bijective-Function.Perm 'T38418)
+(forall ?z:(Bijective-Function.Perm 'T38418)
+(= (Permutation.o (Permutation.o ?x
+?y)
+?z)
+(Permutation.o ?x
+(Permutation.o ?y
+?z))))))
+Checking
+(forall ?x:(Bijective-Function.Perm 'T38439)
+(= (Permutation.o Permutation.identity
+?x)
+?x))
+Checking
+(forall ?x:(Bijective-Function.Perm 'T38449)
+(= (Permutation.o ?x
+Permutation.identity)
+?x))
+Term: true
+Finally, as we did in the integer arithmetic case, we can imme diately obtain further theo-
+rems from Group theory.
+define perm-group-prop := method (P) (!property P perm-group Group.Theory)
+>(!perm-group-prop Group.Left-Inverse)
+Theorem : (forall ?x:(Bijective-Function.Perm 'S)
+(= (Permutation.o (Permutation.inverse ?x)
+
+fpmics 2015/12/8 11:38 Page 663 #685
+14.7. PERMUTATIONS AS A GROUP 663
+?x)
+Permutation.identity))
+>(!perm-group-prop Group.Double-Negation)
+Theorem : (forall ?x:(Bijective-Function.Perm 'S)
+(= (Permutation.inverse (Permutation.inverse ?x))
+?x))
+>(!perm-group-prop Group.Unique-Negation)
+Theorem : (forall ?x:(Bijective-Function.Perm 'S)
+(forall ?y:(Bijective-Function.Perm 'S)
+(if (= (Permutation.o ?x
+?y)
+Permutation.identity)
+(= (Permutation.inverse ?x)
+?y))))
+>(!perm-group-prop Group.Neg-Plus)
+Theorem : (forall ?x:(Bijective-Function.Perm 'S)
+(forall ?y:(Bijective-Function.Perm 'S)
+(= (Permutation.inverse (Permutation.o ?x
+?y))
+(Permutation.o (Permutation.inverse ?y)
+(Permutation.inverse ?x)))))
+**Exercise 14.17: A function with the same ﬁnite setDas its domain and range must be
+a bijection, and therefore a permutation. This exercise for malizes and proves this statement
+in terms of the ﬁnite map and ﬁnite set notation and theory pre sented in Chapter 10.2
+We could, of course, determine whether a given set of ordered pairs is a permutation by
+working directly from the deﬁnition of a bijective function . A simple example, using the
+Settheory notation developed in Chapter 10, is the set of ordere d pairs of Intvalues,
+define R := ((1 @ 3) ++ (2 @ 1) ++ (3 @ 2) ++ null)
+which maps 1 to 3, 2 to 1 and 3 to 2. First, Ris a function because it doesn’t associate any
+domain value with more than one range value. Second, it is sur jective just by deﬁnition of
+the range of a ﬁnite function (see the Set.range-characterization theorem, page 523).
+Finite permutations play important roles in algebraic the ory and in analysis of algorithms (such as sorting
+algorithms), especially in light of their group theory prop erties. A much studied example is the symmetric group
+of degree n, denoted Sn, which is deﬁned as the set of all permutations on a set Dof size n. The number of
+members of Snisn!.
+
+fpmics 2015/12/8 11:38 Page 664 #686
+664 CHAPTER 14. ABSTRACT STRUCTURES
+And it is injective, because it doesn’t associate the same ra nge value with more than one
+domain value. Being both surjective and injective, it is bij ective.
+But for a set of ordered pairs of much larger size, it is useful to have the simpler test for
+bijectivity given by the following theorem:
+define bijective-theorem :=
+(forall ?R:(Set (Pair 'S'S))
+functional ?R & range ?R = dom ?R ==> bijective ?R)
+Using this theorem, to determine that a given set of pairs Ris bijective, we only have to
+check that that it is functional and its range is the same set a s its domain. Furthermore, if
+we start with a ﬁnite map mand compute Ras(map->set m) , we are guaranteed that Ris
+functional, so the only test required is whether the domain a nd range of Rare the same set.
+Enclose all of the following development in an extension of t heSet module:
+extend-module Set {...}and try to take advantage of axioms and theorems from that
+  module.
+  (a) Deﬁnite the predicate functional as follows:
+  define [s x y y /quotesingle.Varrest] :=
+  [?s:(Set (Pair 'S'T)) ?x: 'S ?y:'T ?y/quotesingle.Var:'T ?rest:(Set (Pair 'S'T))]
+  declare functional: (S, T) [(Set (Pair S T))] -> Boolean
+  assert* functional-def :=
+  [(functional (x @ y ++ rest) <==>
+  (x @ y ++ rest) ˆ1 x = singleton (x @ y) & functional rest)
+  (functional null <==> true)]
+  Prove:
+  define functional-characterization :=
+  forall R . functional R <==>
+  (forall x y y /quotesingle.Var. x @ y in R & x @ y /quotesingle.Varin R ==> y = y /quotesingle.Var)
+  (Prove each direction of the equivalence as a separate theor em and then combine them
+  using the equiv primitive method.)
+  (b) Prove the following lemma:
+  define range-stays-smaller :=
+  (forall s t .
+  card range t < card dom t &
+  functional (s \/ t)
+  ==> card range (s \/ t) < card dom (s \/ t))
+  (c) Using range-stays-smaller , prove the following lemma:
+
+fpmics 2015/12/8 11:38 Page 665 #687
+14.8. ORDERING PROPERTIES AT AN ABSTRACT LEVEL 665
+define [R x1 x2 y] := [?R:(Set (Pair 'S'T)) ?x1: 'S ?x2:'S ?y:'T]
+define smaller-range :=
+(forall R x1 x2 y .
+functional R &
+x1 @ y in R & x2 @ y in R & x1 =/= x2
+==> card range R < card dom R)
+(d) Make the following deﬁnitions:
+declare injective: (S, T) [(Set (Pair S T))] -> Boolean
+assert* injective-def :=
+(injective R <==>
+forall x x /quotesingle.Vary . x @ y in R & x /quotesingle.Var@ y in R ==> x = x /quotesingle.Var)
+declare surjective: (S, T) [(Set (Pair S T))] -> Boolean
+assert* surjective-def :=
+(surjective R <==>
+forall ?y . ?y in range R <==> exists ?x . ?x @ ?y in R)
+declare bijective: (S, T) [(Set (Pair S T))] -> Boolean
+assert* bijective-def :=
+(bijective R <==> injective R & surjective R)
+Then prove:
+define injective-theorem :=
+(forall ?R:(Set (Pair 'S'S))
+functional ?R & range ?R = dom ?R ==> injective ?R)
+define surjective-theorem :=
+(forall ?R:(Set (Pair 'S'T)) . surjective ?R)
+define bijective-theorem :=
+(forall ?R:(Set (Pair 'S'S))
+functional ?R & range ?R = dom ?R ==> bijective ?R)
+.8 Ordering properties at an abstract level
+In previous sections we have seen how we can exploit the commo nality of properties such
+as associativity, commutativity, existence of identity an d inverse values, etc., among many
+
+fpmics 2015/12/8 11:38 Page 666 #688
+666 CHAPTER 14. ABSTRACT STRUCTURES
+different algebraic structures to allow great economy in de velopment of theories—axioms,
+theorems and proofs—about them, using the tools of theory re ﬁnement and evolution. Let
+us now turn our attention to relations , concentrating on ordering relations that generalize
+the<and≤relations on natural numbers that we have studied in Chapter 8. Our goal will
+be to develop the theories that have proved especially usefu l in understanding, generaliz-
+ing, and optimizing ordering-related algorithms, such as s orting and searching algorithms,
+ensuring their correct and efﬁcient application not only to numeric values but to many other
+data types that are pervasive in computer science.
+14.8.1 Strict partial order
+We begin with a theory of strict partial ordering, which we ca n deﬁne via reﬁnements of
+simpler structured theories, starting with Binary-Relation :
+module Binary-Relation {
+  declare R: (T) [T T] -> Boolean
+  define [x y z] := [?x ?y ?z]
+  define Theory := (theory [] [] 'Binary-Relation)
+}
+module Irreflexive {
+  openBinary-Relation
+  define Irreflexive := (forall x .˜x R x)
+  define Theory :=
+  (theory [Binary-Relation.Theory] [Irreflexive] 'Irreflexive)
+}
+module Transitive {
+  openBinary-Relation
+  define Transitive := (forall x y z . x R y & y R z ==> x R z)
+  define Theory :=
+  (theory [Binary-Relation.Theory] [Transitive] 'Transitive)
+}
+module Strict-Partial-Order {
+  openIrreflexive
+  openTransitive
+  define Theory :=
+  (theory [Irreflexive.Theory Transitive.Theory] [] 'Strict-Partial-Order)
+  Besides the axiomatic properties of irreﬂexivity andtransitivity , a strict partial order rela-
+  tion also has asymmetry . We prove this, along with the property that two elements in t he
+  relation cannot be equal, as follows.
+  define Asymmetric := (forall x y . x R y ==>˜y R x)
+  define Implies-not-equal := (forall x y . x R y ==> x =/= y)
+  define proofs :=
+
+fpmics 2015/12/8 11:38 Page 667 #689
+14.8. ORDERING PROPERTIES AT AN ABSTRACT LEVEL 667
+method (theorem adapt)
+let{given := lambda (P) (get-property P adapt Theory);
+  chain-> := method (L) (!chain-help given L /quotesingle.Varlast);
+  R := (adapt R)}
+  matchtheorem {
+  (val-of Asymmetric) =>
+  pick-any x y
+    assume (R x y)
+      (!by-contradiction (˜y R x)
+        assume (y R x)
+          (!absurd
+          (!chain-> [(y R x) ==> (x R y & y R x) [augment]
+          ==> (x R x) [Transitive]])
+          (!chain-> [true ==> (˜x R x) [Irreflexive]])))
+          | (val-of Implies-not-equal) =>
+          pick-any x y
+            assume (x R y)
+              (!by-contradiction (x =/= y)
+                assume (x = y)
+                  let{is := (!chain-> [(x R y) ==> (x R x) [(x = y)]]);
+                    is-not := (!chain->
+                    [true ==> (˜x R x) [Irreflexive]])}
+                    (!absurd is is-not))
+                  }
+                  (evolve Theory [[Asymmetric Implies-not-equal] proofs])
+                }# close module Strict-Partial-Order
+                .8.2 (Nonstrict) partial order
+                An equally general starting point would be (nonstrict) partial order , which can be deﬁned
+                as a reﬁnement of the following weaker theory, preorder :
+                module Preorder {
+                  openBinary-Relation
+                  define Reflexive := (forall x . x R x)
+                  define Transitive := (forall x y z . x R y & y R z ==> x R z)
+                  define Theory :=
+                  (theory [Binary-Relation.Theory] [Reflexive Transitive ]'Preorder)
+                }
+                We then obtain partial ordering by adding the antisymmetric property:
+                module Partial-Order {
+                  openPreorder
+                  define Antisymmetric := (forall x y . x R y & y R x ==> x = y)
+                  define Theory :=
+
+fpmics 2015/12/8 11:38 Page 668 #690
+668 CHAPTER 14. ABSTRACT STRUCTURES
+(theory [Preorder.Theory] [Antisymmetric] 'Partial-Order)
+}
+Strict-Partial-Order andPartial-Order are equivalent in generality, in the sense that
+one can start with a strict partial order relation Rand based on it deﬁne a relation R′that
+satisﬁes the partial order properties, and vice versa.
+We will prove this, but ﬁrst let’s make sure we can distinguis h the property names used in
+the two theories, by deﬁning SPOasStrict-Partial-Order with function symbol <instead
+ofR, with property names preﬁxed with /quotesingle.Var<:
+module SPO {
+  declare <: (T) [T T] -> Boolean
+  define Theory :=
+  (theory-clone
+  [Strict-Partial-Order.Theory /quotesingle.Var< [Strict-Partial-Order.R <]] 'SPO)
+}
+Similarly, we deﬁne PO:
+module PO {
+  declare <=: (T) [T T] -> Boolean
+  define Theory :=
+  (theory-clone [Partial-Order.Theory /quotesingle.Var<= [Partial-Order.R <=]] 'PO)
+}
+Now we can prove that we can get a partial order from a strict pa rtial order by deﬁning
+x≤yasx<yorx=y:
+module PO-from-SPO {
+  openPO
+  openSPO
+  define [x y z] := [?x ?y ?z]
+  define <=-Definition := (forall x y . x <= y <==> x < y | x = y)
+  (evolve Theory [[<=-Definition] Axiom])
+  define Implied-by-less := (forall x y . x < y ==> x <= y)
+  define Implied-by-equal := (forall x y . x = y ==> x <= y)
+  define Implies-not-reverse := (forall x y . x <= y ==>˜y < x)
+  define Reflexive-Lemma := (forall x . x <= x)
+  define Antisymmetric-Lemma := (forall x y . x <= y & y <= x ==> x = y)
+  define Transitive-Lemma := (forall x y z . x <= y & y <= z ==> x <= z)
+  define theorems := [<=-Definition Implied-by-less Implied-by-e qual
+  Implies-not-reverse Reflexive-Lemma
+  Antisymmetric-Lemma Transitive-Lemma]
+  define Irreflexive := Strict-Partial-Order.Irreflexive
+
+fpmics 2015/12/8 11:38 Page 669 #691
+14.8. ORDERING PROPERTIES AT AN ABSTRACT LEVEL 669
+define Transitive := Strict-Partial-Order.Transitive
+define Asymmetric := Strict-Partial-Order.Asymmetric
+define proofs :=
+method (theorem adapt)
+  let{lemma := method (P) (!property P adapt SPO.Theory);
+    given := lambda (P) (get-property P adapt SPO.Theory);
+    chain := method (L) (!chain-help given L /quotesingle.Varnone);
+    chain-> := method (L) (!chain-help given L /quotesingle.Varlast);
+    < := (adapt <); <= := (adapt <=);
+    definition := (given <=-Definition)}
+    matchtheorem {
+    (val-of Implied-by-less) =>
+    pick-any x y
+      (!chain [(x < y) ==> (x < y | x = y) [alternate]
+      ==> (x <= y) [definition]])
+      | (val-of Implied-by-equal) =>
+      pick-any x y
+        (!chain [(x = y) ==> (x < y | x = y) [alternate]
+        ==> (x <= y) [definition]])
+        | (val-of Implies-not-reverse) =>
+        pick-any x y
+          assume A := (x <= y)
+            let{B := (!chain-> [A ==> (x < y | x = y) [definition]]);
+              as := (!lemma [ /quotesingle.Var< Asymmetric])}
+              (!cases B
+                (!chain [(x < y) ==> (˜y < x) [as]])
+                assume (x = y)
+                  (!by-contradiction (˜y < x)
+                    assume (y < x)
+                      let{is := (!chain-> [(y < x) ==> (y < y) [(x = y)]]);
+                        is-not := (!chain-> [true ==> (˜y < y)
+                        [(given [ /quotesingle.Var< Irreflexive])]])}
+                        (!absurd is is-not)))
+                        | (val-of Reflexive-Lemma) =>
+                        pick-any x
+                          let{IBE := (!lemma Implied-by-equal)}
+                            (!chain-> [(x = x) ==> (x <= x) [IBE]])
+                            | (val-of Antisymmetric-Lemma) => (! force(adapt theorem))
+                            | (val-of Transitive-Lemma) => (! force(adapt theorem))
+                          }
+                          (evolve Theory [theorems proofs])
+                        }# close module PO-from-SPO
+                        Exercise 14.18: Fill in the proof of Antisymmetric-Lemma .
+
+fpmics 2015/12/8 11:38 Page 670 #692
+670 CHAPTER 14. ABSTRACT STRUCTURES
+Exercise 14.19: Fill in the proof of Transitive-Lemma .
+We can check these proofs as follows:
+>assert (theory-axioms SPO.Theory)
+The sentence
+(forall ?x: 'S
+(not (SPO.< ?x ?x)))
+has been added to the assumption base.
+The sentence
+(forall ?x: 'S
+(forall ?y: 'S
+(forall ?z: 'S
+(if (and (SPO.< ?x ?y)
+(SPO.< ?y ?z))
+(SPO.< ?x ?z)))))
+has been added to the assumption base.
+The sentence
+(forall ?x: 'S
+(forall ?y: 'S
+(iff (PO.<= ?x ?y)
+(or (SPO.< ?x ?y)
+(= ?x ?y)))))
+has been added to the assumption base.
+The sentence
+(forall ?x: 'S
+(forall ?y: 'S
+(iff (SPO.E ?x ?y)
+(and (not (SPO.< ?x ?y))
+(not (SPO.< ?y ?x))))))
+has been added to the assumption base.
+>(!property-test [ /quotesingle.Var< Strict-Partial-Order.Asymmetric]
+no-renaming SPO.Theory)
+Testing proof of [ /quotesingle.Var< PO-from-SPO.Asymmetric]:
+Theorem : (forall ?x: 'S
+(forall ?y: 'S
+(if (SPO.< ?x ?y)
+(not (SPO.< ?y ?x)))))
+>(!property-test PO-from-SPO.Reflexive-Lemma no-renam ing SPO.Theory)
+Testing proof of PO-from-SPO.Reflexive-Lemma:
+Theorem : (forall ?x: 'S
+
+fpmics 2015/12/8 11:38 Page 671 #693
+14.8. ORDERING PROPERTIES AT AN ABSTRACT LEVEL 671
+(PO.<= ?x ?x))
+...
+At this point we have in the assumption base all the propertie s necessary for an instance of
+PO:
+>(print-instance-check no-renaming PO)
+Checking
+(forall ?x: 'S
+(forall ?y: 'S
+(if (and (<= ?x: 'S ?y:'S)
+(<= ?y: 'S ?x:'S))
+(= ?x:'S ?y:'S))))
+Checking
+(forall ?x: 'S
+(forall ?y: 'S
+(forall ?z: 'S
+(if (and (<= ?x: 'S ?y:'S)
+(<= ?y: 'S ?z:'S))
+(<= ?x: 'S ?z:'S)))))
+Checking
+(forall ?x: 'S
+(<= ?x: 'S ?x:'S))
+Term: true
+Proving the other direction, that one can start from a partia l order and obtain a corre-
+sponding strict partial order, is left as an exercise (Exerc ise 14.25).
+14.8.3 Strict weak order
+As mentioned at the beginning of our discussion of ordering r elations, we will focus mainly
+on theories most relevant to order-related algorithms such as sorting and searching algo-
+rithms. Partial orders, whether strict or nonstrict, are no t sufﬁcient for this purpose (except
+for weak notions of sorting such as topological sorting (see, for example, [39]) , which
+we will not discuss here. The strict order relation <on natural numbers, as deﬁned in
+Chapter 8, is a total order relation—i.e., the trichotomy property is satisﬁed—but cl assical
+sorting algorithms such as mergesort and quicksort can, wit h a little care, be made to work
+with a more general notion of order, making them much more wid ely applicable than if
+they actually required total ordering.
+The essential idea is that when sorting a sequence of values w e often don’t care about
+the order of some of the values; we are willing to consider the m “equivalent” with respect
+
+fpmics 2015/12/8 11:38 Page 672 #694
+672 CHAPTER 14. ABSTRACT STRUCTURES
+to the ordering. A simple example is case-insensitive compa rison of strings, i.e., when
+strings that differ in only case are considered equivalent. In ordering personnel records in
+a data base, we might similarly not care about the ordering of the records that have the
+same entry—“assistant manager,” say—in a job-classiﬁcati on ﬁeld; names, salaries, etc.,
+could all be different, as we only want to group all of the pers ons that have the same job
+classiﬁcation together.
+Accordingly, given a strict partial ordering <, we deﬁne a relation EbyxEyif and only
+if both x<yandy<xare false. It turns out that the only property that we must ass ume
+Esatisﬁes is transitivity. The other properties of an equiva lence relation—reﬂexivity and
+symmetry—follow from E’s deﬁnition and its transitivity. We thus deﬁne the theory SWO,
+strict weak order , as a reﬁnement of SPOas follows:
+extend-module SPO {
+  define [x y z] := [?x ?y ?z]
+  declare E: (T) [T T] -> Boolean [100]
+  define E-Definition := (forall x y . x E y <==>˜x < y &˜y < x)
+  (evolve Theory [[E-Definition] Axiom])
+}# close module SPO
+module SWO {
+  openSPO
+  define E-Transitive := (forall x y z . x E y & y E z ==> x E z)
+  define Theory := (theory [SPO.Theory] [E-Transitive] 'SWO)
+  Along with the reﬂexive and symmetry properties of E, we gather together a number of
+  other useful theorems that relate <andE(or in some cases are just about one or the other):
+  define E-Reflexive := (forall x . x E x)
+  define E-Symmetric := (forall x y . x E y ==> y E x)
+  define <-E-Transitive-1 := (forall x y z . x < y & y E z ==> x < z)
+  define <-E-Transitive-2 := (forall x y z . x < y & x E z ==> z < y)
+  define Not-<-Property := (forall x y .˜x < y ==> y < x | y E x)
+  define <-Transitive-Not-1 := (forall x y z . x < y &˜z < y ==> x < z)
+  define <-Transitive-Not-2 := (forall x y z . x < y &˜x < z ==> z < y)
+  define <-Transitive-Not-3 := (forall x y z .˜y < x & y < z ==> x < z)
+  define Not-<-Is-Transitive :=
+  (forall x y z .˜x < y &˜y < z ==>˜x < z)
+  define theorems :=
+  [E-Reflexive E-Symmetric <-E-Transitive-1 <-E-Transiti ve-2
+  Not-<-Property <-Transitive-Not-1 <-Transitive-Not-2
+  <-Transitive-Not-3 Not-<-Is-Transitive]
+  In the proof method we include actual proofs only for E-Reflexive andE-Symmetric and
+  leave the others as exercises in Section 14.9.
+
+fpmics 2015/12/8 11:38 Page 673 #695
+14.8. ORDERING PROPERTIES AT AN ABSTRACT LEVEL 673
+define Irreflexive := Strict-Partial-Order.Irreflexive
+define Transitive := Strict-Partial-Order.Transitive
+define Asymmetric := Strict-Partial-Order.Asymmetric
+define proofs :=
+method (theorem adapt)
+  let{given := lambda (P) (get-property P adapt Theory);
+    chain := method (L) (!chain-help given L /quotesingle.Varnone);
+    chain-> := method (L) (!chain-help given L /quotesingle.Varlast);
+    lemma := method (P) (!property P adapt Theory);
+    E-Definition := (given E-Definition);
+    E :=lambda (x y) (adapt (x E y));
+    < :=lambda (x y) (adapt (x < y));
+    Trans := (given [ /quotesingle.Var< Strict-Partial-Order.Transitive])}
+    matchtheorem {
+    (val-of E-Reflexive) =>
+    pick-any x
+      (!chain-> [true ==> (˜x < x) [(given [ /quotesingle.Var< Irreflexive])]
+      ==> (˜x < x &˜x < x) [augment]
+      ==> (x E x) [E-Definition]])
+      | (val-of E-Symmetric) =>
+      pick-any x y
+        assume (x E y)
+          (!chain-> [(x E y) ==> (˜x < y &˜y < x) [E-Definition]
+          ==> (˜y < x &˜x < y) [comm]
+          ==> (y E x) [E-Definition]])
+          | _ => (! force(adapt theorem))
+        }
+        (evolve Theory [theorems proofs])
+      }# close module SWO
+      .8.4 A preorder
+      Suppose in module SWOwe deﬁne a relation <Eas follows:
+      extend-module SWO {
+        declare <E: (T) [T T] -> Boolean
+        define <E-Definition := (forall x y . x <E y <==>˜y < x)
+        (evolve Theory [[<E-Definition] Axiom])
+      }# close module SWO
+      The following exercise shows that <Eis apreorder , as deﬁned on page 667.
+      Exercise 14.20: Show that <Eis reﬂexive and transitive, and evolve SWO.Theory with the
+      theorems and their proofs.
+
+fpmics 2015/12/8 11:38 Page 674 #696
+674 CHAPTER 14. ABSTRACT STRUCTURES
+14.8.5 Strict total order
+If we have a strict weak order and also have the corresponding trichotomy law, we have a
+strict total order :
+module STO {
+  openSWO
+  define Strict-Trichotomy := (forall x y .˜x < y &˜y < x ==> x = y)
+  define Theory := (theory [SWO.Theory] [Strict-Trichotomy] 'STO)
+  The only theorem we will concern ourselves with here is one st ating that the Erelation is
+  the same as equality:
+  define E-Iff-Equal := (forall x y . x E y <==> x = y)
+}# close module STO
+Exercise 14.21: Deﬁne a corresponding proof method containing a single proo f, that
+ofE-Iff-Equal . Follow it with an evolve ofSTO, then write a test of the proof with
+property-test .
+.8.6 Lists over a Strict Weak Order
+In Section 8.3, we deﬁned ordered lists on natural numbers, i n terms of the (List N)
+datatype introduced in Section 3.9 and the natural number or dering properties introduced
+the ﬁrst part of Chapter 8. Now that we have abstract ordering theories, we can generalize
+to ordered lists (List T) , where the element type Tcan be any type that satisﬁes the Strict
+Weak Order theory. We choose SWO since it is the minimal theor y that allows algorithms
+on lists such as binary search, merging, and sorting.
+As a generalization of the <=Lbinary predicate deﬁned in Section 8.3, we ﬁrst declare
+and axiomatize a binary predicate <ELthat asks if a type Tvalue is<orEthe ﬁrst element
+of a list of Tvalues (true if the list is empty):
+extend-module SWO {
+  openList
+  declare <EL: (T) [T (List T)] -> Boolean
+  module <EL {
+    define empty := (forall x . x <EL nil)
+    define nonempty :=
+    (forall x y L . x <EL (y :: L) <==> x <E y)
+    (evolve Theory [[empty nonempty] Axiom])
+    Corresponding to theorems proved about <=Lin Section 8.3, we have the following:
+
+fpmics 2015/12/8 11:38 Page 675 #697
+14.8. ORDERING PROPERTIES AT AN ABSTRACT LEVEL 675
+define left-transitive := (forall L x y . x <E y & y <EL L ==> x <EL L)
+define before-all-implies-before-first :=
+(forall L x . (forall y . y in L ==> x <E y) ==> x <EL L)
+define append := (forall L M x . x <EL L & x <EL M ==> x <EL (L join M))
+define append-2 := (forall L M x . x <EL (L join M) ==> x <EL L)
+define theorems := [left-transitive before-all-implies-before -first
+append append-2]
+define proofs :=
+method (theorem adapt)
+  let{given := lambda (name) (get-property name adapt Theory);
+    lemma := method (name) (!property name adapt Theory);
+    chain := method (L) (!chain-help given L /quotesingle.Varnone);
+    chain-> := method (L) (!chain-help given L /quotesingle.Varlast);
+    [< <E <EL] := (adapt [< <E <EL])}
+    matchtheorem {
+    (val-of left-transitive) =>
+    datatype-cases theorem {
+      nil =>
+      pick-any x y
+        assume (x <E y & y <EL nil)
+          (!chain-> [true ==> (x <EL nil) [empty]])
+          | (z :: M) =>
+          let{ET := (!lemma <E-Transitive)}
+            pick-any x y
+              assume (x <E y & y <EL (z :: M))
+                conclude (x <EL (z :: M))
+                (!chain-> [(x <E y & y <EL (z :: M))
+                ==> (x <E y & y <E z) [nonempty]
+                ==> (x <E z) [ET]
+                ==> (x <EL (z :: M)) [nonempty]])
+              }
+              | _ => (! force(adapt theorem))
+            }
+            (evolve Theory [theorems proofs])
+          }# close module <EL
+          Exercise 14.22: Fill in the proof of <EL.before-all-implies-before-first .
+          Exercise 14.23: Fill in the proof of <EL.append .
+          Exercise 14.24: Fill in the proof of <EL.append-2 .
+          We now deﬁne a unary predicate, ordered-list , that asks whether the elements of a list
+          are in (nondescending) order:
+          declare ordered: (T) [(List T)] -> Boolean
+          module ordered {
+
+fpmics 2015/12/8 11:38 Page 676 #698
+676 CHAPTER 14. ABSTRACT STRUCTURES
+open<EL
+define empty := (ordered nil)
+define nonempty :=
+(forall L x . ordered (x :: L) <==> x <EL L & ordered L)
+(evolve Theory [[empty nonempty] Axiom])
+The following are very simple but still useful lemmas:
+define head := (forall L x . ordered (x :: L) ==> x <EL L)
+define tail := (forall L x . ordered (x :: L) ==> ordered L)
+define proofs :=
+method (theorem adapt)
+  let{given := ( lambda (name) (get-property name adapt Theory));
+    chain := ( method (L) (!chain-help given L /quotesingle.Varnone));
+    [< ordered <EL] := (adapt [< ordered <EL])}
+    matchtheorem {
+    (val-of head) =>
+    pick-any L x
+      (!chain [(ordered (x :: L))
+      ==> (x <EL L & ordered L) [nonempty]
+      ==> (x <EL L) [left-and]])
+      | (val-of tail) =>
+      pick-any L x
+        (!chain [(ordered (x :: L))
+        ==> (x <EL L & ordered L) [nonempty]
+        ==> (ordered L) [right-and]])
+      }
+      (evolve Theory [[head tail] proofs])
+      Finally, these are the main theorems about ordered-lists ov er elements in a strict-weak-
+      ordering:
+      define first-to-rest-relation :=
+      (forall L x y . (ordered (x :: L)) & y in L ==> x <E y)
+      define cons := (forall L x . (ordered L) & (forall y . y in L ==> x <E y)
+      ==> (ordered (x :: L)))
+      define append :=
+      (forall L M . (ordered L) & (ordered M) &
+      (forall x y . x in L & y in M ==> x <E y)
+      ==> (ordered (L join M)))
+      define append-2 :=
+      (forall L M . (ordered (L join M)) ==> (ordered L) & (ordered M) )
+      define theorems := [first-to-rest-relation cons append append-2 ]
+
+fpmics 2015/12/8 11:38 Page 677 #699
+14.8. ORDERING PROPERTIES AT AN ABSTRACT LEVEL 677
+define proofs :=
+method (theorem adapt)
+  let{given := lambda (name) (get-property name adapt Theory);
+    lemma := method (name) (!property name adapt Theory);
+    chain := method (L) (!chain-help given L /quotesingle.Varnone);
+    chain-> := method (L) (!chain-help given L /quotesingle.Varlast);
+    [ordered <EL] := (adapt [ordered <EL])}
+    matchtheorem {
+    (val-of first-to-rest-relation) =>
+    by-induction (adapt theorem) {
+      nil =>
+      pick-any x y
+        assume i := (ordered (x :: nil) & y in nil)
+          let{not-in := (!chain-> [true ==> (˜y in nil) [in.empty]])}
+            (!from-complements (x <E y) (y in nil) not-in)
+            | (z :: M) =>
+            let{ind-hyp := (forall ?x ?y .
+              ordered (?x :: M) & ?y in M
+              ==> ?x <E ?y);
+              goal := (forall ?x ?y .
+              ordered (?x :: (z :: M)) &
+              ?y in (z :: M)
+              ==> x <E ?y);
+              transitive := (!lemma <EL.left-transitive)}
+              conclude goal
+              pick-any x y
+                assume (ordered (x :: (z :: M)) & y in (z :: M))
+                  let{B1 := (x <E z & z <EL M & (ordered M));
+                    B2 := (!chain->
+                    [(ordered (x :: (z :: M)))
+                    ==> (x <EL (z :: M) & ordered (z :: M))
+                    [nonempty]
+                    ==> (x <EL (z :: M) & z <EL M & ordered M)
+                    [nonempty]
+                    ==> B1 [<EL.nonempty]]);
+                    B3 := (!chain->
+                    [B1 ==> (ordered M) [prop-taut]]);
+                    B4 := (!chain->
+                    [B1
+                    ==> (x <E z & z <EL M) [prop-taut]
+                    ==> (x <EL M) [transitive]
+                    ==> (x <EL M & ordered M) [augment]
+                    ==> (ordered (x :: M)) [nonempty]]);
+                    B4 := (!chain->
+                    [(y in (z :: M))
+                    ==> (y = z | y in M) [in.nonempty]])}
+                    (!cases (y = z | y in M)
+                      assume (y = z)
+                        (!chain-> [B1 ==> (x <E z) [left-and]
+
+fpmics 2015/12/8 11:38 Page 678 #700
+678 CHAPTER 14. ABSTRACT STRUCTURES
+==> (x <E y) [(y = z)]])
+(!chain
+[(y in M)
+==> (ordered (x :: M) & y in M) [augment]
+==> (x <E y) [ind-hyp]]))
+}
+| _ => (! force(adapt theorem))
+}
+(evolve Theory [theorems proofs])
+}# close module ordered
+}# close module SWO
+Filling in the proofs of the other three theorems is left as Ex ercise 14.27.
+.8.7 Relational theory diagram
+Figure 14.2 depicts the theory hierarchy developed in the pr eceding sections. A rectangular
+node represents a theory, while an oval represents a single a xiom that has not (though it
+could have) been encapsulated in its own theory. A directed a rrow means the target node is
+a reﬁnement of the source node.
+.9 Additional exercises
+*Exercise 14.25: Show that if one has a partial order relation ≤and deﬁnes x<yas
+x≤yandx/\e}atio\slash=y, then<is a strict partial order relation.
+Exercise 14.26: Each part of this exercise requires ﬁlling in the proof of one of the
+SWO.theorems in method SWO.proofs ; i.e., replacing the use of force with an actual proof.
+Hint: These theorems are generalizations of theorems about the na tural numbers, so it may
+be helpful to review their proofs as given as examples or exer cises in Chapter 8 (in the
+latter case, if you haven’t done the exercise already, try do ing it before tackling the more
+general proof necessary here).
+In each case, check your proof by creating an SWOinstance ( no-renaming is ok), asserting
+theSWOtheory axioms, and executing the proof method clause with property-test (use the
+transcript beginning on page 670 as a guide).
+(a)SWO.<-E-Transitive-1
+(b)SWO.<-E-Transitive-2
+(c)SWO.Not-<-Property
+(d)SWO.<-Transitive-Not-1
+
+fpmics 2015/12/8 11:38 Page 679 #701
+14.9. ADDITIONAL EXERCISES 679
+(e)SWO.<-Transitive-Not-2
+(f)SWO.<-Transitive-Not-3
+(g)SWO.Not-<-Is-Transitive
+Exercise 14.27: Each part of this exercise requires ﬁlling in the proof of one of the
+SWO.ordered.theorems in method SWO.ordered.proofs ; i.e., replacing the use of force with
+an actual proof.
+In each case, check your proof by creating an SWOinstance ( no-renaming is ok), asserting
+theSWOtheory axioms, and executing the proof method clause with property-test (use the
+transcript beginning on page 670 as a guide).
+(a)SWO.cons
+(b)SWO.append-2
+⋆(c)SWO.append
+
+fpmics 2015/12/8 11:38 Page 680 #702
+680 CHAPTER 14. ABSTRACT STRUCTURES
+Binary Relation
+R
+Reﬂexive Irreﬂexive Transitive
+PreorderStrict
+Partial Order
+Partial Order SPOAntisymmetric
+PO SWOEDeﬁnition ETransitive
+STOStrict
+Trichotomy<forR
+≤forR
+Figure 14.2
+Reﬁnement Hierarchy of Relational Theories

@@ -1,0 +1,11 @@
+load "vc_core_showcase"
+
+# Compatibility shim so older scripts that load mini_vc_showcase keep working.
+
+module MiniVC_Showcase {
+
+open VCCore_Showcase
+
+} # end module MiniVC_Showcase
+
+open MiniVC_Showcase

@@ -1,0 +1,2785 @@
+fpmics 2015/12/8 11:38 Page 323 #345
+5First order logic
+THIS CHAPTER is similar to the one before, except that here we will be conce rned with
+predicate (or ﬁrst-order) logic rather than sentential (or zero-order) logic. Our main
+goal is to describe the various Athena mechanisms for constr ucting proofs in predicate
+logic. In addition, we will present various heuristics for d eveloping such proofs, we will
+build a library of generically useful proof methods for pred icate logic, and we will also
+discuss the semantics of ﬁrst-order logic.
+Recall (section 2.4) that the syntax of ﬁrst-order logic ext ends the syntax of sentential
+logic. So, just as before, we have atomic sentences (atoms), negations, conjunctions, dis-
+junctions, conditionals, and biconditionals, where an ato m can be an arbitrary term of sort
+Boolean . Thus, assuming that x,y, andzare term variables, all of the following are legal
+ﬁrst-order sentences:
+Sentence Type
+(x < x + 1) Atom
+(˜even 3) Negation
+(x < x + 1 & 7 =/= 8) Conjunction
+(x < y | x = y | y < x) Disjunction
+(x < y & y < z ==> x < z) Conditional
+(x + 1 < y + 1 <==> x < y) Biconditional
+We assume for the remainder of this chapter that the followin g domains have been intro-
+duced:
+domains Object, Element, Set
+along with the following symbols:
+declare even, odd, prime: [Int] -> Boolean
+declare subset: [Set Set] -> Boolean
+declare P, Q, S: [Object] -> Boolean
+declare R, T: [Object Object] -> Boolean
+
+fpmics 2015/12/8 11:38 Page 324 #346
+324 CHAPTER 5. FIRST ORDER LOGIC
+declare a, b, c, d: Object
+We also assume that x,y,z, andwhave been deﬁned as the variables ?x,?y,?z, and?w:
+define [x y z w] := [?x ?y ?z ?w]
+In addition to the kinds of sentences that we are already fami liar with from sentential
+logic, we now have quantiﬁed sentences (or simply quantiﬁcations ): For any variable vand
+sentence p,
+(forall v.p) (5.1)
+and
+(exists v.p) (5.2)
+are also legal ﬁrst-order sentences. One can also quantify o ver multiple variables with only
+one quantiﬁer, e.g., writing
+(forall x y . x + y = y + x)
+as a shorthand for
+(forall x . forall y . x + y = y + x) .
+Intuitively, sentences of the form (5.1) are used to state th atevery object of a certain sort
+has such-and-such property; while sentences of the form (5. 2) are used to state that some
+object (of a certain sort) has such-and-such property. For i nstance, the statement that every
+prime number greater than two is odd can be expressed in Athen a as follows:
+(forall x . prime x & x > 2 ==> odd x)
+while the statement that there is some even prime number can b e expressed as:
+(exists x . prime x & even x) .
+Quantiﬁers can be combined to form more complex sentences. F or instance:
+(forall x . exists y . x subset y)
+states that every set has some superset, while
+(exists x . forall y . x subset y)
+says that there is a set that is a subset of every set. Note that it is not necessary to explicitly
+annotate occurrences of quantiﬁed variables with their res pective sorts, e.g., in the above
+examples it is not necessary to tell Athena that xandyrange over sets. That is inferred
+automatically:
+
+fpmics 2015/12/8 11:38 Page 325 #347
+325
+> (exists x . forall y . x subset y)
+Sentence: (exists ?x:Set
+(forall ?y:Set
+(subset ?x:Set ?y:Set)))
+When we wish to make the sort Sof a quantiﬁed variable explicit, we will write quantiﬁ-
+cations as
+(forall v:S.p)
+and
+(exists v:S.p)
+In the next four sections we will present Athena’s mechanism s for introducing and elim-
+inating each type of quantiﬁed sentence. But ﬁrst we will bri eﬂy turn our attention to an
+exercise that develops more fully the idea that terms and sen tences are trees, and gives com-
+putationally precise deﬁnitions of concepts such variable occurrences in a sentence (both
+freeandbound variable occurrences), free variable replacements, and al pha-equivalence.
+These concepts have already been introduced, so those who fe el sufﬁciently comfortable
+with them can move on to the next section directly. But for tho se who don’t mind a little
+coding, the exercise is a good opportunity to consolidate th ese ideas in full algorithmic
+detail.
+Exercise 5.1: As we explained in Section 3.3 by way of examples, terms and se ntences
+are essentially trees. We will now make this and other relate d ideas more precise.
+(a) Deﬁne two unary procedures term->tree andsent->tree that transform a given term
+or sentence into an explicit tree representation. Each node in the tree will be a map mof
+the form
+|{’data := x, ’pos := L, ’children := [ m1···mn]}| (5.3)
+where the ’data value xis the function symbol, variable, quantiﬁer, or sentential connec-
+tive that appears at that node; the ’pos value Lis the Dewey path of the node in the tree,
+as a list of positive integers; and m1,...,mnare the maps that (recursively) correspond to
+the children of the node (hence leaf nodes will have n=0), where each miis itself of the
+form (5.3). Thus, for instance, we should get:
+>define t := (1 + x)
+Term t defined.
+> (term->tree t)
+
+fpmics 2015/12/8 11:38 Page 326 #348
+326 CHAPTER 5. FIRST ORDER LOGIC
+Map:
+|{
+/quotesingle.Vardata := +
+/quotesingle.Varpos := []
+/quotesingle.Varchildren := [ |{ /quotesingle.Vardata := 1, /quotesingle.Varpos := [1], /quotesingle.Varchildren := []}|
+|{/quotesingle.Vardata := ?x:Int, /quotesingle.Varpos := [2], /quotesingle.Varchildren := []}|
+]
+}|
+> (term->tree true)
+Map: |{ /quotesingle.Vardata := true, /quotesingle.Varpos := [], /quotesingle.Varchildren := []}|
+> (sent->tree (˜x < 1))
+Map:
+|{
+/quotesingle.Vardata := not,
+/quotesingle.Varpos := [],
+/quotesingle.Varchildren := [|{ /quotesingle.Vardata := <,
+/quotesingle.Varpos := [1],
+/quotesingle.Varchildren := [|{ /quotesingle.Vardata := ?x:Int,
+/quotesingle.Varpos := [1 1],
+/quotesingle.Varchildren := []}|
+|{/quotesingle.Vardata := 1,
+/quotesingle.Varpos := [1 2],
+/quotesingle.Varchildren := []}|]
+}|]
+}|
+(b) Deﬁne a procedure tree-leaves that takes a tree Tproduced by (either) one of the
+above procedures and returns a list of all the leaves of T, where each leaf is represented
+as a record (map) of the form [’data := x, ’pos := i]. For instance:
+> (tree-leaves term->tree t)
+List: [|{ /quotesingle.Vardata := 1, /quotesingle.Varpos := [1]}|
+|{/quotesingle.Vardata := ?x:Int, /quotesingle.Varpos := [2]}|]
+(c) Deﬁne a procedure var-occs that takes a term tor sentence pand produces a map m
+whose keys are all and only the variables that occur in t(orp). The value that massigns
+to such a variable vis a list of the positions at which voccurs in t(orp). For example:
+> (var-occs forall x . exists y . x = y)
+Map: |{?x: 'T3097 := [[1] [2 2 1]], ?y: 'T3097 := [[2 1] [2 2 2]]}|
+
+fpmics 2015/12/8 11:38 Page 327 #349
+5.1. WORKING WITH UNIVERSAL QUANTIFICATIONS 327
+(d) Deﬁne a procedure bound-var-occs that takes a sentence pand produces a map in the
+form described above, except that the keys now consist of all and only the variables that
+have bound occurrences in p. Also deﬁne a procedure free-var-occs that does the same
+for the variables that have free occurrences in the input sen tence p.
+(e) Deﬁne a procedure alpha-equiv? that determines whether two sentences are alpha-
+equivalent.1
+(f) Deﬁne a procedure sent-rename that alpha-renames a given sentence.
+(g) Deﬁne a procedure (replace-var-by-term x t p)that replaces every free occurrence
+of variable xin a given sentence pby term t, performing renaming if need be so as to
+avoid variable capture. Assume that the sort of tis an instance of the most general sort of
+xinp.
+5.1 Working with universal quantiﬁcations
+5.1.1 Using universal quantiﬁcations
+A universal quantiﬁcation makes a general statement, about every object of some sort. For
+instance,
+(forall x . x < x + 1) (5.4)
+says that every integer is less than its successor. Hence, if we know that (5.4) is the case,
+we should be able to conclude that any particular integer is less than its successor, e.g.,
+that 5 is less than its successor:
+(5 < 5 + 1) (5.5)
+or that 78 is less than its successor:
+(78 < 78 + 1) (5.6)
+We say that the conclusions (5.5) and (5.6) are obtained from (5.4) by universal special-
+ization , oruniversal instantiation .
+In Athena, universal specialization is performed by the bin ary method uspec . The ﬁrst
+argument to uspec is the universal quantiﬁcation that we wish to instantiate; this must be
+in the assumption base, otherwise the application will fail . The second argument to uspec
+is the term with which we want to specialize the quantiﬁcatio n:
+1 Of course Athena already provides an implementation of alp ha-equivalence—one can simply apply equal? to
+two sentences. The objective here, as in the following two pa rts of this exercise, is to implement this functionality
+from the ground up for instructive purposes.
+
+fpmics 2015/12/8 11:38 Page 328 #350
+328 CHAPTER 5. FIRST ORDER LOGIC
+assert p := (forall x . x < x + 1)
+> (!uspec p 5)
+Theorem : (< 5
+(+ 5 1))
+> (!uspec p 78)
+Theorem : (< 78
+(+ 78 1))
+> (!uspec p (2 * x))
+Theorem : (< (* 2 ?x:Int)
+(+ (* 2 ?x:Int)
+1))
+The last example shows that the instantiating term does not n eed to be ground.
+More precisely, if pis a universal quantiﬁcation (forall v.q)in the assumption base
+andtis a term, then the method call
+(!uspec p t)
+will produce the theorem {v/mapsto t}(q), where {v/mapsto t}(q)is the sentence obtained from q
+by replacing every free occurrence of vbyt. It is an error if the result of this replacement
+is ill-sorted, as would happen, for instance, if we tried to s pecialize the sentence (5.4)
+with the Boolean term true. Note also that the sort Sof the quantiﬁed variable vmay be
+polymorphic. The call to uspec will work ﬁne as long as the sort Stof the instantiating term
+tis an instance of the polymorphic S. For example, the quantiﬁed sentence might state that
+the double reversal of any list Lof any sort is identical to L, and the instantiating term
+might be a list of Boolean terms:
+declare reverse: (T) [(List T)] -> (List T)
+>assert p := (forall x . reverse reverse x = x)
+The sentence
+(forall ?x:(List 'S)
+(= (reverse (reverse ?x:(List 'S)))
+?x:(List 'S)))
+has been added to the assumption base.
+> (!uspec p (true::false::nil))
+Theorem : (= (reverse (reverse (:: true
+(:: false
+nil:(List Boolean)))))
+
+fpmics 2015/12/8 11:38 Page 329 #351
+5.1. WORKING WITH UNIVERSAL QUANTIFICATIONS 329
+(:: true
+(:: false
+nil:(List Boolean))))
+> (!uspec p (78::nil))
+Theorem : (= (reverse (reverse (:: 78
+nil:(List Int))))
+(:: 78
+nil:(List Int)))
+In proof systems in which alphabetically convertible sente nces are not viewed as identi-
+cal,2care must be taken when performing universal specializatio n in order to avoid variable
+capture. In particular, the instantiating term should not c ontain any variables that might get
+accidentally bound as a result of the substitution. Violati ng this proviso generates an error
+in such systems. For instance, consider the sentence
+(∀x.∃y.x/\e}atio\slash=y), (5.7)
+which essentially says that there are at least two distinct i ndividuals. If, in such a system,
+we were allowed to specialize (5.7) with the variable y, we would obtain the nonsensical
+conclusion
+(∃y.y/\e}atio\slash=y).
+The problem here is variable capture: The instantiating ter m (the variable y) would become
+improperly bound by the existential quantiﬁer ∃y.
+One way of dealing with this issue is simply to demand that suc h universal specializa-
+tions should never be attempted. Systems like Athena, in whi ch the choice of a quantiﬁed
+variable name is immaterial, offer a more ﬂexible alternati ve: They automatically avoid
+variable capture simply by alphabetically renaming the sen tence being specialized, using
+fresh variables. That is a safe thing to do because, for deduc tive purposes, the renamed
+quantiﬁcation is identical to the original one. For instanc e, here is what happens if we try
+to reproduce the above example in Athena:
+>assert p := (forall ?x . exists ?y . ?x =/= ?y)
+The sentence
+(forall ?x: 'S
+(exists ?y: 'S
+(not (= ?x: 'S ?y:'S))))
+has been added to the assumption base.
+> (!uspec p ?y)
+So that, e.g., (∀x.P x)and(∀y.P y)are treated as two distinct sentences.
+
+fpmics 2015/12/8 11:38 Page 330 #352
+330 CHAPTER 5. FIRST ORDER LOGIC
+Theorem : (exists ?v1915: 'S
+(not (= ?y: 'S ?v1915: 'S)))
+Athena accepted the attempt to instantiate
+p=(forall ?x . exists ?y . x =/= ?y) (5.8)
+with?y, but averted variable capture by ﬁrst renaming pto something like
+q=(forall ?v1914 . exists ?v1915 . ?v1914 =/= ?v1915) (5.9)
+Substituting ?yfor the free occurrence of ?xinpnow becomes the same as substituting
+?yfor the free occurrence of ?v1914 in (5.9), which is perfectly harmless and results in
+the theorem displayed above. The upshot is that users do not n eed to be concerned about
+variable capture when performing universal instantiation .
+5.1.2 Deriving universal quantiﬁcations
+How do we go about proving that every object of some sort Shas a certain property P,
+i.e., how do we derive a goal of the form (forall v:S.P v)? Typically, mathematicians
+prove such statements by reasoning as follows:
+Consider any Iof sort S. Then ···D···
+where the name (identiﬁer) Ioccurs free inside the proof D. We can regard this construction
+as a unary method with parameter Iand body Dthat will take any term tof sort Sand will
+attempt to prove (P t). Clearly, if we have a method which can prove that anygiven object
+in the relevant domain has the property P, then we are entitled to conclude the desired
+(forall v:S.P v). But how can we make sure that this “method” is indeed capable of
+doing that?
+Well, we can try applying the method to some random term and se e if it succeeds, that
+is, we can try evaluating the body Dwith some random term tof sort Sin place of the
+parameter I, and see if we succeed in deriving (P t). But what if the success is a ﬂuke?
+What if Dexploits some special assumptions about tthat wouldn’t be valid for some other
+term t′? Suppose, for instance, that the domain in question is that o f the natural numbers,
+and when we apply the method to, say, zero we do get the theorem (Pzero) as output.
+But what if Drelied on some special assumptions about zero in the assumption base? Even
+if it did not, how can we be sure that the method truly generali zes, i.e., that applying the
+same reasoning to anyother term tof sortNwill also derive (P t)?
+The trick is to choose our test term tjudiciouly. It must be a term with no baggage,
+so to speak. That is, a term about which there are deﬁnitely no special assumptions in
+effect. A fresh variable x of sort Sis just such a term; its freshness ensures that no special
+
+fpmics 2015/12/8 11:38 Page 331 #353
+5.1. WORKING WITH UNIVERSAL QUANTIFICATIONS 331
+assumptions about it can possibly be in effect, since the ass umption base will not contain
+any occurrences of x. Accordingly, we may regard xas representing a truly typical element
+of the domain at hand. Hence, if the evaluation of Din an environment in which Irefers
+to a fresh variable xsucceeds in deriving the theorem (P x), we can conclude that Pholds
+forevery object of the relevant sort. That is, we can safely conclude (forall v:S.P v).
+Reasoning of this kind is expressed in Athena with deduction s of the form
+pick-any I D. (5.10)
+  To evaluate a deduction of this form in an assumption base β, we ﬁrst generate a fresh
+  variable xof sort S, say,?v135: S, that is, a variable that has never been used before in
+  the current Athena session. We then evaluate the body Dinβand, importantly, in an
+  environment in which the name Irefers to the fresh variable x. We say that Drepresents
+  thescope of that variable. If and when that evaluation results in a con clusion p, we return
+  the quantiﬁcation (forall x.p)as the ﬁnal result of (5.10).
+  To make things concrete, consider as an example the deductio n
+  pick-any x (!reflex x) . (5.11)
+    Recall that reflex is a unary primitive method that takes any term tand produces the
+    equality (t=t). To evaluate (5.11) in some assumption base β, Athena will ﬁrst generate a
+    fresh variable of a completely general sort, say ?x18:'S. It will then evaluate the body of the
+    pick-any deduction, namely (!reflex x) , in an environment in which xrefers to ?x18:'S.
+      Thus, Athena will essentially be evaluating the deduction (!reflex ?x18: 'S). According
+      to the semantics of reflex , that will produce the equality (?x18:'S = ?x18: 'S). Finally,
+      Athena will generalize over the fresh variable and return th e conclusion
+      (forall ?x18: 'S . ?x18 = ?x18) (5.12)
+      as the result of the entire pick-any . For readability purposes, however, Athena will present
+      this conclusion as
+      (forall ?x: 'S . ?x = ?x) (5.13)
+      instead of (5.12). That is harmless because the two sentence s are alphabetically equivalent,
+      and Athena treats alphabetically equivalent sentences as i dentical. Hence, if all goes well,
+      the user will never actually see or have to deal with the parti cular fresh variable that Athena
+      generated, ?x18:'S.3The user simply enters the deduction (5.11) and the theorem ( 5.13) is
+      produced:
+      But Athena does choose a fresh variable such as ?In, where Iis the original pick-any name and nis a number,
+      so that if there is an error that causes the proof to fail and pu ts the system in an error break, it is easier to see how
+      that particular fresh variable originated.
+
+fpmics 2015/12/8 11:38 Page 332 #354
+332 CHAPTER 5. FIRST ORDER LOGIC
+>pick-any x (!reflex x)
+Theorem : (forall ?x: 'S
+(= ?x ?x))
+This example demonstrates that pick-any can universally generalize not just over all
+the elements of a speciﬁc (ground) sort, such as the natural n umbers or the booleans,
+but over all the elements of inﬁnitely many sorts. Such a poly morphic generalization can
+then be specialized with any terms of appropriate sorts, e.g ., with natural numbers or with
+booleans:
+>define p :=pick-any x (!reflex x)
+Theorem : (forall ?x: 'S
+(= ?x ?x))
+Sentence p defined.
+> (!uspec p true)
+Theorem : (= true true)
+> (!uspec p (2 * y))
+Theorem : (= (* 2 ?y:Int)
+(* 2 ?y:Int))
+As another example, here is a proof that the equality relatio n is symmetric. Recall that
+symis a unary primitive method that takes an equality (s=t)and returns (t=s), provided
+that(s=t)is in the assumption base:
+1>pick-any a
+2 pick-any b
+3 assume h := (a = b)
+4 (!sym h)
+5
+6Theorem : (forall ?a: 'S
+7 (forall ?b: 'S
+8 (if (= ?a: 'S ?b:'S)
+9 (= ?b:'S ?a:'S))))
+How was this proof evaluated? It ﬁrst generated a fresh varia ble of a completely uncon-
+strained sort, say ?a74:'S, and then proceeded to line 2 to evaluate the body of the
+outerpick-any in an environment in which the name arefers to ?a74:'S. Now the body
+of thepick-any happens to be another pick-any , so another fresh variable (of uncon-
+strained sort again) is generated, say ?b75:'T, and Athena proceeds to evaluate the body
+of the inner pick-any in an environment in which bdenotes ?b75:'T(andadenotes
+
+fpmics 2015/12/8 11:38 Page 333 #355
+5.1. WORKING WITH UNIVERSAL QUANTIFICATIONS 333
+?a74:'S). The body of the inner pick-any is anassume , so Athena adds the hypothesis
+h := (?a74: 'S = ?b75: 'S)to the assumption base (note that the two sorts 'Sand'Thave
+been uniﬁed at this point), and goes on to evaluate the body of theassume , i.e., the appli-
+cation of symto the identity h. Sincehis in the assumption base, symsucceeds and returns
+the conclusion (?b75:'S = ?a74: 'S), so, backing up one level, the assume returns the con-
+clusion
+(?a74 = ?b75 ==> ?b75 = ?a74)
+(we have omited the variable sorts for brevity). Hence, back ing up one more level, the inner
+pick-any returns the generalization
+  (forall ?b75 . ?a74 = ?b75 ==> ?b75 = ?a74)
+  or, equivalently,
+  (forall ?b . ?a74 = ?b ==> ?b = ?a74) .
+  Finally, backing up one more level, the outer pick-any returns the generalization
+  (forall ?a74 . forall ?b . ?a74 = ?b ==> ?b = ?a74)
+  or, equivalently,
+  (forall ?a . forall ?b . ?a = ?b ==> ?b = ?a) .
+  This analysis included a lot of low-level details. It is rare ly necessary to descend to such
+  a level when one is working with Athena proofs. After a little practice one can understand
+  what a proof does quite well at the higher and more intuitive l evel of its source text.
+  Observe that both quantiﬁed variables ?aand?bin the conclusion of the above proof
+  have the same sort 'S. Again, 'Sis a sort variable, ranging over the collection of all avail-
+  able sorts. The only constraint in the above sentence is that ?aand?brange over the same
+  sort. That sort could be anything, but it has to be the same for both variables. This constraint
+  was discovered by sort inference in the course of evaluating the deduction.
+  Although not usually necessary, users may, if they wish, pro vide explicit sort annota-
+  tions for pick-any identiﬁers, and indeed this practice sometimes makes the co de more
+  readable, and simpliﬁes sort inference as well, especially with nested pick-any deductions.
+  For instance, one may write:
+  pick-any e:Element
+    pick-any s:Set
+      assume h := (e in s)
+        ···
+        Nestedpick-any deductions, incidentally, of the form
+
+fpmics 2015/12/8 11:38 Page 334 #356
+334 CHAPTER 5. FIRST ORDER LOGIC
+pick-any I1pick-any I2pick-any I3···
+  may be abbreviated as pick-any I1I2I3···. Thus, for instance, the preceding proof could
+  also be written as follows:
+  pick-any a b
+    assume h := (a = b)
+      (!sym h)
+      As another example, let us prove the tautology
+      ((forall x . P x) & (forall y . Q y) ==> forall y . P y & Q y)
+      wherePandQare unary predicates on some domain. (For example, if everyt hing is green
+      and everything is large, then everything is both green and la rge.)
+      domain Object
+      declare P, Q: [Object] -> Boolean
+      >assume hyp := ((forall x . P x) & (forall y . Q y))
+        pick-any y:Object
+          let{P-y := conclude (P y)
+            (!uspec (!left-and hyp) y);
+            Q-y := conclude (Q y)
+            (!uspec (!right-and hyp) y)}
+            (!both P-y Q-y)
+Theorem : (if (and (forall ?x:Object
+(P ?x:Object))
+(forall ?y:Object
+(Q ?y:Object)))
+(forall ?y:Object
+(and (P ?y:Object)
+(Q ?y:Object))))
+Many more examples will appear later in the text and in the exe rcises.
+We close this section by mentioning an alternative mechanis m for deriving universal
+quantiﬁcations, the syntax form
+generalize-over E D. (5.14)
+Here Eis an arbitrary Athena expression whose evaluation must pro duce a variable v. The
+idea is that vappears in D, and we will generalize over vwhatever conclusion we obtain
+from D. That is, we evaluate Din the given assumption base β, and whatever conclusion
+pwe get from that evaluation, we generalize it over v, thereby yielding (forall v.p)as
+the overall result of (5.14). There is a proviso here, namely that the variable vshould not
+
+fpmics 2015/12/8 11:38 Page 335 #357
+5.2. WORKING WITH EXISTENTIAL QUANTIFICATIONS 335
+have any free occurrences in the assumption base β. This ensures that Dcannot exploit
+any special assumptions about vthat might happen to be in effect when Dis evaluated, and
+which could lead to an invalid generalization. As an example , evaluating the deduction
+generalize-over ?foo:Int (!reflex ?foo)
+in some assumption base βwill result in (forall ?foo:Int . ?foo = ?foo) , provided that
+?foo:Int does not occur free in β. If it does occur free, an error will be reported.
+The two forms pick-any andgeneralize-over are closely related. The latter is more
+primitive. The former can actually be deﬁned as syntax sugar on top of generalize-over .
+Speciﬁcally, we can deﬁne pick-any I Das
+let{I:= (fresh-var)}
+  generalize-over I D
+  Thuspick-any ensures that the aforementioned proviso is satisﬁed by gene ralizing over a
+  fresh variable. Either form can be used to derive universal quanti ﬁcations, but pick-any is
+  almost always more convenient. The generalize-over construct is useful primarily when
+  writing methods for discovering proofs automatically.
+  .2 Working with existential quantiﬁcations
+  .2.1 Deriving existential quantiﬁcations
+  If we know that 2 is an even number, then clearly we may conclud e that there exists an
+  even number. Likewise, if we know—or have assumed—that box bis red, we may con-
+  clude that there exists a red box. In general, if we have {x/mapsto t}(p), we may conclude
+  (exists x.p).4This type of reasoning is known as existential generalization . In Athena,
+  existential generalization is performed by the binary meth odegen. The ﬁrst argument to
+  egen is the existential quantiﬁcation that we want to derive, say
+  (exists x.p). (5.15)
+  The second argument is a term ton the basis of which we are to derive (5.15). Speciﬁcally,
+  if{x/mapsto t}(p)is in the assumption base, then the call
+  (!egen (exists x.p)t)
+  will derive the theorem (exists x.p). The idea here is that because pholds for the object
+  named by t, i.e., because {x/mapsto t}(p)is in the assumption base, we are entitled to conclude
+  Recall that {x/mapsto t}(p)is the sentence obtained from pby replacing every free occurrence of xbyt(renaming
+  as necessary to avoid variable capture).
+
+fpmics 2015/12/8 11:38 Page 336 #358
+336 CHAPTER 5. FIRST ORDER LOGIC
+that there is some object for which pholds, i.e., we are entitled to conclude (5.15). We
+might view the term tas evidence for the desired existential claim.
+For instance, suppose that (even 2) is in the assumption base. Since we know that 2is
+even, we are entitled to conclude that there exists an even na tural number:
+assert (even 2)
+> (!egen (exists x . even x) 2)
+Theorem : (exists ?x:Int
+(even ?x))
+It is an error if the required evidence is not in the assumptio n base:
+>clear-assumption-base
+Assumption base cleared, blank-slate state.
+> (!egen (exists x . even x) 2)
+standard input:1:1: Error: Failed existential
+generalization---the required "witness" sentence
+(even 2)
+is not in the assumption base.
+5.2.2 Using existential quantiﬁcations
+Suppose that we know—or that we have simply assumed—that an e xistential quantiﬁcation
+is true, so that some sentence of the form (exists x.p)is in the assumption base. How
+can we put such a sentence to use, i.e., how can we derive furth er conclusions with the help
+of such a premise?
+The answer is the technique of existential instantiation .5It is very commonly used in
+mathematics, in the following general form:
+We have it as a given that (exists x.p), i.e., that pholds for some object. Let v
+be a name for such an object (i.e., let vbe a “witness” for the existential sentence
+(exists x.p), so that {x/mapsto v}(p)can be assumed to hold. Then ···D···(5.16)
+where Dis a deduction that proceeds to derive some conclusion qwith the aid of the
+assumption {x/mapsto v}(p), along with whatever other assumptions are currently opera tive.
+We refer to
+5 Common alternative names for it are existential specialization andexistential elimination .
+
+fpmics 2015/12/8 11:38 Page 337 #359
+5.2. WORKING WITH EXISTENTIAL QUANTIFICATIONS 337
+(exists x.p)
+as the existential premise ;vis called the witness variable; and the sentence {x/mapsto v}(p)is
+called the witness hypothesis . We call Dthebody of the existential instantiation. It repre-
+sents the scope of the witness hypothesis. The conclusion qderived by the body Dbecomes
+the result of the entire proof (5.16).
+The following proof is a simple and fairly typical example of how existential instanti-
+ation is used in practice. (We use conventional logical nota tion for this example, typeset
+in Latex, since this is just a generic, language-agnostic il lustration of the technique.) The
+proposition of interest here is that for all integers n, ifeven(n)then even(n+2), i.e., if nis
+even then so is n+2. Let us say that the unary predicate even is deﬁned as follows:
+(∀i.even(i)⇔∃ j.i=2·j). (5.17)
+The proof relies on the lemma
+(∀x y.x·(y+1)=x·y+x) (5.18)
+and proceeds as follows:
+Pick any nand assume even(n). Then, by (5.17), we infer (∃j.n=2·j), i.e., that
+there is some number, which, when multiplied by 2, yields n.Let k stand for such
+a number, so that n =2·k. Then, by congruence, n +2=(2·k)+2. But, by (5.18) ,
+(2·k)+2=2·(k+1), hence, by the transitivity of equality, n +2=2·(k+1). There-
+fore, by existential generalization, we obtain (∃m.n+2=2·m), and so, from (5.17) ,
+we conclude even (n+2).
+We have italicized the existential elimination argument in the above proof. The existential
+premise here is (∃j.n=2·j); the witness is the variable k; and the witness premise is the
+equality n=2·k. The conclusion of the existential instantiation is even(n+2).
+There are some important caveats that must be observed to ens ure that this type of rea-
+soning, as outlined in (5.16), will not lead us astray. The wi tness vmust serve as a dummy
+placeholder—no special assumptions about it should be used . In particular, the body D
+must not rely on any previous working assumptions that might happen to contain free
+occurrences of v. Things can easily go wrong otherwise. Suppose, e.g., that t he current
+assumption base contains the atom even(k), for some variable k, along with the sentence
+(∃n.odd(n)). Now if we unwisely choose kas a witness for this existential premise, we
+will obtain the witness hypothesis odd(k), and hence, in tandem with even(k), we will be
+able to conclude that there is a number that is both even and od d. We will shortly see how
+Athena manages to enforce this proviso automatically, so th at users do not need to be con-
+cerned with it. Further, to ensure that the witness vis only used as a temporary dummy, i.e.,
+only as a means to an end, the ﬁnal conclusion qshould not depend on vin any essential
+way. Speciﬁcally, qshould not contain any free occurrences of v.
+
+fpmics 2015/12/8 11:38 Page 338 #360
+338 CHAPTER 5. FIRST ORDER LOGIC
+Existential instantiations in Athena are performed by dedu ctions of the form
+pick-witness Ifor F D (5.19)
+  where Iis a name that will be bound to the witness variable, Fis a phrase that evaluates
+  to an existential premise (exists x:S.p), and Dis the body.6To evaluate (5.19) in an
+  assumption base β, we ﬁrst make sure that the existential premise (exists x:S.p)is
+  indeed in β; if not, evaluation halts and a relevant error is reported. A ssuming that the
+  existential premise is in β, we begin by generating a fresh variable v:S, which will serve
+  as the actual witness variable. We then construct the witnes s hypothesis, call it p′, obtained
+  from pby replacing every free occurrence of x:Sby the witness v:S. Finally, we evaluate
+  the body Din the augmented assumption base β∪ {p′}and in an environment in which
+  the name Iis bound to the witness variable v:S. If and when that evaluation produces a
+  conclusion q, we return qas the result of the entire proof (5.19), provided that qdoes not
+  contain any free occurrences of v:S(it is an error if it does). The fact that the witness
+  variable v:Sis freshly generated is what guarantees that the body Dwill not be able to
+  rely on any special assumptions about it. The freshness of v:Salong with the explicit
+  proviso that it must not occur in the conclusion qensures that the witness is used only as a
+  temporary placeholder. Bear in mind that Iitself in (5.19) is not an Athena term variable;
+  it is a name—an identiﬁer—that will come to denote a fresh Athena variable (the witness
+  variable v:S) in the course of evaluating the body D.
+  As an example, let us use existential instantiation to deriv e the tautology
+  ((exists x .˜prime x) ==>˜forall x . prime x)
+  >assume hyp := (exists x .˜prime x)
+    pick-witness wforhyp# We now have (˜prime w)
+      (!by-contradiction (˜forall x . prime x)
+        assume all-prime := (forall x . prime x)
+          let{prime-w := (!uspec all-prime w)}
+            (!absurd prime-w (˜prime w)))
+Theorem : (if (exists ?x:Int
+(not (prime ?x:Int)))
+(not (forall ?x:Int
+(prime ?x:Int))))
+As an example of an incorrect use of pick-witness , the following violates the proviso that
+the witness variable must not appear in the conclusion:
+6 It is an error if the evaluation of Fproduces any value other than an existentially quantiﬁed se ntence.
+
+fpmics 2015/12/8 11:38 Page 339 #361
+5.2. WORKING WITH EXISTENTIAL QUANTIFICATIONS 339
+>assume hyp := (exists x . prime x)
+  pick-witness wforhyp
+    (!claim (prime w))
+input prompt:2:5: Error: Failed existential instantiatio n---the
+witness variable occurs free in the resulting sentence.
+Another potential error is that the existential premise is n ot in the assumption base:
+>pick-witness wfor(exists x . x =/= x)
+  (!true-intro)
+input prompt:1:22: Error: Existential sentence to be insta ntiated
+is not in the assumption base:
+(exists ?x: 'S
+(not (= ?x: 'S ?x:'S))).
+When the existential premise has multiple consecutive exis tentially quantiﬁed variables,
+we can abbreviate nested pick-witness deductions with the form
+pick-witnesses I1···Infor F D
+  where Fis a phrase that evaluates to an existential premise (exists x1···xm.p)with m≥
+  n. The semantics of pick-witnesses is given by desugaring to pick-witness . For instance,
+  pick-witnesses I1I2for(exists x1x2.p)D
+    is an abbreviation for
+    pick-witness I1for(exists x1x2.p)
+      pick-witness I2for(exists x2.{x1/mapsto I1}(p))
+        D
+        Here is a sample proof that (exists x y . x < y) implies(exists y x . x < y) :
+        >assume hyp := (exists x y . x < y)
+          pick-witnesses w1 w2forhyp# This gives (w1 < w2)
+            let{_ := (!egen (exists x . x < w2) w1)}
+              (!egen (exists y x . x < y) w2);;
+Theorem : (if (exists ?x:Real
+(exists ?y:Real
+(< ?x:Real ?y:Real)))
+(exists ?y:Real
+(exists ?x:Real
+(< ?x:Real ?y:Real))))
+Sometimes it is convenient to give a name to the witness hypot hesis and then refer to it
+by that name from inside the body of the pick-witness . This can be done by inserting a
+
+fpmics 2015/12/8 11:38 Page 340 #362
+340 CHAPTER 5. FIRST ORDER LOGIC
+name (an identiﬁer) before the body Dof thepick-witness . That identiﬁer will then refer
+to the witness premise inside D. For example, the proof
+pick-witness w (exists x . x = x) wp D)
+  will give the name wpto the witness premise, i.e., every free occurrence of wpwithin Dwill
+  refer to the witness premise. Thus, for instance, one of our e arlier proofs could be written
+  as follows:
+  >assume hyp := (exists x .˜prime x)
+    pick-witness wforhyp -prime-w
+      # We now have -prime-w := (˜P w) in the a.b.
+      (!by-contradiction (˜forall x . prime x)
+        assume all-prime := (forall x . prime x)
+          let{prime-w := (!uspec all-prime w)}
+            (!absurd prime-w -prime-w))
+Theorem : (if (exists ?x:Int
+(not (prime ?x:Int)))
+(not (forall ?x:Int
+(prime ?x:Int))))
+This can also be done for pick-witnesses deductions; an identiﬁer appearing right before
+the body will denote the witness premise, e.g.:
+pick-witnesses w1 w2 for (exists x y . x =/= y) wp D.
+  Note that, intuitively, existential quantiﬁcations corre spond to (potentially inﬁnite) dis-
+  junctions. For instance, let Bbe a unary predicate on Boolean :
+  declare B: [Boolean] -> Boolean
+  To say that there is some boolean value for which Bholds:
+  (exists ?x:Boolean . B ?x:Boolean)) (5.20)
+  is simply to say that Bholds for true orBholds for false :
+  (B true | B false) . (5.21)
+  Sentences (5.20) and (5.21) have the exact same content. Lik ewise, to say that there is
+  some integer that is prime:
+  (exists ?x:Int . prime ?x:Int) (5.22)
+  is really the same as saying that 0 is prime or1 is prime, or−1 is prime, or2 is prime, or
+  −2 is prime, or etc., i.e., the same as asserting following inﬁ nite disjunction:
+  (prime 0 | prime 1 | prime (- 1) | prime 2 | ···) (5.23)
+
+fpmics 2015/12/8 11:38 Page 341 #363
+5.2. WORKING WITH EXISTENTIAL QUANTIFICATIONS 341
+Accordingly, we should expect existential elimination and introduction to intuitively cor-
+respond to disjunction elimination and introduction, resp ectively. Consider, for instance,
+an instantiation of the existential claim that Bholds for some boolean value:
+pick-witness Ifor(exists x . B x)
+  D
+  Such a proof could also be expressed as a disjunction elimina tion:
+  (!cases (B true | B false)
+    assume (B true)
+      D1
+      assume (B false)
+        D2)
+        The chief difference is that the ﬁrst proof is more efﬁcient b ecause it does not consider
+        every possible case separately. Rather, it abstracts what r easoning is common to D1andD2
+        into what is essentially one single method parameterized over I. Also, the ﬁrst proof does
+        not use an explicit assume , as the insertion of the witness hypothesis into the assumpt ion
+        base is performed automatically. Thus, we can explain the ev aluations of D1andD2as the
+        evaluation of one and the same deduction, D, but under two different lexical bindings: with
+        Idenoting true in the ﬁrst case and with Idenoting false in the second. Indeed, if we only
+        needed to work with ﬁnite domains then we could formally deﬁne the evaluation semanti cs
+        ofpick-witness proofs by desugaring such proofs into cases applications. Such desugar-
+        ing is not theoretically possible in the general case, which includes inﬁnite domains, but
+        nevertheless it is still instructive to keep the analogy bet ween existential instantiation and
+        disjunction elimination in mind.
+        We close by mentioning an alternative mechanism for existen tial instantiation, the syntax
+        form
+        (with-witness E F D). (5.24)
+        The expression Emust produce an Athena variable v, which will be used as the witness
+        variable of the existential instantiation. Accordingly, t his variable must not have any free
+        occurrences in the assumption base. The phrase Fmust produce an existential quantiﬁca-
+        tion(exists x.p), which will serve as the existential premise and must theref ore be in
+        the assumption base. Finally, Dis the body of the instantiation, which, when evaluated in
+        the given assumption base augmented with the witness hypoth esis{x/mapsto v}(p), must yield a
+        conclusion qthat does not contain any free occurrences of v. The sentence qthen becomes
+        the conclusion of the entire existential instantiation.
+        This is, essentially, a more primitive version of pick-witness . It stands to pick-witness
+        in the same relationship that generalize-over stands to pick-any . Speciﬁcally, we can
+        desugar
+        pick-witness Ifor F D
+
+fpmics 2015/12/8 11:38 Page 342 #364
+342 CHAPTER 5. FIRST ORDER LOGIC
+as
+let{I:= (fresh-var)}
+  (with-witness I F D)
+  .3 Some examples
+  In this section we present a few simple examples of quantiﬁer reasoning that illustrate the
+  mechanisms introduced in the previous section. We ﬁrst writ e each derived sentence in
+  conventional notation, and then we show how to write and, mor e importantly, how to prove
+  that sentence in Athena.
+  (∀x.P(x)∧Q(x))⇒(∀y.P(y))∧(∀y.Q(y))
+  assume hyp := (forall x . P x & Q x)
+    let{all-P := pick-any y:Object
+      conclude (P y)
+      (!left-and (!uspec hyp y));
+      all-Q := pick-any y:Object
+      conclude (Q y)
+      (!right-and (!uspec hyp y))}
+      (!both all-P all-Q)
+      (∃x.P(x)∧Q(x))⇒(∃y.P(y))∧(∃y.Q(y))
+      assume hyp := (exists x . P x & Q x)
+        pick-witness wforhyp wp # we now have wp := (P w & Q w) in the a.b.
+          let{Pw := (!left-and wp);
+            Qw := (!right-and wp);
+            some-P := (!egen (exists y . P y) w);
+            some-Q := (!egen (exists y . Q y) w)}
+            (!both some-P some-Q)
+            ((∀x.P(x))∨(∀x.Q(x)))⇒(∀y.P(y)∨Q(y))
+            assume hyp := ((forall x . P x) | (forall x . Q x))
+              pick-any y
+                (!cases hyp
+                  assume case-1 := (forall x . P x)
+                    conclude (P y | Q y)
+                    (!either (!uspec case-1 y) (Q y))
+                    assume case-2 := (forall x . Q x)
+                      conclude (P y | Q y)
+                      (!either (P y) (!uspec case-2 y)))
+
+fpmics 2015/12/8 11:38 Page 343 #365
+5.3. SOME EXAMPLES 343
+(∃x.P(x)∨Q(x))⇒(∃x.P(x))∨(∃x.Q(x))
+assume hyp := (exists x . P x | Q x)
+  pick-witness wforhyp wp
+    # we now have wp := (P w | Q w) in the a.b.
+    (!cases (P w | Q w)
+      assume (P w)
+        let{some-P := (!egen (exists x . P x) w)}
+          (!either some-P (exists x . Q x))
+          assume (Q w)
+            let{some-Q := (!egen (exists x . Q x) w)}
+              (!either (exists x . P x) some-Q))
+              (∀x.P(x)⇒Q(x))⇒((∀x.P(x))⇒(∀x.Q(x)))
+              assume hyp1 := (forall x . P x ==> Q x)
+                assume hyp2 := (forall x . P x)
+                  pick-any a
+                    conclude (Q a)
+                    let{Pa=>Qa := (!uspec hyp1 a);
+                      Pa := (!uspec hyp2 a)}
+                      (!mp Pa=>Qa Pa)
+                      Note that, strictly speaking, the theorem produced by this p roof is printed as
+                      (∀x.P(x)⇒Q(x))⇒((∀x.P(x))⇒(∀a.Q(a)))
+                      but this is of course equivalent (in fact identical, for dedu ctive purposes) to:
+                      (∀x.P(x)⇒Q(x))⇒((∀x.P(x))⇒(∀x.Q(x)))
+                      We could easily produce the latter representation if we so pr efer, either by using xin place
+                      ofain the above proof, or else wrapping the present pick-any proof inside a conclude that
+                      quantiﬁed over x:
+                      assume hyp1 := (forall x . P x ==> Q x)
+                        assume hyp2 := (forall x . P x)
+                          conclude (forall x . Q x)
+                          pick-any a
+                            conclude (Q a)
+                            let{Pa=>Qa := (!uspec hyp1 a);
+                              Pa := (!uspec hyp2 a)}
+                              (!mp Pa=>Qa Pa)
+                              ((∃x.P(x))∨(∃x.Q(x)))⇒(∃x.P(x)∨Q(x))
+
+fpmics 2015/12/8 11:38 Page 344 #366
+344 CHAPTER 5. FIRST ORDER LOGIC
+assume hyp := ((exists x . P x) | (exists x . Q x))
+  let{goal := (exists x . P x | Q x)}
+    (!cases
+      hyp
+      assume case-1 := (exists x . P x)
+        pick-witness wforcase-1 # we now have (P w) in the a.b.
+          let{Pw|Qw := (!either (P w) (Q w))}
+            (!egen goal w)
+            assume case-2 := (exists x . Q x)
+              pick-witness wforcase-2 # we now have (Q w) in the a.b.
+                let{Pw|Qw := (!either (P w) (Q w))}
+                  (!egen goal w))
+                  A closer look at this proof reveals some duplication of effor t: the reasoning is essentially
+                  identical for both cases, yet it is repeated almost verbatim for each case separately. We can
+                  easily factor out the commonalities in a single method which we can then reuse accord-
+                  ingly. The savings afforded by such abstraction are minimal in this case (as the proof is so
+                  small to begin with), but it is nevertheless instructive to c arry out the factoring anyway. In
+                  larger proofs the beneﬁts can be more substantial:
+                  assume hyp := ((exists x . P x) | (exists x . Q x))
+                    let{goal := (exists x . P x | Q x);
+                      M :=method (ex-premise)
+                        assume ex-premise
+                          pick-witness wforex-premise
+                            let{Pw|Qw := (!either (P w) (Q w))}
+                              (!egen goal w)}
+                              (!cases hyp (!M (exists x . P x))
+                                (!M (exists x . Q x)))
+                                The next section presents several more examples of custom-w ritten ﬁrst-order methods.
+                                Exercise 5.2: Each of the following listings asserts a number of premises ( possibly zero)
+                                and deﬁnes a goal:
+                                Listing 5.3.1
+                                assert premise-1 := (forall x y . x R y)
+                                define goal := (forall x . x R x)
+                                Listing 5.3.2
+                                define goal := (forall x . exists y . x = y)
+
+fpmics 2015/12/8 11:38 Page 345 #367
+5.3. SOME EXAMPLES 345
+Listing 5.3.3
+assert premise-1 := (forall x . P x | Q x ==> S x)
+assert premise-2 := (exists y . Q y)
+define goal := (exists y . S y)
+Listing 5.3.4
+assert premise-1 := (exists x . P x & Q x)
+assert premise-2 := (forall y . P y ==> S y)
+define goal := (exists x . S x & Q x)
+Listing 5.3.5
+assert premise-1 := (˜exists x . Q x)
+assert premise-2 := (forall x . P x ==> Q x)
+define goal := (˜exists x . P x)
+Listing 5.3.6
+assert premise-1 := (forall x . P x ==> Q x)
+assert premise-2 := (exists x . S x &˜Q x)
+define goal := (exists x . S x &˜P x)
+Listing 5.3.7
+assert premise-1 := (forall x . x R x ==> P x)
+assert premise-2 := (exists x . P x ==>˜exists y . Q y)
+define goal := ((forall x . Q x) ==>˜exists z . z R z)
+Listing 5.3.8
+define goal :=
+((exists x . P x | Q x) <==> (exists x . P x) | (exists x . Q x))
+Derive each goal from the corresponding premises.
+
+fpmics 2015/12/8 11:38 Page 346 #368
+346 CHAPTER 5. FIRST ORDER LOGIC
+5.4 Methods for quantiﬁer reasoning
+The four introduction and elimination mechanisms for quant iﬁers that we have discussed
+so far (the methods uspec andegen, and the deduction forms pick-any andpick-witness ),
+in tandem with the introduction and elimination mechanisms for the sentential connectives
+that we presented in chapter 4, constitute a complete proof s ystem for ﬁrst-order logic. That
+is, if any sentence pfollows logically from an assumption base β, then there is some proof
+Dcomposed from these mechanisms that can derive pfromβ.7However, as we pointed
+out in the previous chapter, if we had to limit ourselves only to these primitive mechanisms
+when writing proofs, our job would be much more difﬁcult than it needs to be.
+Luckily, that’s not the case. We can write our own proof tools by combining the prim-
+itive deductive mechanisms in various ﬂexible ways. Athena ’s semantics guarantees that
+these new tools will never go wrong, i.e., they will never pro duce a conclusion that is not
+logically entailed by the assumption base. It will become ev ident throughout the rest of
+the book that the ability to write methods that automate recu rrent patterns of reasoning is
+crucial for managing the complexity of proof development. I n the last chapter we deﬁned a
+number of methods that are useful for sentential reasoning. In this section we will present
+some methods that are useful for quantiﬁer reasoning. Of cou rse, many more are possible.
+These examples will only give a ﬂavor of the possibilities.
+•Multiple universal specialization and existential genera lization :
+Suppose that we have a premise pwith k≥0 universal quantiﬁers at the front. We
+often want to perform universal specialization on pin one fell swoop, with a listofk
+terms[t1···tk], instead of having to apply uspec kseparate times. That functionality
+can easily be programmed as a recursive method:
+define uspec* :=
+method (premise terms)
+  matchterms {
+  [] => (!claim premise)
+  | (list-of t rest) => (!uspec* (!uspec premise t) rest)
+}
+Recall the semantics of nested method calls from section 2.1 0.2. Since the call
+(!uspec premise t)
+appears in an argument position of the outer method call, its conclusion will be added to
+the assumption base prior to the application of the outer met hod (uspec* ). This ensures
+the continued satisfaction of the method’s precondition, n amely, that the ﬁrst argument
+A precise deﬁnition of what it means for a sentence pto follow logically from an assumption base βis given
+in section 5.6.
+
+fpmics 2015/12/8 11:38 Page 347 #369
+5.4. METHODS FOR QUANTIFIER REASONING 347
+ofuspec* should be a premise , i.e., it should be in the assumption base at the time when
+uspec* is invoked. An equivalent way of writing this method is this:
+define uspec* :=
+method (premise terms)
+  matchterms {
+  [] => (!claim premise)
+  | (list-of t rest) => let{premise /quotesingle.Var:= (!uspec premise t)}
+  (!uspec* premise /quotesingle.Varrest)
+}
+The virtue of the ﬁrst version is conciseness.
+An example of uspec* in action:
+assert premise := (forall x y . x = y ==> y = x)
+> (!uspec* premise [1 2])
+Theorem : (if (= 1 2)
+(= 2 1))
+Note that the method can accept a list of fewer than kterms, in which case the universal
+quantiﬁcation is only partially instantiated:
+assert <-transitivity := (forall x y z . x < y & y < z ==> x < z)
+> (!uspec* <-transitivity [1.7 2.9])
+Theorem : (forall ?v1805:Real
+(if (and (< 1.7 2.9)
+(< 2.9 ?v1805:Real))
+(< 1.7 ?v1805:Real)))
+If the second argument is the empty list of zero terms, then th e application of uspec* has
+the same effect as applying claim to the ﬁrst argument. Note that uspec* is also known
+asinstance ; it was ﬁrst introduced on p. 116.
+The ability to existentially generalize over multiple term s in one step is likewise use-
+ful. For instance, if we have (1 < 2) in the assumption base, we want to be able to derive
+(exists x y . x < y) in one step, simply by listing the terms aandb:
+(!egen* (exists x y . x < y) [1 2])
+The order of the existential quantiﬁers corresponds to the o rder in which the terms are
+listed, meaning that the generalization over xis to be based on 1, while the generalization
+overyis based on 2. In general, for k>0,
+(!egen* (exists x1···xk.p) [t1···tk])
+
+fpmics 2015/12/8 11:38 Page 348 #370
+348 CHAPTER 5. FIRST ORDER LOGIC
+should derive the conclusion (exists x1···xk.p), provided that
+{xk/mapsto tk}(···{x1/mapsto t1}(p)···)
+is in the assumption base (an error occurs otherwise).
+Exercise 5.3: Implement the method egen* .
+•Forward Horn clause inference : In practice, the most useful—and common—universal
+quantiﬁcations are of the form
+(forall x1···xn.p==> q) (5.25)
+and
+(forall x1···xn.p<==> q) (5.26)
+A few examples:
+(forall x y . x = y ==> y = x) (5.27)
+(forall x y . x parent y ==> x ancestor y) (5.28)
+(forall x y . x > 0 & y > 0 ==> x - y < x) (5.29)
+(forall x y . x <= y <==> x = y | x < y) (5.30)
+Many more examples will be encountered throughout the book. It is not an exag-
+geration to say that most mathematical results, as well as th e large majority of logical
+formulas that arise in system modeling, are expressed in one of these two forms, partic-
+ularly the ﬁrst one, (5.25). Sentences of that form are calle dHorn clauses .8We will also
+refer to them as Horn rules , or, when there is no risk of confusion, simply as “rules.”
+Note that a sentence of the second form, (5.26), can be regard ed as the conjunction9of
+the following two Horn clauses:
+(forall x1···xn.p==> q) (5.31)
+and
+(forall x1···xn.q==> p) (5.32)
+8 This is actually a generalized conception of Horn clauses. In the usual formulation, the antecedent of a Horn
+clause is a conjunction of k>0 atoms (perhaps only one), known as the body of the clause, and the consequent
+is a single atom, called the head of the clause; see appendix A for more details. Here, by contr ast, we can have
+arbitrary sentences in the antecedent and consequent posit ions.
+9 We ask you to prove a form of the equivalence of (5.26) and the conjunction of (5.31) and (5.32) in exer-
+cise ( ??).
+
+fpmics 2015/12/8 11:38 Page 349 #371
+5.4. METHODS FOR QUANTIFIER REASONING 349
+One of the most common things that we want to do with a Horn rule of the form (5.25)
+is to apply it (or to “ﬁre” it, in the terminology of rule syste ms) on some speciﬁc terms
+t1,...,tn, i.e., to derive the appropriate instance of the conclusion q, given that the cor-
+responding instance of the antecedent p has already been est ablished . For instance, sup-
+pose that we know that peter is a parent of mary, i.e., that the atom
+(peter parent mary)
+is in the assumption base. It then becomes evident that rule ( 5.28) is applicable, and
+speciﬁcally that we can use it to infer the conclusion
+(peter ancestor mary)
+We refer to this process as “ﬁring” (5.28) on the terms peter andmary. This type of infer-
+ence with Horn rules is also called forward , because we proceed from the antecedent
+of (an instance of) the rule to the consequent, in contrast to the backward sort of
+inference search that occurs in logic programming, and whic h proceeds from conse-
+quent to antecedent. (We discuss logic programming—and imp lement a logic program
+interpreter—in appendix A.)
+Thus, “ﬁring” a Horn rule
+(forall x1···xn.p==> q)
+proceeds in two stages. First, a list of terms [t1···tn]is used to specialize the universal
+quantiﬁcation, with each tireplacing xi,i=1,...,n. Then, we perform modus ponens
+on the instantiated rule and its antecedent. For instance, t he effect of the above example
+can be achieved by the following proof:
+domain Person
+declare parent, ancestor: [Person Person] -> Boolean
+declare peter, mary: Person
+assert ancestor-rule := (forall x y . x parent y ==> x ancestor y)
+assert fact := (peter parent mary)
+let{rule-instance :=
+  conclude (peter parent mary ==> peter ancestor mary)
+  (!uspec* ancestor-rule [peter mary])}
+  (!mp rule-instance fact)
+  This is the kind of thing that we would like to do with a single m ethod call. We would
+  like the above type of process to be carried out automaticall y with a single call of the
+  form
+
+fpmics 2015/12/8 11:38 Page 350 #372
+350 CHAPTER 5. FIRST ORDER LOGIC
+(!fire R[t1···tn])
+where Ris a Horn rule and t1···tnare arbitrary terms of the proper sorts. In the case of
+the above example, the call
+(!fire ancestor-rule [peter mary])
+should derive (peter ancestor mary) —provided, again, that the precondition
+(peter parent mary)
+is in the assumption base.
+The following is a ﬁrst attempt at coding fire:
+define fire :=
+method (rule terms)
+  matchrule {
+  (forall ( some-list _) (_ ==> _)) =>
+  let{rule-instance := (!uspec* rule terms)}
+    (!mp rule-instance (antecedent rule-instance))
+  }
+  The procedure antecedent (deﬁned in the standard Athena library) simply returns the
+  antecedent of a given conditional:
+  define antecedent :=
+  lambda (cond)
+  matchcond {
+  (p ==> _) => p
+}
+This implementation always expects the antecedent of the in stantiated rule to be in the
+assumption base. Oftentimes, however, the antecedent of a H orn clause is a conjunc-
+tion of several sentences p1,...,pk—clause (5.29) is an example—and at the time when
+we invoke fire we do not quite have the entire conjunction of the relevant in stances of
+p1,...,pkin the assumption base; we only have the instances themselve s. For instance, in
+the case of clause (5.29), we might have the atomic component s(f 3 > 0) and(1 > 0)
+in the assumption base, but not their conjunction. What we ne ed to do in such cases is
+to assemble the instances in a conjunction before we can appl y modus ponens. We can
+accommodate such cases by slightly changing the structure o f the above implementa-
+tion: Instead of directly passing the antecedent of the appr opriate rule instance to modus
+ponens, we ﬁrst pass it to a method that derives the antecedent:
+define fire :=
+method (rule terms)
+  matchrule {
+  (forall ( some-list _) (_ ==> _)) =>
+  let{rule-instance := (!uspec* rule terms)}
+
+fpmics 2015/12/8 11:38 Page 351 #373
+5.4. METHODS FOR QUANTIFIER REASONING 351
+(!mp rule-instance (!prove-antecedent rule-instance))
+}
+Now, if we simply deﬁned prove-antecedent as follows:
+define prove-antecedent :=
+method (cond)
+  matchcond {
+  (p ==> _) => (!claim p)
+}
+then our new implementation would have the exact same effect as the preceding one.
+But we can make fire more powerful by independently making prove-antecedent more
+resourceful. Speciﬁcally, the method will ﬁrst check to see whether the antecedent is
+already in the assumption base. If it is, it will simply claim it. If it is not, then it will try
+to derive it depending on its logical structure:
+define prove-components-of :=
+method (p)
+  check{
+  (holds? p) => (!claim p)
+  |else=>matchp {
+  (p1 & p2) =>
+  (!both (!prove-components-of p1)
+  (!prove-components-of p2))
+  | (p1 | p2) =>
+  try{
+  (!either (!prove-components-of p1) p2)
+  | (!either p1 (!prove-components-of p2))
+}
+}
+}
+define prove-antecedent :=
+method (p)
+  (!prove-components-of (antecedent p))
+  So if the antecedent instance is not in the assumption base, w e check to see if it is a
+  conjunction or a disjunction. If it is a conjunction, we recu rsively derive each conjunct
+  and then apply both. If it is a disjunction, we try to (recursively) derive one of the dis-
+  juncts, and then we apply either . This is a very simple theorem-proving strategy that
+  nevertheless works fairly well in practice. A more sophisti cated version of the same idea
+  is used to implement the conditional rewriting reasoning pe rformed by the chain method
+  that will be introduced in the next chapter.
+  It is convenient to extend fire so that it works with universally quantiﬁed bicondition-
+  als as well, i.e., with rules of the form (5.26). Since the met hod is only given the rule and
+
+fpmics 2015/12/8 11:38 Page 352 #374
+352 CHAPTER 5. FIRST ORDER LOGIC
+a list of terms, it cannot know ahead of time which side of the i nstantiated biconditional
+will be in the assumption base, so we use backtracking (via try) to ﬁnd that out:
+1define fire :=
+2method (rule terms)
+3 matchrule {
+4 (forall ( some-list _) (_ ==> _)) =>
+5 let{rule-instance := (!uspec* rule terms)}
+6 (!mp rule-instance (!prove-antecedent rule-instance))
+7 | (forall ( some-list _) (_ <==> _)) =>
+8 let{rule-instance := (!uspec* rule terms)}
+9 try{
+10 let{cond-1 := (!left-iff rule-instance)}
+11 (!mp cond-1 (!prove-antecedent cond-1))
+12 |let{cond-2 := (!right-iff rule-instance)}
+13 (!mp cond-2 (!prove-antecedent cond-2))
+14 }
+15 | (forall _ _) => (!uspec* rule terms)
+16 }
+For example, supposing that we have (a <= b) in the assumption base, applying fire to
+rule (5.30) and to the list [a b] will derive the conclusion
+(a < b | a = b) . (5.33)
+Conversely, if we had the disjunction (5.33) in the assumpti on base but not (a <= b) ,
+then the same application would derive the theorem (a <= b) .10Also, note the addition
+of line 15 in the code listing; for extra ﬂexibility, when the body of the given rule pis
+neither a conditional nor a biconditional, the method simpl y instantiates pon the given
+terms.
+•Quantiﬁer negation : A negation sign in front of a quantiﬁer qcan always be pushed
+inward provided we change qfrom universal to existential or vice versa. For instance,
+from
+(˜forall x . prime x) (5.34)
+we can infer
+(exists x .˜prime x) (5.35)
+Such an inference is valid: If not every integer is prime, the n there must be some number
+that is not prime. Likewise, if immortal is a unary predicate on Person (with signature
+[Person] -> Boolean ), then from
+(˜exists x . immortal x) (5.36)
+10 If both (a <= b) and (5.33) are in the assumption base then there would be litt le point in applying the
+method, but nevertheless, ifthe method were applied, which theorem would be derived?
+
+fpmics 2015/12/8 11:38 Page 353 #375
+5.4. METHODS FOR QUANTIFIER REASONING 353
+we should be able to infer
+(forall x .˜immortal x) (5.37)
+The rules that license such inferences are collectively ref erred to as the quantiﬁer nega-
+tionrules. In customary notation they can be depicted as follows :
+¬ ∀x.p
+∃x.¬p¬ ∃x.p
+∀x.¬p
+The rules are bidirectional, i.e., each can also licence pas sage from a sentence of the
+form shown below the line to the corresponding sentence abov e the line. Thus, e.g.,
+from (5.35) we can infer (5.34), and from (5.37) we can derive (5.36). If we recall the
+analogy between universal quantiﬁcation and conjunction, and between existential quan-
+tiﬁcation and disjunction, then the quantiﬁer negation rul es can be viewed as generalized
+versions of De Morgan’s rules from sentential logic.
+In the vein of sentential methods such as cond-def (p. 226), we will implement ver-
+sions of the above rules that use complementation instead of negation, as these tend to
+be more convenient in practice:
+¬ ∀x.p
+∃x.p¬ ∃x.p
+∀x.p
+Speciﬁcally, we ﬁrst deﬁne a separate unary method for each o f these four different
+directions, which will do the heavy lifting. Once we have the se, we can then deﬁne a
+single quantiﬁer-negation method that will take the approp riate action based on the form
+of the input. We implement three of these methods here, and le ave the deﬁnition of the
+fourth as an exercise.
+define (qn-1 premise) :=
+matchpremise {
+(˜(forall x p)) => (! force(exists x . complement p))
+}
+define (qn-2 premise) :=
+matchpremise {
+(exists x p) =>
+(!by-contradiction (˜forall x . complement p)
+  assume hyp := (forall x . complement p)
+    pick-witness wforpremise p-w
+      let{p/quotesingle.Var-w := (!uspec hyp w)}
+        (!from-complements
+        false
+        p/quotesingle.Var-w
+        p-w))
+      }
+
+fpmics 2015/12/8 11:38 Page 354 #376
+354 CHAPTER 5. FIRST ORDER LOGIC
+define (qn-3 premise) :=
+matchpremise {
+(˜(exists x p)) =>
+conclude (forall x . complement p)
+pick-any y
+  let{p-y := (replace-var x y p)}
+    (!by-contradiction (complement p-y)
+      assume p-y
+        (!absurd (!egen (exists y p-y) y)
+        premise))
+      }
+      define (qn-4 premise) :=
+      matchpremise {
+      (forall x p) =>
+      (!by-contradiction (˜exists x . complement p)
+        assume hyp := (exists x . complement p)
+          pick-witness wforhyp -p-w
+            (!from-complements false -p-w (!uspec premise w)))
+          }
+          Exercise 5.4: Implement qn-1.
+          Our top-level method for quantiﬁer negation now does a simpl e dispatch:
+          define qn :=
+          method (premise)
+            matchpremise {
+            (˜(forall _ _)) => (!qn-1 premise)
+            | (exists _ _) => (!qn-2 premise)
+            | (˜(exists _ _)) => (!qn-3 premise)
+            | (forall _ _) => (!qn-4 premise)
+          }
+          •Quantiﬁer swapping : Two leading quantiﬁers of the same kind can always be swappe d.
+          For instance,
+          (forall x y . x < y)
+          is equivalent to
+          (forall y x . x < y)
+          In addition, a universal quantiﬁer immediately following a n existential quantiﬁer can
+          always be pulled to the front of the existential quantiﬁer, e .g., from
+          (exists x . forall y . x <= y)
+
+fpmics 2015/12/8 11:38 Page 355 #377
+5.4. METHODS FOR QUANTIFIER REASONING 355
+we can derive
+(forall y . exists x . x <= y)
+It is convenient to have a method that can perform such transf ormations automatically:
+define (quant-swap premise) :=
+matchpremise {
+(forall _ (forall _ _)) =>
+pick-any y x
+  (!uspec* premise [x y])
+  | (exists x (exists y body)) =>
+  pick-witnesses w_x w_y forpremise
+    (!egen* (exists y x . body) [w_y w_x])
+    | (exists x (forall _ _)) =>
+    pick-any y
+      pick-witness wforpremise wp
+        let{q := (!uspec wp y)}
+          (!egen (exists x (replace-var w x q)) w)
+        }
+        The last case, when the input premise is of the form (exists x.forall y.p), is
+        somewhat subtle. The reader should try to trace the reasonin g of the method on some
+        speciﬁc examples, e.g., on (exists x . forall y . x <= y) .
+        •Replacement rule : It is useful to extend the replacement method transform of sec-
+        tion 4.10 so that it can handle quantiﬁers. Consider, for ins tance, the following two
+        sentences:
+        define p := (forall x . exists y . x R y ==>˜(P x & Q y))
+        define q := (forall z . exists w .˜ ˜z R w ==>˜P z |˜Q w)
+        We should be able to infer qfromp, and vice versa, simply by citing the two bidirectional
+        methods bdnanddm. E.g., assuming that pis in the assumption base,
+        (!transform p q [bdn dm])
+        should produce q. Conversely, if qis in the assumption base,
+        (!transform q p [bdn dm])
+        should produce p.
+        After reviewing the implementation of transform , it might appear that we need
+        to implement congruence methods for the two quantiﬁers, cal l themugen-cong and
+        egen-cong , analogous to the sentential methods or-cong ,iff-cong , etc. That is correct,
+        but the presence of variables complicates the situation som ewhat. For instance, in the
+        case ofpandqabove, we can hardly expect to prove the equivalence of the qu antiﬁed
+        bodies
+
+fpmics 2015/12/8 11:38 Page 356 #378
+356 CHAPTER 5. FIRST ORDER LOGIC
+(?x R ?y ==>˜(P ?x & Q ?y))
+and
+(˜˜?z R ?w ==>˜P ?z |˜Q ?w)
+and then apply the quantiﬁer congruence methods, because th e two bodies are actually
+notequivalent, since, e.g., (?x R ?y) is not derivable from (˜˜?z R ?w) .
+We can get around this issue by making the interface of the qua ntiﬁer congruence
+methods, ugen-cong andegen-cong , a bit more ﬂexible. Say we are interested in proving
+the equivalence of
+(∀x.p) (5.38)
+and
+(∀y.q) (5.39)
+on the basis of nmethods M1,...,Mn. Instead of expecting the bodies pandqto already
+having been shown equivalent prior to the invocation of ugen-cong , we will pass a binary
+method Mtougen-cong , which can then be used dynamically to prove the equivalence
+of appropriately renamed versions of pandq. That equivalence will then enable the
+derivation of the desired equivalence of (5.38) and (5.39):
+define (ugen-cong p q M) :=
+match[p q] {
+[(forall v1 p-body) (forall v2 q-body)] =>
+conclude (p <==> q)
+(!equiv assume p
+pick-any x
+  let{p-body /quotesingle.Var:= (!uspec p x);
+    q-body/quotesingle.Var:= (replace-var v2 x q-body);
+    bicond := conclude (p-body /quotesingle.Var<==> q-body /quotesingle.Var)
+    (!M p-body /quotesingle.Varq-body/quotesingle.Var)}
+    (!mp (!left-iff bicond) p-body /quotesingle.Var)
+    assume q
+      pick-any x
+        let{q-body /quotesingle.Var:= (!uspec q x);
+          p-body/quotesingle.Var:= (replace-var v1 x p-body);
+          bicond := conclude (q-body /quotesingle.Var<==> p-body /quotesingle.Var)
+          (!M q-body /quotesingle.Varp-body/quotesingle.Var)}
+          (!mp (!left-iff bicond) q-body /quotesingle.Var))
+        }
+        The implementation of a similar ternary method egen-cong for existential quantiﬁers is
+        left as an exercise.
+        Exercise 5.5: Deﬁneegen-cong .
+
+fpmics 2015/12/8 11:38 Page 357 #379
+5.5. PROOF HEURISTICS FOR FIRST-ORDER LOGIC 357
+Finally, we extend prove-equiv as follows:
+define prove-equiv :=
+method (p q methods)
+  try{
+  (!find-first-element method (M)
+  (!equiv assume p (!M p)
+  assume q (!M q))
+    methods)
+    |check{
+    (equal? p q) => (!ref-equiv p)
+    |else=>let{M :=method (p1 p2)
+    (!prove-equiv p1 p2 methods)}
+    match[p q] {
+    [(˜p1) (˜q1)] =>
+    (!not-cong (!prove-equiv p1 q1 methods))
+    | [((some-sent-con pc) p1 p2) (pc q1 q2)] =>
+    (!(choose-cong-method pc)
+    (!prove-equiv p1 q1 methods)
+    (!prove-equiv p2 q2 methods))
+    | [(forall _ _) (forall _ _)] =>
+    (!ugen-cong p q M)
+    | [(exists _ _) (exists _ _)] =>
+    (!egen-cong p q M)
+  }
+}
+}
+.5 Proof heuristics for ﬁrst-order logic
+We will now expand the collection of tactics described in sec tion 4.14 with some new
+entries: two backward tactics for introducing quantiﬁers a nd some forward tactics for elim-
+inating them. We will also slightly extend the notion of a pro of spec. Instead of “Find Dto
+derive pfromβ,” the new format for a proof spec will be
+Find Dto derive pfrom ( β,T)
+where Tis a ﬁnite set of terms, which we call the proof terms . We explain the role of this
+set below.
+Writing ﬁrst-order proofs often requires choosing appropr iate terms with which to spe-
+cialize universal quantiﬁcations (via uspec ), or from which to existentially generalize (via
+egen). In theory there are inﬁnitely many choices for such terms, since there are inﬁnitely
+
+fpmics 2015/12/8 11:38 Page 358 #380
+358 CHAPTER 5. FIRST ORDER LOGIC
+many terms of any given sort.11However, in practice these terms come from a ﬁnite pool
+of candidates, namely, the set of all terms tsuch that:
+1.toccurs in the assumption base or in the goal;12
+2.tis a fresh variable introduced by a universal generalizatio n (ageneralize-over
+orpick-any ), or a witness variable introduced by an existential instan tiation (a
+with-witness orpick-witness ).
+The ﬁrst of these two collections of terms is ﬁxed once we are g iven an assumption base
+and a goal. But the second one grows dynamically as we attempt more universal gener-
+alizations and existential instantiations. The tactics be low keep track of these additions,
+ensuring that we have access to an appropriate set of proof te rms at any given point in the
+proof search. These terms are then used by other tactics for e xistential generalization and
+for universal specialization.
+5.5.1 Backward tactics for quantiﬁers
+The following is the standard backward tactic for universal quantiﬁcations:
+Derive(forall v.p)from(β,T)
+generalize-over v′
+(!force {v/mapsto v′}(p) (β,T∪ {v′})) [forall<-]
+Informally, this tactic can be read as follows: To derive a un iversal quantiﬁcation
+(forall v.p), pick a fresh variable v′13and attempt to ﬁnd a proof that derives
+{v/mapsto v′}(p). Note that v′becomes a member of the set of available proof terms in the
+new subgoal. We have expressed this tactic in terms of generalize-over for technical con-
+venience, but it can also be used with pick-any .14We use force2 here as a binary version
+offorce simply in order to keep track of the proof terms in the stateme nt of the subgoals
+(represented as a list). We can deﬁne force2 as follows:
+define (force2 p terms) := (! forcep)
+The following is the backward tactic for existential quanti ﬁcations:
+Derive(exists v.p)from(β,T= {...,t,...})
+Even if there are only ﬁnitely many ground terms of a certain sort, there are still inﬁnitely many varia bles
+available for it.
+Unless the said occurrence of talso contains bound variable occurrences.
+Meaning that v′should not occur in any preceding proof specs.
+Keeping in mind that in a deduction of the form pick-any I D,Iis not a variable but a name that denotes a
+variable.
+
+fpmics 2015/12/8 11:38 Page 359 #381
+5.5. PROOF HEURISTICS FOR FIRST-ORDER LOGIC 359
+let{_ := (! force2 {v/mapsto t}(p)T)} [exists<-]
+  (!egen (exists v.p)t)
+  It can be understood as follows: To derive an existentially q uantiﬁed sentence
+  (exists v.p), (5.40)
+  choose a proof term tand try to show that pholds for t, or more precisely, try to derive
+  {v/mapsto t}(p). If and when we manage that, we can infer the original goal (5. 40) by existential
+  generalization. There may be several proof terms available , in which case the tactic calls
+  for a non-deterministic choice. In practice, we use whateve r term seems most promising,
+  i.e., whatever term produces a subgoal that can be tackled by a high-priority tactic.
+  .5.2 Forward tactics for quantiﬁers
+  Before we describe the forward quantiﬁer tactics, we need to introduce two new concepts.
+  First, let us say that an occurrence of a sentence qinside a sentence pisuniversal iff it
+  is not inside the scope of any positively embedded15existential quantiﬁers or negatively
+  embedded universal quantiﬁers. We will often use a starred s ubscript to indicate that an
+  occurrence of qinside pis universal: p=(···q∗···).
+  As an example, the following highlighted subsentence occur rences are universal in their
+  respective supersentences p1—p6:
+  p1 =(P a & Q b)
+  p2 =(forall x .forall y .x R y ==> P x)
+  p3 =(forall x .P x | forall y .Q y)
+  p4 =(forall x .P x |forall y .Q y)
+  p5 =(P a & forall x .P x ==>˜exists y .˜x R y)
+  p6 =(˜exists x .P x ==>˜Q x)
+  The reason is that they are not within the scope of any positiv e existential or negative uni-
+  versal quantiﬁer occurrences. However, the following high lighted subsentence occurrence
+  is not universal in p:
+  p=(P a | exists x .P x ==> x R y) .
+  That is because (x R y) lies within the scope of an existential quantiﬁer that is pos itively
+  embedded in p. Likewise, the occurrence of (P x) is not universal in the following sen-
+  tence:
+  p=(˜forall x .P x),
+  All of the concepts and procedures involving polarity tha t were introduced in the propositional setting can be
+  straightforwardly extended to the ﬁrst-order case; see exe rcise ??.
+
+fpmics 2015/12/8 11:38 Page 360 #382
+360 CHAPTER 5. FIRST ORDER LOGIC
+because it is within the scope of a universal quantiﬁer that i s negatively embedded in p.
+Second, if qis a universal sentence occurrence inside p, we write UFV(q,p)for the set
+of all and only those free variables of qwhich fall within the scope of some quantiﬁer in
+p.16We refer to the elements of UFV(q,p)as the universal free variables ofqinp.
+Example 5.1: consider the sentences p1,...,p6above, and let qirefer to the highlighted
+sentence that occurs in pi. We then have:
+UFV(q1,p1) = ∅
+UFV(q2,p2) = {x}
+UFV(q3,p3) = {y}
+UFV(q4,p4) = ∅
+UFV(q5,p5) = {x,y}
+UFV(q6,p6) = {x}
+Observe the difference between UFV(q3,p3)andUFV(q4,p4).
+We are now ready to present the new tactics, starting with one for eliminating existential
+quantiﬁers:
+Derive rfrom(β= {...,(···(exists v.q)+∗···),...},T)
+let{_ := (! force2(exists v.q)T)} [exists->]
+  with-witness w(exists v.q)
+  (!force2 r T∪ {w})
+  This is one of the highest-priority tactics, as we will see la ter. It advises us to eliminate
+  existential quantiﬁers: If we see an existential quantiﬁca tion positively embedded in a uni-
+  versal position in the assumption base, derive it and then “u npack” it, i.e., eliminate the
+  existential quantiﬁer, either via with-witness orpick-witness . Thus, the ﬁrst subgoal is
+  to derive the existential quantiﬁcation itself. This may we ll be trivial, as the existential
+  quantiﬁcation is often directly contained in the assumptio n base, in which case we do not
+  have to derive it at all. The second subgoal is to derive the or iginal r, but only after intro-
+  ducing a fresh witness variable for the existential sentenc e. Therefore, this second subgoal
+  has access to an additional premise (the witness premise {v/mapsto w}(q)),17and an additional
+  proof term (the witness variable w, which, again, must be fresh, i.e., never seen before in
+  the current proof search).
+  That is, these variables occur free in qwhen qis considered in isolation, but they are bound when qis
+  considered as a subsentence of p. Also note that since the occurrence of qinpis universal, such quantiﬁers have
+  to be essentially universal, i.e., they must be either unive rsal quantiﬁers that are positively embedded in por
+  existential quantiﬁers that are negatively embedded in p.
+  If the existential sentence (exists v.q)was not initially in β, then the second subgoal also has access to
+  that sentence. However, the witness premise {v/mapsto w}(q)is much more likely to play an important role inside D2
+  than the existential sentence (exists v.q).
+
+fpmics 2015/12/8 11:38 Page 361 #383
+5.5. PROOF HEURISTICS FOR FIRST-ORDER LOGIC 361
+Note that the requirement that the existential quantiﬁcati on be universally embedded in
+pensures that the tactic is always applied in an outside-to-i nside order. For instance, if pis
+the sentence (exists x .exists y .x R y) , then the tactic is only applicable to the outer
+existential quantiﬁcation, as the inner one is not in a unive rsal position.
+Universal quantiﬁcations that are negatively embedded in t he assumption base are essen-
+tially existential quantiﬁcations, and should also be unpa cked as soon as possible. Thus,
+in a sense, the following tactic is the dual of [exists->] (recall that we write qfor the
+complement of q):
+Derive rfrom(β= {...,(···(forall v.q)−∗···),...,T)
+let{p1 := (! force2(˜forall v.q)T)} [exists2->]
+  p2 := (!qn p1) }
+  with-witness wp2
+  (!force r(β∪ {(˜forall v.q),(exists v.q),{v/mapsto w}(q)},T∪ {w}))
+  As before, wshould be fresh. // That is ensured if we use pick-witness .
+  Finally, we introduce a forward tactic involving universal quantiﬁers. It recommends
+  specializing a universal quantiﬁcation in the assumption b ase with some available proof
+  term:
+  Derive rfrom(β= {...,(···(forall v.q)+∗···),...},T= {...,t,...})
+  let{p := (! force2(forall v.q)T)} [forall1->]
+    _ := (!uspec p t)}
+    (!force2 r T)
+    In this case too we have a dual tactic, which is applicable whe n we have an existential
+    quantiﬁcation negatively embedded in the assumption base. We then try to derive the nega-
+    tion of the existential sentence, transform it into a univer sal quantiﬁcation by moving the
+    negation sign inward, and then specializing it:
+    Derive rfrom({...,(···(exists v.q)−∗···),...},T= {...,t,...})
+    let{p1 := (! force2(˜exists v.q)T); [forall1->]
+      p2 := (!qn p1);
+      _ := (!uspec p2 t)}
+      (!force2 r T)
+      [forall1->] and its dual are rather seldom used because their applicatio n cannot be easily
+      controlled and can render the search process quite inefﬁcie nt. Later on we will introduce a
+      much more precisely targeted forward tactic for universal q uantiﬁers.
+      That is, by and large, all we need in the way of new tactics. How ever, before we can
+      start using these we need to do a little more work. First, we ne ed to make some small
+
+fpmics 2015/12/8 11:38 Page 362 #384
+362 CHAPTER 5. FIRST ORDER LOGIC
+modiﬁcations to the propositional tactics to ensure that th ey can be proﬁtably used in the
+new setting of ﬁrst-order logic. One obvious change is that e very proof spec now contains
+a set of proof terms Tin addition to the assumption base β, so the tactics need to be
+reformulated to reﬂect the presence of this new element. Thi s is a perfectly straightforward
+exercise that we will carry out for illustration purposes on ly for the backward conjunction
+tactic,[and<-] :
+Derive(p&q)from(β,T)
+let{left := (! force2 p T); [and<-]
+  right := (! force2 q T)}
+  (!both left right)
+  This is in fact the only change that is necessary for the backw ard tactics, and also for
+  the following forward tactics: reiteration; the indirect a nd complement tactics; and the
+  replacement tactics. The generalized disjunction tactic ( [or->] ), the tactic for deriving
+  false ([false->] ), and the extraction tactics need more substantial renovat ions. Let us
+  start with the latter.
+  Recall that the idea behind the extraction tactics was to sea rch the assumption base for a
+  positive occurrence of an appropriate parent of the goal. We then attempt to (a) derive the
+  parent, and (b) detach the goal from the parent by the proper e limination method. Parent-
+  hood was deﬁned completely syntactically, e.g., a conjunct ive parent of pwas understood
+  as any conjunction (p1&p2)such that at least one piissyntactically identical top. We will
+  need to enrich this notion of parenthood by relaxing the requ irement of syntactic identity,
+  replacing it by the more ﬂexible matching relation.18
+  To motivate this change, suppose that we need to derive the go al(P zero) from the
+  premise19
+  (forall x .P x & Q x) .
+  If we used syntactic identity as our criterion for parenthoo d, then no extraction tactic would
+  be applicable here, since, under that understanding of pare nthood, the premise does not
+  contain any positive occurrences of any parents of the goal. However, intuitively, we can
+  see that the premise does contain a positive occurrence of a g eneralized sort of parent of
+  the goal, namely, the sentence
+  (P x & Q x) . (5.41)
+  Recall from section ??that a sentence q matches a sentence piff there is a substitution θsuch that θ(p)=q.
+  In this case we could discover a proof even without modifyi ng the extraction tactics as we are about to do, but
+  disregard that for present purposes.
+
+fpmics 2015/12/8 11:38 Page 363 #385
+5.5. PROOF HEURISTICS FOR FIRST-ORDER LOGIC 363
+This is a “generalized” sort of parent in that an instance of (5.41) is a regular parent of the
+goal(P zero) . In particular, the instance of (5.41) that is obtainable th rough the substitu-
+tion{x/mapsto zero}is a regular parent of the goal, in the old sense. The instance in question,
+of course, is the conjunction (P zero & Q zero) .
+So from now on we will be searching the assumption base for pos itive occurrences of
+such generalized goal parents. To do this, we will need to det ermine if the goal matches
+various positive subsentences of the assumption base. As we saw in section ??, there is an
+efﬁcient procedure for sentence matching, which we can use t o make such determinations.
+However, there are a couple of additional caveats that need t o be observed in the present
+context. First, we only consider as potential parents sente nces that are universally positive
+in some member of the assumption base. For instance, assumin g that sentences (5.42) and
+(5.43) below are in the assumption base, neither of the highl ighted subsentences will be
+considered as a possible parent of the goal (P zero) , even though the goal matches a child
+of each, because neither highlighted subsentence occurs in a universally positive position:
+(exists x .P x & Q x) (5.42)
+(˜forall y .˜(x R y ==> P y)) (5.43)
+Second, if a goal rdoes successfully match an appropriate subsentence qof some element
+pof the assumption base, the domain of the resulting substitu tionθmust only contain uni-
+versal free variables. More precisely, we must have Dom(θ)⊆UFV(q,p). This condition
+is intended to ensure that free variables in the assumption b ase are not treated as univer-
+sally quantiﬁed variables. For instance, suppose that the g oal is(zero R zero) and that the
+assumption base contains the premise
+p=(forall x .P x ==> x R y) ,
+which has a free occurrence of y. Even though the goal matches the consequent (x R y)
+under the substitution
+{x/mapsto zero,y/mapsto zero},
+we will notregard the conditional (P x ==> x R y) as a generalized parent of the goal,
+even though the ﬁrst proviso above is satisﬁed (i.e., the con ditional occurs in a universally
+positive position in p). The reason is that the occurrence of the variable yin the consequent
+is not universally quantiﬁed. It is, rather, a free occurren ce, and hence for our present
+purposes it should be treated essentially as a constant—not as a universally quantiﬁed
+variable. Under that understanding, the goal does not match the consequent.
+To sum up, suppose that qis a speciﬁc occurrence of a subsentence of p, and let rbe
+any sentence. We will say that r properly matches q in p under θ, written PM(r,q,p,θ),
+iffrmatches qunder θin the usual sense and, in addition, the two foregoing condit ions
+hold, i.e., (a) qoccurs in a universally positive position in p; and (b) Dom(θ)⊆UFV(q,p).
+It is quite easy to determine whether PM(r,q,p,θ)holds for any given p,q,r, andθ; and,
+
+fpmics 2015/12/8 11:38 Page 364 #386
+364 CHAPTER 5. FIRST ORDER LOGIC
+more importantly, given any pandr, it is quite easy to determine whether there exists some
+subsentence qofpand some θsuch that PM(r,q,p,θ).20
+Accordingly, faced with the task of deriving a goal rfrom some β(and set of proof terms
+T), our general algorithm for applying extraction tactics no w becomes:
+1. Find some pinβwith a universally positive occurrence of a generalized par ent of the
+goal r, speciﬁcally, a universally positive occurrence of a sente nceqof the following
+form:
+•(p1&p2), where rproperly matches some piinpunder some θ;
+•(p1==> p2), where rproperly matches p2inpunder some θ;
+•(p1|p2), where rproperly matches some piinpunder some θ;
+•(p1<==> p2), where rproperly matches some piinpunder some θ.
+2. Derive the corresponding substitution instance of that p arent, and possibly other addi-
+tional subgoals.
+3. Detach the goal rfrom that substitution instance of the parent by the proper e limination
+method.
+Graphical formulations of the new versions of these tactics can help to clarify their struc-
+ture. Here is the case of [rand->] :
+Derive rfrom(β= {...,p=(···(p1&p2)+∗···),...},T)
+let{conj := (! force2 θ((p1&p2))T)}# where r properly matches p 2in p under θ
+  (!right-and conj) [rand->]
+  The rest of the extraction tactics can be modiﬁed likewise (w ith one small lacuna that will
+  be discussed soon). We only need to add one new extraction tac tic dealing with universal
+  quantiﬁers, and we are done:
+  Derive rfrom(β= {...,p=(···(forall v.q)+∗···),...},T)
+  let{lemma := (! force2 θ((forall v.q))T)}# where r properly matches q in p under θ
+    (!uspec lemma θ(v)) [forall3->]
+    This new tactic treats any universal quantiﬁcation (forall v.q)as a generalized parent
+    of all substitution instances of its body q. The dual of this tactic is as follows:
+    Derive rfrom(β= {...,(···(exists v.q)−∗···),...},T)
+    Strictly speaking, qis a subsentence occurrence , and would therefore be represented as a pair consisting of a
+    sentence and a position.
+
+fpmics 2015/12/8 11:38 Page 365 #387
+5.5. PROOF HEURISTICS FOR FIRST-ORDER LOGIC 365
+let{p1 := (! force2 θ((˜exists v.q))T); [forall4->]
+  p2 := (!qn p1) }# where r properly matches q in p under θ
+  (!uspec θ((forall v.q)) θ(v))
+  To apply this tactic, we look for a premise pwith an existential quantiﬁcation
+  (exists v.q)embedded in a universally negative position and such that th e goal rprop-
+  erly matches qinp.
+  These two are the forward universal-quantiﬁer tactics that are more commonly used; as
+  we remarked earlier, [forall1->] and its dual are applied much more sparingly. Let us
+  now consider some examples.
+  Example 5.2: Suppose that we want to derive the goal (R a b) from the premise
+  p=(P c & forall x .forall y .x R y) . (5.44)
+  Thus, letting β= {p}andT= {a,b,c}, the initial proof spec is:
+  Derive(a R b) from(β,T)
+  Letqbe the following subsentence of p:(x R y) . We observe that the goal (a R b) properly
+  matches qinpunder the substitution
+  θ1= {x/mapsto a,y/mapsto b},
+  and that the immediately surrounding universal quantiﬁcat ion,(forall y .x R y) , is in a
+  universally positive position in p:
+  (P c & forall x .forall y .x R y+
+  ∗). (5.45)
+  Therefore, the [forall3->] tactic is applicable and generates the following proof spec :
+  Derive θ1((forall y .x R y) )=(forall y .aR y) from(β,T)(5.46)
+  Once the subgoal (forall y .a R y) has been derived, we will perform a uspec on it
+  withθ1(y)=b, as the tactic prescribes, to obtain our top goal, (a R b) . We continue with
+  spec (5.46). Now let qbe the following subsentence of the premise p:(forall y .x R y) .
+  We observe that the current goal (forall y .a R y) properly matches qinpunder
+  θ2= {x/mapsto a}, and that the immediately surrounding universal quantiﬁca tion has univer-
+  sally positive polarity:
+  (P c &forall x .forall y .x R y+
+  ∗) (5.47)
+  Hence,[forall3->] is again applicable and leads to the following new proof spec :
+  Derive θ2((forall x .forall y .(x R y)) )=(forall x .forall y .x R y) from(β,T).(5.48)
+
+fpmics 2015/12/8 11:38 Page 366 #388
+366 CHAPTER 5. FIRST ORDER LOGIC
+As[forall3->] states, once this new goal has been derived we can obtain the s ubgoal
+(forall y .a R y)
+by performing uspec on it with θ2(x)=a. Finally, (5.48) is immediately handled by
+[rand->] , since this latest goal properly matches the right conjunct of the premise punder
+the empty substitution, and is thus obtainable by a single ap plication of right-and . The
+complete ﬁnal proof is:
+let{lemma := let{lemma := (!right-and (P c & forall x y . x R y))}
+  (!uspec lemma a)}
+  (!uspec lemma b)
+  or, equivalently, if we unfold the nested letdeductions:
+  let{p1 := (!right-and (P c & forall x y . x R y));
+    p2 := (!uspec p1 a)}
+    (!uspec p2 b)
+    In general, as we pointed out in the previous chapter, deduct ions produced by applying
+    these tactics in a mechanical manner will often contain harm less but inelegant inefﬁcien-
+    cies, most notably redundant claims and left-associated co mpositions. These can be auto-
+    matically removed by various simpliﬁcation algorithms [6] .
+    Example 5.3: Suppose that we want to derive the goal (P b) from the singleton
+    β= {p=(˜(Q a | exists x .˜P x))},
+    so that T= {a,b}initially. We observe that the existential quantiﬁcation
+    (exists x .˜P x) (5.49)
+    is negatively embedded in a universal position in p, and that the goal properly matches
+    the complement of the body of (5.49), (P x) , inp, under the substitution θ= {x/mapsto b}.
+    Accordingly, following tactic [forall4->] , we generate the subgoal
+    Derive(˜exists x .˜P x) from(β,T)(5.50)
+    Once we have (˜exists x .˜P x), we transform it to (forall x .P x) viaqnand then
+    performuspec on it with θ(x)=b, which will derive the desired (P b) . Applying the propo-
+    sitional negation heuristic will easily take care of (5.50) .
+    Example 5.4: Suppose that we want to derive the goal
+    r=(exists y .Q y)
+    from the following pair of premises:
+    β= {p1=(forall x .P x ==> Q x) ,p2=(P a)}.
+
+fpmics 2015/12/8 11:38 Page 367 #389
+5.5. PROOF HEURISTICS FOR FIRST-ORDER LOGIC 367
+The initial set of available proof terms is T= {a}and the starting proof spec is:
+Derive rfrom(β,T)(5.51)
+The tactic [exists<-] is applicable here, which says that to prove a sentence of the form
+(exists v.q), take the body q, replace every free occurrence of vby an available proof
+term t, and try to derive the result. If and when we succeed, we can us e existential gener-
+alization from tto infer(exists v.q). Here there is only one available proof term, a, so
+the tactic gives rise to the subgoal:
+Derive(Q a) from(β,T)(5.52)
+We observe that the goal (Q a) properly matches the consequent of p1inp1under θ=
+{x/mapsto a}, and that the parent of that consequent is positively embedd ed in p1. Accordingly,
+[if->] generates the subgoals
+Derive θ((P x==>Q x))=(P a==>Q a) from(β,T)(5.53)
+and
+Derive θ((P x))=(P a) from(β∪ {(P a==>Q a)},T). (5.54)
+The ﬁrst subgoal is readily handled by the extraction tactic [forall3->] owing to premise
+p1, while the second subgoal is handled by reiteration. The ﬁna l produced proof is:
+let{lemma := (!uspec (forall x . P x ==> Q x) a);
+  _ := (!mp (P a ==> Q a) (P a))}
+  (!egen (exists y . Q y) a)
+  (after a few routine simpliﬁcations.)
+  Example 5.5: Let us use the tactics to derive the goal
+  r=((exists x .P x) ==> (exists y .Q y))
+  from the premise
+  p=(forall x .P x ==> Q x) .
+  The initial set of proof terms is T= ∅, so the top proof spec is:
+  Derive rfrom({p},∅)(5.55)
+  None of the high-ranking tactics are applicable, so we proce ed by the backward tactic
+  [if<-] . Thus, we assume the antecedent of the goal and try to prove th e consequent:
+  Derive(exists y .Q y) from({p} ∪ {(exists x .P x)},∅)(5.56)
+
+fpmics 2015/12/8 11:38 Page 368 #390
+368 CHAPTER 5. FIRST ORDER LOGIC
+We now have an existential quantiﬁcation as an available ass umption, so we proceed to
+unpack it via [exists->] . The top-level proof sketch now looks as follows:
+assume (exists x . P x)
+  pick-witness wfor(exists x . P x) # We now have (P w)
+    (!force2 (exists y . Q y) [w])
+    with the new proof spec:
+    Derive(exists y .Q y) from({p} ∪ {(exists x .P x) ,(P w)},{w})(5.57)
+    Note that the set of available proof terms now contains w. Hence, the backward tactic for
+    existential quantiﬁcations is applicable, [exists<-] , whereby we try to derive the body of
+    the existential goal with a proof term (in this case, w) in place of the quantiﬁed variable:
+    Derive(Q w) from({p} ∪ {(exists x .P x) ,(P w)},{w})(5.58)
+    The new goal (Q w) properly matches the consequent of the conditional premise pinp
+    under the substitution θ= {x/mapsto w}, so applying the tactic [if->] yields the new specs:
+    Derive θ((P x==>Q x))=(P w==>Q w) from(β′,{w})(5.59)
+    and
+    Derive θ((P x))=(P w) from(β′∪ {(P w==>Q w)},{w})(5.60)
+    where β′= {p} ∪ {(exists x .(P x)) ,(P w)}. Finally, (5.59) and (5.60) are respectively
+    handled by [forall3->] and[claim->] .
+    Example 5.6: We want to derive the goal r=(exists z .z R z | P z) from the two
+    premises
+    β= {p1=(forall x .˜P x ==> Q x) ,p2=(exists y .˜Q y)}.
+    The initial set of available proof terms is thus ∅. We immediately proceed to instantiate the
+    existential quantiﬁcation p2, following tactic [exists->] :
+    pick-witness wfor(exists y .˜Q y) # We now have (˜Q w)
+      (!force2 (exists z . z R z | P z) [w])
+      generating the subgoal:
+      Derive rfrom(β∪ {(˜Q w)},{w})(5.61)
+      Now we can use the backward tactic for existential quantiﬁer s. We only have one proof
+      term available, w, so we will try to derive (w R w | P w) :
+
+fpmics 2015/12/8 11:38 Page 369 #391
+5.5. PROOF HEURISTICS FOR FIRST-ORDER LOGIC 369
+pick-witness wfor(exists y .˜Q y)
+  let{lemma := (!force2 (w R w | P w) [w])}
+    (!egen (exists z . z R z | P z) w)
+    Hence, our new proof spec is:
+    Derive(w R w | P w) from(β∪ {(˜Q w)},{w})(5.62)
+    No direct tactic is applicable here, so we transform the goal to a conditional and apply the
+    backward tactic for conditionals:
+    pick-witness wfor(exists y .˜Q y)
+      let{lemma := let{lemma/quotesingle.Var:=assume (˜w R w)
+        (!force2 (P w) [w])}
+        (!cond-def lemma /quotesingle.Var)}
+        (!egen (exists z . z R z | P z) w)
+        where the new proof spec is:
+        Derive(P w) from(β∪ {(˜Q w) ,(˜w R w) },{w})(5.63)
+        The goal (P w) properly matches (P x) in the ﬁrst premise under {x/mapsto w}. Following the
+        discussion on p. 287, we transform the ﬁrst premise to
+        (forall x .˜Q x ==> P x)
+        viacontra-pos and then apply the [if->] tactic. This will yield the subgoals
+        (˜Q w ==> P w) and(˜Q w), which are directly derivable by [forall3->] and[claim->] .
+        The complete deﬁnition of the ﬁnal proof is left as an exercis e.
+        Example 5.7: We want to derive the goal
+        r=(forall x .(exists y .x R y) ==> exists y .y R x)
+        from
+        β= {p=(forall x .forall y .x R y ==> y R x) .}
+        The comments in the proof sketch below indicate the tactics t hat were applied at the respec-
+        tive points, along with other relevant information:
+        pick-any a # [forall<-], T = [a]
+          assume hyp := (exists y . a R y) # [if<-]
+            pick-witness wforhyp # [exists->]: we now have (a R w)
+              conclude goal := (exists y . y R a) # and we now have T = [w a]
+              let{_ := (!force2 (w R a) [w a]) # [exists<-]
+                (!egen goal w)
+
+fpmics 2015/12/8 11:38 Page 370 #392
+370 CHAPTER 5. FIRST ORDER LOGIC
+We now have to ﬁnd a proof that derives (w R a) from
+β∪ {(exists y .a R y) ,(a R w) }
+with T= {a,w}. An extraction tactic is applicable here, as the goal proper ly matches the
+consequent of premise pinpunder the substitution
+θ= {y/mapsto w,x/mapsto a}.
+Hence, following [if->] , we will attempt to derive:
+1. the corresponding substitution instance of the conditio nal parent:
+θ((x R y ==> y R x) )=(a R w ==> w R a) ;
+2. the corresponding substitution instance of the antecede nt:(a R w) .
+The ﬁrst subgoal is an instance of premise pand is readily handled by two successive appli-
+cations of [forall3->] . The second subgoal is in the assumption base, so the reitera tion
+tactic prescribes a claim. In summary, and with a bit of proof simpliﬁcation, the desired
+proof becomes:
+let{lemma := (!uspec p [a w])}
+  (!mp lemma (a R w))
+  Observe that this is the only forward tactic used in the proof search. Until this point,
+  only backward tactics were applied: [forall<-] ,[if<-] , and[exists<-] . The latter tactic
+  presented us with a choice point. Since T= {w,a}at that particular juncture (line 5 of the
+  ﬁrst listing), we could choose to apply [exists<-] withw(which is what we did), orwith
+  a, which would have produced the subgoal (a R a) . What would have happened had we
+  made that choice ﬁrst? If we applied tactics in a completely m echanical fashion, the proof
+  search would have failed as follows. First, we would have tri ed the extraction tactic [if->] ,
+  since the goal (R a a) properly matches the consequent of pinpunder
+  θ= {y/mapsto a,x/mapsto a}.
+  We would then have had to derive the corresponding anteceden t, which would again have
+  been(a R a) . That would get us in a cycle, so we would have had to backtrack and try
+  another tactic. The only other tactic would be indirect proo f, and that would also get us
+  nowhere. So eventually we would have to backtrack and try [exists<-] withw, which
+  would succeed as shown.
+  As we mentioned earlier, our current formulation of the extr action tactics has a small lacuna
+  that needs to be addressed. Here is the issue: When we (proper ly) match the goal ragainst
+  some positive subsentence qof the assumption base, thereby obtaining some matching
+  substitution θ, the parent of q, call it q′, might contain variables that do not appear in the
+
+fpmics 2015/12/8 11:38 Page 371 #393
+5.5. PROOF HEURISTICS FOR FIRST-ORDER LOGIC 371
+domain of θ. Hence, when we come to apply θto the parent q′, the resulting subgoal θ(q′)
+will not be fully instantiated.
+As a simple example of this situation, let βcomprise the following two premises (both
+of which are true in the domain of natural numbers):
+(forall x y . x < y ==> pos y)
+(forall x . zero < succ x)
+Now consider the goal r=(pos succ a) , for some constant a. This goal properly matches
+the consequent of the ﬁrst premise under θ= {y/mapsto (succ a) }. Hence, by the [if->] tactic,
+we would need to prove the following two subgoals:
+θ((x < y ==> pos y) ) (5.64)
+and
+θ((x < y) ). (5.65)
+But now note that these subgoals contain the variable x, and that θdoes not assign any term
+tox, sincex/\e}atio\slash∈Dom(θ). Accordingly, neither of these subgoals would be fully inst antiated
+and the tactic would fail. This situation occurs whenever th e parent q′contains strictly
+more (universal free) variables than its child q(against which we have matched the goal r).
+To guard against such a scenario, we simply need to force θto be total by choosing
+arbitrary terms from Tto assign to the extra variables. In this particular example ,T=
+{zero,a}, so we can either assign zero orato the slack variable x. If we make the ﬁrst
+choice, so that θ= {x/mapsto zero,y/mapsto (succ a) }, we would generate the subgoals
+(zero < succ a ==> pos succ a)
+and
+(zero < succ a) ,
+both of which are readily derivable through our tactics. In g eneral, if the parent has kextra
+variables, there will be k· |T|possible choices for a total substitution θ, which means that
+there will be k· |T|different ways in which the tactic can be applied to those par ticular
+sentence occurrences. To avoid blind guessing, in some case s we might be able to compute
+the remaining values of θby Prolog-style backward chaining, a technique that we disc uss
+later in the book.21
+Example 5.8: Letβcontain these two premises:
+define premise-1 :=
+(exists x . P x & forall y . Q y ==> x R y)
+A similar technique can be used to avoid random guessing in applications of [exists<-] .
+
+fpmics 2015/12/8 11:38 Page 372 #394
+372 CHAPTER 5. FIRST ORDER LOGIC
+define premise-2 :=
+(forall x . P x ==> forall y . S y ==>˜x R y)
+Fromβwe want to derive the following:
+define goal := (forall x . P x ==>˜S x)
+We begin by eliminating the existential quantiﬁer from the ﬁ rst premise, after which we
+apply two backward tactics, thus arriving at the following p roof sketch: We now have to
+ﬁnd a proof that derives (˜S a) from
+β∪ {(P w & forall y .Q y ==> w R y) ,(P a & Q a) }
+andT= {w,a}. The only options here are indirect proof by contradiction, or an application
+of the negation heuristic 4.14.3. To apply that heuristic in the ﬁrst-order setting, we look
+for the smallest positive subsentence of βin a universal position that contains a negative
+occurrence of a sentence that is a generalization of the sent ence we are trying to negate. We
+then apply the same transformations to that sentence as befo re, until an extraction tactic
+becomes applicable or we can no longer perform any transform ations. In this case, for the
+goal(˜S a), we see that the second premise contains a negative occurren ce of(˜S y),
+of which (S a) is a proper instance under θ= {y/mapsto a}. Applying the contrapositive rule
+(see page 295), we transform the second premise to
+(forall x . P x ==> forall y . x R y ==>˜S y) (5.66)
+and now the extraction tactic [if->] becomes applicable, with the goal (˜S a) properly
+matching the consequent of the inner conditional of the abov e sentence under θ= {y/mapsto a}.
+However, we note that the parent of that consequent has an ext ra universal free variable, x,
+so to get a total matching substitution we must assign a term t oxas well. Here we have a
+choice point. Since T= {w,a}, we can go with wor witha. Let’s go with the ﬁrst, which
+gives us
+θ= {x/mapsto w,y/mapsto a}.
+Thus[if->] generates the two subgoals
+(w R a ==>˜S a) (5.67)
+and
+(w R a) . (5.68)
+The ﬁrst of these is obtainable from (5.66) from three more ex traction tactic applications:
+[forall3->] ,[if->] , and[forall3->] again. The second of these will give rise to the
+
+fpmics 2015/12/8 11:38 Page 373 #395
+5.5. PROOF HEURISTICS FOR FIRST-ORDER LOGIC 373
+subgoal (P w) , which follows from the witness premise. Finally, subgoal ( 5.68) can be
+extracted from the ﬁrst premise by the [if->] tactic, which will require the two subgoals:
+(Q a ==> w R a) (5.69)
+and
+(Q a) . (5.70)
+The ﬁrst of these can be obtained from a universal specializa tion of the second conjunct
+of the witness premise (tactics [forall3->] and[rand->] ); while (5.70) is obtainable from
+the assumption (P a & Q a) , also by [rand->] .
+We close this section by reformulating the [false->] and[or->] tactics, starting with the
+former:
+Derivefalse from({...,p=(···(˜q)+∗···),...},T= {...,t1,...,tn,...})
+let{p1 := (! force2 θ((˜q))T);# where θ= {x1/mapsto t1,...,xn/mapsto tn},{x1,...,xn} =UFV(q,p)
+  p2 := (! force2 θ(q)T)} [false->]
+  (!absurd p1 p2)
+  A particular application of this tactic is determined by two choices: First we select a nega-
+  tion embedded in a universally positive position of the assu mption base; and then we
+  choose a subsitution θ. The second choice is made non-deterministically. Clearly , the more
+  proof terms there are available and the larger the set UFV(q,p), the more choices. In a
+  mechanical implementation, this could lead to a lot of backt racking, and some mechanism
+  would be necessary for eliminating certain choices.
+  Example 5.9: Letβconsist of the following two premises, which state that Ris irreﬂexive
+  and transitive:
+  define premise-1 := (forall x .˜x R x)
+  define premise-2 := (forall x y z . x R y & y R z ==> x R z)
+  From these two premises we want to derive the conclusion that Ris asymmetric:
+  define goal := (forall x y . x R y ==>˜y R x)
+  The tactics that give rise to the following proof sketch are s hown in the comments:
+  pick-any a b # Two successive applications of [forall<-]
+    assume (a b) # [if<-]: we now have T = [a b]
+      (!by-contradiction (˜b R a) # [not<-]
+        assume (b R a)
+          (!force2 false [a b])
+
+fpmics 2015/12/8 11:38 Page 374 #396
+374 CHAPTER 5. FIRST ORDER LOGIC
+Thus, we now have the following proof spec:
+Derivefalse from(β∪ {(R a b) ,(R b a) },{a,b})
+Let us try the preceding tactic. The only negation in a univer sally positive position in the
+assumption base is that of the ﬁrst premise, and there are two choices for the correspond-
+ing substitution: θ1= {x/mapsto a}andθ2= {x/mapsto b}. We try θ1ﬁrst. Thus, we have the two
+subgoals:
+Derive(˜a R a) from(β∪ {(a R b) ,(b R a) },{a,b})
+and
+Derive(a R a) from(β∪ {(a R b) ,(b R a) },{a,b})
+The ﬁrst of these is an immediate instance of the ﬁrst premise , and is thus readily han-
+dled by [forall3->] . The extraction tactic [if->] is applicable on the second subprob-
+lem, since (a R a) properly matches the consequent (x R z) in the second premise under
+θ= {x/mapsto a,z/mapsto a}. However, the parent of that consequent, i.e., the conditio nal
+(x R y & y R z ==> x R z) ,
+has an extra universal free variable, y, so we need to assign a term to it. It is easy to see
+that assigning btoywill succeed, so that
+θ= {x/mapsto a,y/mapsto b,z/mapsto a}.
+Applying [if->] with this θwill eventually produce the subgoals (a R b) and(b R a) ,
+both of which are in the assumption base. Had we chosen to assi gnatoyinstead, the tactic
+would have failed (by leading to a cycle, as can be veriﬁed).
+Finally, the ﬁrst-order rendition of the generalized case a nalysis tactic, [or->] , is this:
+Derive rfrom(β= {...,(···(p1|p2)+∗···),...},T= {...,t1,...,tn,...})
+let{d := (! force2 θ((p1|p2))T);
+  c1 :=assume θ(p1)# where θ= {x1/mapsto t1,...,xn/mapsto tn},{x1,...,xn} =UFV((p1|p2),p)
+  (!force rβ∪ {θ(p1),θ((p1|p2))});
+  c2 :=assume θ(p2)
+  (!force rβ∪ {θ(p2),θ((p1|p2)),θ((p1==> r))})} [or->]
+  (!cases d c1 c2)
+    A typical use of it is illustrated in the following example.
+    Example 5.10: Letβconsist of these three premises:
+
+fpmics 2015/12/8 11:38 Page 375 #397
+5.5. PROOF HEURISTICS FOR FIRST-ORDER LOGIC 375
+define premise-1 := (forall x . P x | Q x)
+define premise-2 := (forall x . P x ==> S x)
+define premise-3 := (forall x . Q x ==> S x)
+We want to derive (S a) fromβ. It should be clear that no extraction, backward, or standar d
+replacement tactics are applicable, but [or->] is. The only universal free variable of the
+disjunction in the ﬁrst premise is x, so we need to choose an available proof term tto
+substitute for x. Since we have T= {a}, the constant ais our only choice, so the relevant
+substitution is θ= {x/mapsto a}. Following the tactic, we generate the three subgoals:
+Derive(P a | Q a) from(β,{a})
+Derive(S a) from(β∪ {(P a) ,(P a | Q a) },{a})
+Derive(S a) from(β∪ {(Q a) ,(P a==>S a) ,(P a | Q a) },{a})
+The ﬁrst subgoal is directly handled by [forall3->] , while the extraction tactic [if->] on
+the second and third premises will dispose of the second and t hird subgoals, respectively.
+In this example the choice of θwas obvious, as there was only one proof term available.
+If there are many, then the goal rcan provide some guidance: Elements of Tthat occur in
+rare more likely to ﬁgure in θthan the others.
+.5.3 Proof strategy for ﬁrst-order logic
+The overall strategy for deploying tactics carries over unc hanged from the propositional
+setting (section 4.14.4), with two minor additions. First, we now try to eliminate existen-
+tial quantiﬁers if no extraction tactics are applicable; an d second, we try the unrestricted
+universal instatiation tactic [forall1->] and its dual [forall2->] before we try proof by
+contradiction. Thus, the general ranking is now as follows:
+. reiteration ( [claim->] ) and constant tactics ( [true<-] and[false<-] );
+. the complement tactic ( [cft] );
+. extraction tactics, including [forall3->] and[forall4->] ;
+. existential instantiation tactics ( [exists->] and[exists2->] );
+. replacement tactics;
+. backward tactics (including [forall<-] ), with the exception of [not<-] ;
+. generalized disjunction tactic;
+. indirect tactic, [not<-] , or the negation heuristic.
+
+fpmics 2015/12/8 11:38 Page 376 #398
+376 CHAPTER 5. FIRST ORDER LOGIC
+Note that a new type of looping is now possible: We can perform existential instantiation
+on the same sentence ad inﬁnitum. Because a fresh witness var iable will be used each time,
+the new proof spec generated on each iteration will be, stric tly speaking, different from all
+previous proof specs; it will contain a new witness premise, and there will be new proof
+term too (the fresh witness variable). Hence, our old deﬁnit ion of cycle does not cover this
+kind of repetition. To avoid this type of looping, we need to m ake sure that an existential
+quantiﬁcation is never instantiated more than once on the sa me subproof level. It might
+need to be repeatedly instantiated in disjoint subproofs, e .g., in the branches of a case
+analysis; but it should not be instantiated in any D1andD2such that D2is a subproof of
+D1or vice versa.
+Rarely, if we are getting nowhere with any of these tactics, w e might need to augment
+the set of proof terms Twith a new term, typically a fresh variable. Consider, for in stance,
+proving (exists x .P x) from(forall x .P x). Here we have T= ∅, and the reader
+will verify that none of the above tactics will manage to deri ve the goal. Populating the set
+of proof terms with any (sort-correct) term t, such as a fresh variable, will allow the tactics
+to gain sufﬁcient traction.
+5.6 First-order logic semantics
+In this section we present the formal semantics of Athena’s ﬁ rst-order logic, giving precise
+deﬁnitions of the ﬁrst-order counterparts of notions such a s interpretation, logical con-
+sequence (entailment), tautology, and so on, which were ﬁrs t deﬁned for sentential logic
+in section 4.12. We start by introducing the semantics of monomorphic ﬁrst-order logic,
+where all terms have ground sorts. The semantics of Athena’s polymorphic logic will then
+be given by reduction to the monomorphic case.
+Fix a possibly inﬁnite collection of monomorphic sorts )Sigma1and a symbol set γ(a possibly
+inﬁnite collection of function symbols, each with a unique s ignature) over )Sigma1.22We will
+refer to this pair of )Sigma1andγas an Athena vocabulary . We assume that )Sigma1always contains
+the datatypes Boolean and the domains Int,Real, andIde, andγalways contains the
+numeric operators +,-,*, and/. In addition to these primitive sorts, γmay also contain
+complex monomorphic sorts, such as (List (List Boolean)) , produced by applying sort
+constructors to other monomorphic sorts. For the remainder of this section, and unless we
+explicitly indicate otherwise, when we speak of an Athena te rmt(or sentence p),t(or
+p) should be understood in the context of this vocabulary. Mor e precisely, the function
+symbols that occur in t(orp) should be assumed to be elements of γ, and hence any sorts
+that occur in t(orp) should be assumed to be in )Sigma1.
+Aninterpretation I of such a vocabulary consists of:
+22 Thus, every sort that appears in the domain or range of a fun ction symbol in γis an element of )Sigma1.
+
+fpmics 2015/12/8 11:38 Page 377 #399
+5.6. FIRST-ORDER LOGIC SEMANTICS 377
+1. a unique non-empty set SIfor each sort S∈)Sigma1;23we refer to SIas the carrier (or the
+interpretation) of the sort S. And:
+2. a unique function
+fI:SI
+1× ··· × SI
+n→SI
+for each function symbol f∈γwith signature [S1···Sn] -> S; we refer to fIas “the
+interpretation” of funder I.24When n=0, i.e., when fis a constant symbol, fIwill
+simply be an element of SI.
+The primitive sorts and symbols mentioned above always rece ive the expected interpreta-
+tions, which will be elaborated shortly. The carriers assig ned to other sorts can be arbitrary,
+although there are certain restrictions on the carriers of d atatypes and structures which will
+be discussed later. The functions assigned to non-primitiv e function symbols can likewise
+be arbitrary, again with the exception of datatype and struc ture constructors. A constructor
+cwith signature [S1···Sn] -> Sis always interpreted as a particularly simple function: th e
+one which, given nterms t1,...,tnof appropriate sorts as arguments, simply returns the
+new term (c t1···tn)as output. This of course presupposes that the carriers assi gned to
+S1···Snconsist of terms. We will make sure of that.
+In the context of a given interpretation I, avariable assignment χis a total function
+from the set of all Athena variables of the form ?I:S(with S∈)Sigma1) to elements of the
+corresponding carriers. When ais an element of SI, we write
+χ[v:S/mapsto a]
+for the assignment that maps the variable v:Stoaand agrees with χeverywhere else. Now
+lettbe any Athena term over the given vocabulary. We deﬁne the value of t under I and χ,
+denoted by Iχ(t), through the following structural recursion:
+Iχ(v:S)=χ(v:S) (5.71)
+Iχ((f t1···tn))=fI(Iχ(t1),...,Iχ(tn)) (5.72)
+Note that we use preﬁx syntax on the left-hand side of 5.72 to e mphasize that (f t1···tn),
+the argument to Iχ, is an Athena term. On the right-hand side we are applying an a bstract
+mathematical function fItonvalues a1,...,an, so for that application we use conventional
+mathematical notation: fI(a1,...,an). A straigtforward induction will show that if tis a
+term of sort S, then Iχ(t)will be an element of the carrier SI.
+We use the term “set” here in its usual pre-theoretic sense , not as a formal notion characterized by a speciﬁc
+set of axioms, e.g., the axioms of ZF set theory. Indeed, the d omain elements of the intended interpretation of ZF
+itself cannot possibly comprise a set in the sense character ized by ZF, as there are too many of them.
+Formally, Ican be deﬁned as an ordered pair of functions i1andi2, where iimaps every sort Sin)Sigma1to some
+non-empty set (the carrier of S), and i2mapsγto a set of functions (the interpretations of the various fun ction
+symbols). We write SIfori1(S)andfIfori2(f).
+
+fpmics 2015/12/8 11:38 Page 378 #400
+378 CHAPTER 5. FIRST ORDER LOGIC
+I|=χ(=t1t2) iff Iχ(t1)=Iχ(t2)
+I|=χ(R t1···tn) iff RI(Iχ(t1),...,Iχ(tn))=trueI
+I|=χ(not p) iff I/\e}atio\slash|=χp
+I|=χ(and p1···pn) iff I|=χpifor every i=1,...,n
+I|=χ(or p1···pn) iff I|=χpifor some i=1,...,n
+I|=χ(if p1p2) iff I/\e}atio\slash|=χp1orI|=χp2
+I|=χ(iff p1p2) iff I|=χp1andI|=χp2orI/\e}atio\slash|=χp1andI/\e}atio\slash|=χp2
+I|=χ(forall v:S p) iff I|=χ[v:S/mapsto a]pfor every a∈SI
+I|=χ(exists v:S p) iff I|=χ[v:S/mapsto a]pfor some a∈SI
+Figure 5.1
+Deﬁnition of the satisfaction relation for monomorphic man y-sorted ﬁrst-order logic.
+Let us say that two variable assignments χ1andχ2agree on a set of monomorphic
+variables Viffχ1(v)=χ2(v)for all v∈V. And let us write V(t)for the set of variables
+that occur in a term t, and FV(p)for the set of variables that have free occurrences in a
+sentence p. The following result is proved by structural induction on t erms.
+Lemma 5.6.1
+Ifχ1andχ2agree on V(t)then Iχ1(t)=Iχ1(t).
+We now deﬁne the satisfaction relation for monomorphic ﬁrst -order logic. Speciﬁcally,
+we say that an interpretation I satisﬁes a sentence p with respect to a va riable assignment
+χiffI|=χp, where the latter is deﬁned by structural recursion on pas shown in ﬁgure 5.6.
+We write I/\e}atio\slash|=χpto mean that it is not the case that I|=χp. For a (possibly inﬁnite) set of
+sentences )Phi1, we deﬁne I|=χ)Phi1iffI|=χpfor every p∈)Phi1. We say that pistrue inIiff
+I|=χpfor every χ. A set of sentences )Phi11logically entails (orimplies ) a set of sentences
+)Phi12, writen )Phi11|=)Phi12, iff for every Iandχwe have I|=χ)Phi12whenever I|=χ)Phi11; we then
+also say that )Phi12is a logical consequence of)Phi11. When )Phi12is a singleton {p}, we write
+)Phi11|=pinterchangeably with )Phi11|= {p}, and we say that )Phi11logically entails (or implies)
+p, or that plogically follows from )Phi11. Further, )Phi1issatisﬁable iff there is some Iandχ
+such that I|=χ)Phi1; otherwise )Phi1isunsatisﬁable . Again, when )Phi1is a singleton {p}we will
+speak directly of pas satisﬁable or unsatisﬁable. Finally, a tautology is a sentence psuch
+thatI|=χp for every I andχ. The following result generalizes the previous lemma from
+terms to sentences. It is likewise proven by structural indu ction, this time on sentences.
+
+fpmics 2015/12/8 11:38 Page 379 #401
+5.6. FIRST-ORDER LOGIC SEMANTICS 379
+Theorem 5.6.1
+Ifχ1andχ2agree on FV(p)then I|=χ1piffI|=χ2p.
+Since any two assignments agree on the empty set of variables , we conclude:
+Corollary 5.6.1
+IfFV(p)= ∅then for all χ1andχ2,I|=χ1piffI|=χ2p.
+Note that equality receives special treatment in these sema ntics. We assume that for
+every S∈)Sigma1,γcontains a binary identity symbol indexed by the signature:
+[S S] -> Boolean ,
+let us call it =Sfor brevity, and we require that Iinterprets =Sas the identity relation on S,
+so that for any terms t1andt2of sort Swe have:
+Iχ|=(t1=St2)⇔Iχ(t1)=Iχ(t2).
+Of course when we write sentences containing equations we ne ed not subscript the symbol
+=with any sorts, as Athena’s sort inference essentially does this automatically—hence our
+use of the unsubscripted identity symbol in the ﬁrst clause o f ﬁgure 5.6.
+To build up some computational intuitions about these ideas , let us implement the deﬁni-
+tion of the satisfaction relation as a procedure that will ta ke a sentence p, an interpretation
+I, and an assignment χ, and, modulo some limitations to be discussed shortly, will produce
+true orfalse depending on whether or not I|=χp. First we need to decide how to encode
+an interpretation I. We will represent Ias an Athena map that will:
+• map sorts (or more precisely, their names, represented as s trings) to lists of objects,
+which, viewed as sets, will serve as the carriers of the respe ctive sorts;
+• map function symbols to procedures that will take carrier e lements as input and produce
+carrier elements as outputs in a way that respects the sort co nstraints imposed by the
+symbols’ signatures.
+A variable assignment will also be represented as an Athena m ap from variables to carrier
+elements. Of course an Athena map has a ﬁnite domain whereas a variable assignment
+was deﬁned as an inﬁnite function whose domain is the set of allAthena variables (of
+the relevant monomorphic sorts). But for the purpose of dete rmining whether Iχ|=pfor a
+given p, we are justiﬁed in restricting our attention to a ﬁnite numb er of variables by virtue
+of theorem 5.6.1, which assures us that the only variables th at matter for that purpose are
+the free variables of p.
+With these conventions in place, we need to implement two ter nary procedures: tvand
+sat. The former will take as input a term tover)Sigma1andγ; an interpretation Iof)Sigma1and
+
+fpmics 2015/12/8 11:38 Page 380 #402
+380 CHAPTER 5. FIRST ORDER LOGIC
+γ, represented as we just described; and a ﬁnite map χassigning carrier elements to the
+variables of t; and will compute the value of tunder Iandχ, i.e., Iχ(t).25Thesatprocedure
+will take a sentence pover)Sigma1andγ; an interpretation IofSandγ; and a ﬁnite map χfrom
+variables to carrier elements; and will output true ifI|=χpandfalse otherwise:
+define (tv t I asgn) :=
+matcht {
+(some-var _) => (asgn t)
+| (= s t) => ((tv s I asgn) equals? (tv t I asgn))
+| ((some-symbol f) (some-list args)) =>
+(app-proc (I f)
+(maplambda (t) (tv t I asgn)
+args))
+}
+define (quant-content q) :=
+matchq {
+forall => for-each | exists => for-some
+}
+define (sat p I asgn) :=
+matchp {
+(some-atom A) => (tv A I asgn)
+| (not q) => (negate (sat q I asgn))
+| (and ( some-list args)) => (for-each args lambda (q) (sat q I asgn))
+| (or ( some-list args)) => (for-some args lambda (q) (sat q I asgn))
+| (if p1 p2) => (sat (˜p1 | p2) I asgn)
+| (iff p1 p2) => (sat ((p1 ==> p2) & (p2 ==> p1)) I asgn)
+| ((some-quant q) x body) => ((quant-content q)
+(I (sort-of x))
+lambda (a)
+(sat body I (Map.add asgn [[x a]])))
+}
+Note that we ﬁx the interpretation of equality. The primitiv eapp-proc is a higher-order
+binary procedure that takes any procedure fofnarguments and any list of nvalues
+[V1···Vn]and produces whatever outcome is obtained by applying ftoV1···Vn:
+> (app-proc plus [1 2])
+Term: 3
+> (app-proc root [(+ 1 2)])
+Symbol: +
+25 More precisely, it will compute the value of tunder Iandallvariable assignments that agree with χon the
+variables of t; lemma 5.6.1 assures us that the value of tunder Iis invariant over all such variable assignments.
+
+fpmics 2015/12/8 11:38 Page 381 #403
+5.6. FIRST-ORDER LOGIC SEMANTICS 381
+> (app-proc join [[1] [2 3] [4]])
+List: [1 2 3 4]
+As an example, consider the vocabulary introduced by the fol lowing module:26
+module T {
+  domain D
+  declare +: [D D] -> D
+  declare <: [D D] -> Boolean
+}
+Here is an interpretation of that vocabulary. We omit the sta ndard components that are part
+of every interpretation (booleans, integers, reals, and el ementary operations on them):
+define I := |{"T.D" := [[] [1] [2] [1 1] [1 2] [2 1] [2 2]],
+T.+ := lambda (l1 l2) (rd (l1 join l2)),
+T.< := prefix? }|
+Thus, the carrier of T.Dcontains exactly 7 objects, the integer lists [],[1],···,[2 2] .I
+interprets T.+as a binary operation that takes any two lists l1andl2from this carrier and
+outputs the list obtained by concatenating l1with l2and removing any duplicate occur-
+rences from left to right.27Thus, for instance:
+([1] (I T.+) [2]) →[1 2]
+([] (I T.+) [1]) →[1]
+([1 1] (I T.+) [1]) →[1]
+([1 2] (I T.+) [2]) →[1 2]
+and so on. It can be veriﬁed that this operation is closed over this 7-element set, i.e., the
+result of performing this operation on any two elements from this set is also an element
+of the same set. Finally, T.<is interpreted as the preﬁx relation on lists (restricted on the
+above set of seven lists). The primitive binary procedure prefix? returnstrue orfalse
+depending on whether or not its ﬁrst input list is a preﬁx of th e second:
+> ([5] prefix? [5 7 9])
+Term: true
+> ([] prefix? [])
+Term: true
+26 Athena’s modules are discussed in chapter 7. For now you ca n think of a module Mas a separate namespace
+that can introduce its own sorts and function symbols.
+27 The primitive unary procedure rddoes just that: it removes duplicate element occurrences fr om any given list
+in a stable way (from left to right, leaving the original list order intact).
+
+fpmics 2015/12/8 11:38 Page 382 #404
+382 CHAPTER 5. FIRST ORDER LOGIC
+> ([5] prefix? [7 5 9])
+Term: false
+Now let us go ahead and deﬁne some sentences in T:
+extend-module T {
+  define p1 := (forall x y . x + y = y + x)
+  define p2 := (forall x y z . x + (y + z) = (x + y) + z)
+  define p3 := (forall x y . x < y ==>˜y < x)
+  define p4 := (forall x y . x < y & x =/= y ==>˜y < x)
+  define p5 := (forall x y z . x < y & y < z ==> x < z)
+}
+We can now ask whether I satisﬁes sentences T.p1 through T.p5 with respect to some
+variable assignment. Because all ﬁve of these sentences con tain no free variables, it follows
+from corollary 5.6.1 that it makes no difference which varia ble assignment we give as an
+argument to sat. We thus use the empty map:
+define (sat? I) := lambda (p) (sat p I |{}|)
+> (map (sat? I) [T.p1 T.p2 T.p3 T.p4 T.p5])
+List: [false true false true true]
+So we see that T.p1 andT.p3 are false under this interpretation, but the rest of the sent ences
+are true. T.p1 is false because T.+is not commutative according to I, e.g., applying this
+operation to [1]and[2]gives[1 2] , but applying it to [2]and[1]gives[2 1] , which is a
+different result according to our treatment of equality. Ho wever, it can be veriﬁed that this
+operation is associative, hence T.p2 is true.T.p3 is false because the preﬁx relation is not
+asymmetric. In fact it is reﬂexive (every list is a preﬁx of it self), so it could not possibly be
+asymmetric. It is, however, anti-symmetric, meaning that i f two lists are preﬁxes of each
+other then they must be identical, which is the proposition e xpressed by T.p4. The preﬁx
+relation is also transitive, so T.p5 is also true.
+A limitation of this implementation is that it can only repre sent interpretations with ﬁnite
+carriers, as every sort is mapped to—interpreted by the elem ents of—an Athena list, which
+can only have ﬁnitely many members. We could remove this limi tation by using lazily
+evaluated inﬁnite streams instead of lists, implemented by higher-order procedures, which
+could represent countably inﬁnite carriers, such as the set of all integers. But in that case an
+application of satmight never terminate, as it might need to examine (loop over ) all ele-
+ments of an inﬁnite stream. More importantly, however, even if we used streams we would
+
+fpmics 2015/12/8 11:38 Page 383 #405
+5.6. FIRST-ORDER LOGIC SEMANTICS 383
+still be limited to countably inﬁnite sets, which are insufﬁ cient for general mathematical
+purposes, as the intended interpretations of many standard mathematical theories require
+uncountably many objects. Indeed, the primitive domain Real in Athena is assigned the
+set of all real numbers as its carrier, a paradigmatically un countable set. And interpreting
+a theory of sets ` a la ZF would require even larger (mind-bogg ingly larger) collections of
+mathematical entities. Nevertheless, within the limitati ons described, the given implemen-
+tation should help to clarify the notion of ﬁrst-order satis faction.
+We now come to the interpretation of monomorpic datatypes. U nlike the plain domains
+of a vocabulary, the carrier assigned to a datatype is not arb itrary. Once we ﬁx the car-
+riers of all other (non-datatype) sorts in a vocabulary, the carrier of a datatype becomes
+uniquely determined. A monomorphic datatype Tmay involve n≥0 other sorts S1,...,Sn
+introduced prior to T, as dictated by the signatures of T’s constructors, let us call these
+c1,...,ck(where we must have k>0). Now the deﬁnition of Tmay also refer to Titself,
+ifThappens to be recursive, but let us denote by S1,...,Snall and only the sorts other
+than T that appear in the signatures of the constructors c1,...,ckofT. Some of these sorts
+S1,...,Snmay be domains, others may be primitive sorts or datatypes (s uch asIntor
+Boolean ), and others may be previously introduced user-deﬁned data types. For instance,
+the monomorphic datatype (List Real) , which we might write out as
+ListReal:= nil Real| (::RealReal List Real),
+involves the primitive domain Real. Assuming that each such Sjhas received an interpre-
+tation, i.e., that the carrier SI
+jhas been speciﬁed, our task now is to specify the carrier for
+T, i.e., TI. That set is deﬁned to be the free algebra built by the constru ctors c1,...,ckand
+with
+SI
+1,...,SI
+n
+as generator sets. Equivalently, we may regard the elements ofSI
+1,...,SI
+nas either typed
+“variables” or as typed constant symbols annotated with the ir respective sorts,28and we
+can then understand TIas the many-sorted term algebra constructed by c1,...,ckover the
+set of typed variables (or constant symbols)
+n/uniondisplay
+j=1SI
+j,
+and speciﬁcally the set of all terms from this algebra of sort T. To ensure that the algebra
+in question exists and is non-empty, we require that there mu st be at least one (ﬁnite) term
+28 The quotes were inserted because this notion of variable h as little in common with the conventional syntactic
+notion of a variable, or with that of a constant symbol for tha t matter. For instance, all real numbers may be
+thought of as variables (or constant symbols) in this contex t. Explicit annotation with the sort Real could be
+achieved if we consider the set of all ordered pairs of the for m(x,Real)where xis a real number.
+
+fpmics 2015/12/8 11:38 Page 384 #406
+384 CHAPTER 5. FIRST ORDER LOGIC
+of sort Tconstructed by some ci. Therefore, cyclic datatype deﬁnitions such as
+datatype T := (c T)
+or
+datatypes T1 :=(c1 T2) &&
+T2:=(c2 T1)
+are not accepted by Athena.
+No special complications arise when Thappens to be one of a number of mutually
+recursive datatypes T1,...,Tm. In that case too we deﬁne TIto be the free algebra of its
+constructors generated over the carriers of all sorts that o ccur in the deﬁnition other than
+T1,...,Tm. For example, consider two mutually recursive datatypes fo r integer trees:
+datatypes Tree_Int := null_Int
+| (node_Int Int List_Tree_Int) &&
+List_Tree_Int := nil_Tree_Int
+| (::_Tree_Int Tree_Int List_Tree_Int)
+We then have the following many-sorted term signature (writ ten in conventional notation):
+nullInt: Tree Int
+nodeInt: Int ×ListTreeInt→TreeInt
+nilTreeInt: List TreeInt
+::TreeInt: Tree Int×ListTreeInt→ListTreeInt
+and, taking the set of all integers Zas the set of our “variables,” we consider the many-
+sorted term algebra over the above signature that is generat ed by Z, which contains “terms”
+such as:
+nullInt
+(nodeInt 5 nil TreeInt)
+(nodeInt 78 (:: TreeInt (node Int 5 nil TreeInt) nil TreeInt))
+...
+Although we write down these terms as strings, keep in mind th at these are tree structures—
+essentially partial orders—over arbitrary sets, namely, t he carriers whose elements are
+serving as generators. In fact these carriers can be uncount able (e.g., the real numbers),
+and in that case the corresponding set of “terms” will also be uncountably inﬁnite. So these
+are really quite abstract mathematical objects. At any rate , the carriers of TreeIntand
+ListTreeIntconsist of precisely the “terms” of this algebra. Speciﬁcal ly, the carrier of
+TreeIntconsists of all and only those terms of this algebra whose top symbol is one of
+the two constructors of TreeInt(or equivalently, all and only those terms of the algebra
+that have sort TreeInt); and the carrier of ListTreeIntconsists of all and only those
+
+fpmics 2015/12/8 11:38 Page 385 #407
+5.6. FIRST-ORDER LOGIC SEMANTICS 385
+terms whose top symbol is one of the other two constructors. H ere too, the rejection of
+cyclic dependencies and the requirement that each datatype contains at least one construc-
+tor ensures that the term algebra corresponding to each data type is non-empty.
+Finally, a monomorphic structure Tis interpreted as the quotient of the free algebra
+induced by some ﬁxed congruence relation. Thus, assuming a c ongruence relation ≡on
+the underlying free algebra, the elements of the structure’ s carrier ( TI) will be all and only
+the equivalence classes of ≡. It is typical practice to redeﬁne the identity relation for a
+structure precisely as the intended congruence relation. E xamples are given for the struc-
+tures of ﬁnite sets and maps in chapter 10. If no such relation is speciﬁed for a given
+structure, then the standard identity relation is taken as t he default congruence, which
+means that every equivalence class will contain exactly one term and the semantics will
+revert to the usual free-algebra semantics of datatypes. Th is may be inconsistent with other
+requirements imposed on the structure, such as the existenc e of functions satisfying certain
+deﬁnitions given by structural recursion on T. The upshot is this: use a structure instead
+of a datatype only if the free-generation constraints on dat atypes are too restrictive for
+your purposes and you intend to redeﬁne identity on the struc ture via some appropriate
+congruence relation.
+For polymorphic sentences, semantic notions such as interp retations and satisfaction are
+deﬁned by reduction to the monomorphic case. Speciﬁcally, s uppose now that the vocab-
+ulary is polymorphic, i.e., the collection of sorts )Sigma1may contain polymorphic sorts (as
+well as monomorphic ones), and the symbol set γmay also contain polymorphic function
+symbols. As discussed in chapter 2, every polymorphic sort Sin)Sigma1can be viewed as a (pos-
+sibly inﬁnite) set of monomorphic sorts , called instances ofS, obtainable by consistently
+replacing sort variables in Swith monomorphic sorts from )Sigma1. For a given polymorphic sort
+S∈)Sigma1, let us write /hatwideSto denote the set of all of its monomorphic instances (relati ve to)Sigma1).
+And if S∈)Sigma1is monomorphic, let us agree to then deﬁne /hatwideSas the singleton {S}. We then
+deﬁne
+/hatwide)Sigma1=/uniondisplay
+S∈)Sigma1/hatwideS.
+We may refer to /hatwide)Sigma1as the grounding of)Sigma1. In words, /hatwide)Sigma1is the collection of all(and only)
+the monomorphic sorts obtainable from )Sigma1.
+Likewise, every polymorphic function symbol fcan be viewed as a possibly inﬁnite set
+of monomorphic function symbols, also said to be instances o ff, and whose signatures are
+obtainable from the signature of fby consistently replacing sort variables by monomorphic
+sorts from )Sigma1. A “symbol instance” of this form is distinguished from fby being indexed
+(subscripted) by its monomorphic signature. For example, s uppose we have introduced a
+polymorphic function symbol for list reversal with the foll owing declaration:
+declare rev: (S) [(List-Of S)] -> (List-Of S)
+
+fpmics 2015/12/8 11:38 Page 386 #408
+386 CHAPTER 5. FIRST ORDER LOGIC
+Thenrevwill have the following monomorphic symbols among its many ( inﬁnitely many)
+instances:
+rev [[( )]( )]: (List Int) -> (List Int)
+rev [[( ( )) ]( ( )) ]: (List (List Ide)) -> (List (List Ide))
+rev [[( )]( )]: (List Boolean) -> (List Boolean)
+...
+where for typesetting simplicity we write a signature [S1···Sn] -> Sas the two-element
+list[[S1···Sn]S]whenever we are using the signature as a subscript. For a poly morphic
+function symbol fand a set of monomorphic sorts )Sigma1, we deﬁne G)Sigma1(f)as the set of all
+of its monomorphic instances with respect to )Sigma1, i.e., the set of all monomorphic function
+symbols that can be derived from fas just described, by replacing sort variables in the
+signature of fwith ground sorts from )Sigma1. Iffis monomorphic, we set
+G)Sigma1(f)= {f}.
+Finally, for a polymorphic signature γand a set of polymorphic sorts )Sigma1, we deﬁne
+G)Sigma1(γ)=/uniondisplay
+f∈γG/hatwide)Sigma1(f).
+We can now deﬁne an interpretation of a polymorphic vocabula ry consisting of )Sigma1andγas
+an interpretation of the monomorphic vocabulary consistin g of/hatwide)Sigma1andG/hatwide)Sigma1(γ). Accordingly,
+to give an interpretation of )Sigma1andγis just to give an interpretation of /hatwide)Sigma1andG/hatwide)Sigma1(γ).
+Recall that a sentence pis polymorphic iff it contains at least one sort variable, or more
+precisely, iff at least one variable occurrence in por one constant symbol occurrence in
+phas a non-ground sort. Informally, pis polymorphic iff you see at least one sort vari-
+able when Athena prints out p. Otherwise pis monomorphic. Note that pmight contain
+occurrences of polymorphic function symbols and yet it migh t not itself be polymorphic.
+For example, the sentence (’a = ?x) contains an occurrence of the polymorphic equality
+symbol=, but it is not itself a polymorphic sentence, because no leav es of it (viewing the
+sentence as a tree) have polymorphic sorts. This can be conﬁr med when Athena prints
+out the sentence; we can then observe that there are no sort va riables anywhere. Likewise
+for the sentence (?l = 1::nil) , which has not one but twopolymorphic symbol occur-
+rences, one occurrence of the identity symbol and one occurr ence of the polymorphic list
+constructor ::. That sentence too is monomorphic:
+> (/quotesingle.Vara = ?x)
+Term: (= /quotesingle.Vara ?x:Ide)
+> (?l = 1 Cons nil)
+Term: (= ?l:(List-Of Int)
+
+fpmics 2015/12/8 11:38 Page 387 #409
+5.6. FIRST-ORDER LOGIC SEMANTICS 387
+(:: 1
+nil:(List-Of Int)))
+By contrast, the following sentence is polymorphic because at least one of its leaves (occur-
+rence of a constant symbol or variable) has a polymorphic sor t:
+> (not (?x = ?y))
+Sentence: (not (= ?x: 'T47 ?y: 'T47))
+A polymorphic sentence plike this one can be grounded by consistently replacing all
+sort variables at its leaves with ground sorts. We refer to th e monomorphic sentence thus
+obtained as a ground instance ofp. For example, two ground instances of the above exam-
+ple sentence are:
+> (not (?x:Boolean = ?y:Boolean))
+Sentence: (not (= ?x:Boolean ?y:Boolean))
+> (not (?x:(List-Of (List-Of Real)) = ?y:(List-Of (List-Of Real))))
+Sentence: (not (= ?x:(List-Of (List-Of Real))
+?y:(List-Of (List-Of Real))))
+If)Sigma1is a set of ground sorts, then G)Sigma1(p)is the set of all ground instances of pwith respect
+to)Sigma1. The set G)Sigma1(p)will be inﬁnite iff )Sigma1is inﬁnite.
+Now let pbe a monomorphic sentence over )Sigma1andγthat might nevertheless contain
+occurrences of polymorphic symbols, like the examples that were just given. Then pcan
+be uniquely rewritten into a sentence p′over/hatwide)Sigma1andG/hatwide)Sigma1(γ), called the elaboration of p ,
+and denoted by E(p), by replacing every occurrence of a polymorphic function sy mbol f
+inpwith a unique instance f′offinG/hatwide)Sigma1(γ), as follows. Let tbe the term rooted at the said
+occurrence of finp, and let t1,...,tnbe the immediate subterms of t(we will have n=0
+ifftis a polymorphic constant symbol). We then replace the said o ccurrence of fby that
+unique instance of fwhich is determined by (a) the (monomorphic) sorts of t1,...,tnand
+(b) the monomorphic sort of the said occurrence of t. For example, if pis the sentence
+(not (= ?x:Int ?y:Int))
+then the elaboration of p,E(p), is the sentence
+(not (=[[Int Int] Boolean] ?x:Int ?y:Int))
+which is obtained from pby replacing the sole occurrence of the polymorphic identit y
+symbol=by its instance
+=[[Int Int] Boolean] .
+
+fpmics 2015/12/8 11:38 Page 388 #410
+388 CHAPTER 5. FIRST ORDER LOGIC
+Essentially, E(p)is produced from pby tagging every occurrence of a polymorphic func-
+tion symbol in pwith the unique monomorphic signature determined by the loc al context
+of that occurrence. Note that E(p)is not a sentence over the original signature γ. Rather, it
+is a sentence over G/hatwide)Sigma1(γ), the set of fully elaborated symbols we obtain from the symbo ls
+inγby grounding their signatures with respect to all sorts in /hatwide)Sigma1.
+Finally, for any polymorphic sentence pover)Sigma1andγ, we deﬁne GE(p), the set of all
+elaborated ground instances ofp, as follows:
+GE(p)= {E(q)|q∈G)Sigma1(p)}.
+And given:
+• an interpretation Iof a polymorphic vocabulary )Sigma1andγ, i.e., an interpretation of the
+monomorphic vocabulary /hatwide)Sigma1andG/hatwide)Sigma1(γ);
+• a variable assignment χ, i.e., a total function mapping every Athena variable v:Swith
+S∈/hatwide)Sigma1to an element of SI; and
+• a polymorphic sentence pover)Sigma1andγ;
+we deﬁne
+Iχ|=piffIχ|=GE(p) (5.73)
+In other words, Isatisﬁes a polymorphic sentence pwith respect to a variable assign-
+mentχiffIsatisﬁes every elaborated ground instance of pwith respect to χ. The rest
+of the monomorphic deﬁnitions of semantic notions given ear lier carry over unchanged
+to the polymorphic case, ultimately grounded in (5.73). Thu s, for a (possibly inﬁnite) set
+of polymorphic sentences )Phi1, we write Iχ|=)Phi1iffIχ|=pfor every p∈)Phi1. We say that a
+polymorphic sentence pistrue in a given interpretation IiffIχ|=pfor every χ. (Hence,
+for example, the sentence
+(forall ?x:’S . ?x:’S = ?x:’S)
+is true in every interpretation.) A set of polymorphic sente nces)Phi11logically entails a set
+of polymorphic sentences )Phi12iff for every Iandχwe have I|=χ)Phi12whenever I|=χ)Phi11;
+a set of polymorphic sentences )Phi1is satisﬁable iff there exist Iandχsuch that I|=χ)Phi1; a
+polymorphic sentence pis a tautology iff I|=χ{p}for every Iandχ; and so on.
+Based on these deﬁnitions, Athena proofs can be shown to be so und and complete for
+polymorphic many-sorted logic in the following sense. Fixi ng a vocabulary and store, let
+us write β⊢D֒→pto mean that evaluating an Athena deduction Din assumption base
+βproduces the sentence p. We then have:
+Theorem 5.6.2: Soundness
+Ifβ⊢D֒→pthenβ|=p.
+
+fpmics 2015/12/8 11:38 Page 389 #411
+5.6. FIRST-ORDER LOGIC SEMANTICS 389
+Theorem 5.6.3: Completeness
+Ifβ|=pthen there exists a deduction Dsuch that β⊢D֒→p.
+The deﬁnitions in this section have assumed ﬂat namespaces f or sorts and function sym-
+bols but can easily accommodate modules, as for semantic pur poses the sorts and symbols
+introduced in a module can always be ﬂattened, i.e., they can be viewed as sorts and sym-
+bols introduced at the top level—outside of any modules—but with fully qualiﬁed names
+as dictated by the given nesting of modules.
+We close with some brief remarks on the interpretation of Ath ena’s primitive domains
+and datatypes. The interpretation of Boolean is the standard two-element domain of truth
+values, which we may identify with the two term constructors ofBoolean , namely true and
+false . The interpretation of Ideis the set of all strings (ﬁnite sequences of characters) tha t
+can serve as Athena meta-identiﬁers, and every constant sym bol of sort Ideis interpreted
+as the corresponding string (so that, e.g., ’xis literally interpreted as the string x). The
+interpretation of Real is the set of all real numbers, and that of Intis the set of all integers
+(a subset of the reals). All constant numerals receive their obvious interpretations, e.g.,
+3.14 is interpreted as the corresponding rational number. The fo ur binary symbols +,-,*,
+and/, are declared to take reals and produce reals, but these symb ols are also overloaded
+in the standard sense of operator overloading, and thus repr esent the only instances of
+ad hoc polymorphism in Athena. Accordingly, there are essen tially two different sets of
+function symbols involved here, one set with integer-based signatures and the other with
+real-based signatures. The interpretations of the symbols in each of these two families are
+obvious. Resolution is performed dynamically based on the s orts of the arguments. The
+minus symbol can be used as a unary symbol as well, in which cas e it is interpreted either
+as integer or as real negation, depending again on the sort of the argument:
+> (?x:Int + 1)
+Term: (+ ?x:Int 1)
+> (?x:Real + 1)
+Term: (+ ?x:Real 1)
+> (?x + 1.0)
+Term: (+ ?x:Real 1.0)
+> (?x - 1)
+Term: (- ?x:Int 1)
+> (- ?x:Real)
+
+fpmics 2015/12/8 11:38 Page 390 #412
+390 CHAPTER 5. FIRST ORDER LOGIC
+Term: (- ?x:Real)
+> (- ?x:Int)
+Term: (- ?x:Int)
+5.7 Additional exercises
+Exercise 5.6: Similar to exercise 5.2: each of the following listings asse rts some premises
+(possibly none) and deﬁnes a goal:
+Listing 5.7.1
+define goal :=
+((forall x . P x <==> Q x) ==> (forall x . P x) <==> (forall x . Q x))
+Listing 5.7.2
+declare A: Boolean
+assert premise-1 := (exists x . c R x & A)
+assert premise-2 := (exists x . Q x & x T x)
+assert premise-3 := (forall x . A & Q x ==>˜S x)
+define goal := (exists y .˜S y & y T y)
+Listing 5.7.3
+assert premise-1 := (exists x . P x & forall y . Q y ==> x R y)
+assert premise-2 := (forall x . P x ==> forall y . S y ==>˜x R y)
+define goal := (forall x . Q x ==>˜S x)
+Listing 5.7.4
+declare f: [Object] -> Object
+assert premise-1 := (forall x . x R x)
+assert premise-2 := (forall x . f x = f f x)
+define goal := (exists y . y R f y)
+
+fpmics 2015/12/8 11:38 Page 391 #413
+5.7. ADDITIONAL EXERCISES 391
+For each of these, clear the assumption base and then derive t hegoal from the correspond-
+ing premises.
+Exercise 5.7: Write a proof that derives the following sentence from the em pty assumption
+base:
+(exists x . P x | P x)
+Exercise 5.8: One of the transformations implemented by the quantiﬁer-sw apping method
+of section 5.4 is the following:
+∃x.∀y.p−→ ∀ y.∃x.p.
+Show that the converse transformation is not valid.
+Exercise 5.9: Write a unary method Mthat takes an arbitrary term t(of some sort Object )
+and derives the following theorem:
+(P t <==> exists x . x = t & P x)
+Exercise 5.10: Deﬁne a binary method pick-all-witnesses whose ﬁrst argument is an
+existentially quantiﬁed premise with an arbitrary number n≥0 of existential quantiﬁers
+at the front, followed by a sentence qthat is not existentially quantiﬁed. The idea here is
+to usepick-witness ntimes on the given premise in order to extract nwitnesses (fresh
+variables) w1,...,wnfor the nexistential quantiﬁers, along with a corresponding instan ce
+q′of the body q. The second argument of pick-all-witnesses is a binary method Mthat
+will receive (a) the list of witnesses w1,...,wn, in that order; and (b) the sentence q′, which
+must be in the assumption base when Mis called. The result of pick-all-witnesses will
+be the result obtained by applying Mto these two arguments.
+Note that if nwere ﬁxed (statically known), we could implement this metho d simply by
+nesting npick-witness deductions, followed by a call to M. But the key point here is that
+the number nof leading existential quantiﬁers is unknown, hence some fo rm of automatic
+iteration is needed.
+Exercise 5.11: Implement the egen-cong method (p. 356).
+Exercise 5.12: Deﬁne a unary method move-quant implementing the following inference
+rules:
+(a)(forall x.p&q)
+((forall x.p) & q)
+provided that xdoes not occur free in q
+
+fpmics 2015/12/8 11:38 Page 392 #414
+392 CHAPTER 5. FIRST ORDER LOGIC
+(b)(forall x.p|q)
+((forall x.p) | q)
+provided that xdoes not occur free in q
+(c)(exists x.p&q)
+((exists x.p) & q)
+provided that xdoes not occur free in q
+(d)(exists x.p|q)
+((exists x.p) | q)
+provided that xdoes not occur free in q
+The method should be bidirectional, capable of applying the inference rules in both
+directions.
+**Exercise 5.13 (The halting problem): In this problem we will formalize the halting
+problem [16] and prove its undecidability.29In doing so we will need to talk about and
+quantify over algorithms , so we begin by introducing a corresponding domain:
+domain Algorithm
+Algorithms take inputs of various sorts (e.g., integers, st rings, booleans, pairs, lists, and,
+quite importantly, even algorithms), so we introduce a poly morphic datatype representing
+algorithm inputs:
+datatype (Input S) := (input S)
+Thus, for instance, (input 4) represents a single integer input (speciﬁcally, the number 4),
+while(input (Pair 4 true)) represents a pair input, speciﬁcally, a pair consisting of t he
+integer 4 and the boolean true. Likewise, algorithms can generate results of various sort s,
+so we introduce a polymorphic data type for outputs:
+datatype (Output S) := (answer S)
+Next we introduce a ternary predicate outputs that holds between an algorithm A, an input
+x, and an output y, iffA, when applied to input x, eventually produces output y. Because
+inputs and outputs are independently polymorphic, the pred icate is parameterized over two
+sort variables:
+declare outputs: (S, T) [Algorithm (Input S) (Output T)] -> Boolean
+This exercise was inspired by Burkholder [12], although o ur formalization here is different from—and, we
+believe, simpler than—the one given there.
+
+fpmics 2015/12/8 11:38 Page 393 #415
+5.7. ADDITIONAL EXERCISES 393
+We also introduce a binary predicate halts-on that is intended to obtain between an algo-
+rithm Aand an input xiffAhalts on input x:
+declare halts-on: (S) [Algorithm (Input S)] -> Boolean
+We say that an algorithm A decides whether or not an algorithm Bhalts on some input x
+iff the following holds:
+. If Bdoes halt on x, then, when the pair (B,x)is given to Aas input, Aoutputstrue.
+. If, on the other hand, Bdoes not halt on x, then, when (B,x)is given to Aas input, A
+outputsfalse .
+In short, Atakes(B,x)as input and outputs true iffBhalts on x. We formalize this relation
+as follows:
+declare decides-halting: (S) [Algorithm Algorithm S] -> Boolean
+define [A B A'B/quotesingle.Var] := [?A ?B ?A /quotesingle.Var?B/quotesingle.Var]
+assert* decides-halting-def :=
+((decides-halting A B x) <==>
+(B halts-on input x ==> outputs A (input B @ x) answer true)
+& (˜B halts-on input x ==> outputs A (input B @ x) answer false))
+To solve the halting problem mechanically, we must have an al gorithm Athat is capable of
+deciding whether anyalgorithm Bhalts on anyinput x. Let us say that such an algorithm
+Ais ahalting decider :
+assert halting-decider-def :=
+(forall A . halting-decider A <==> forall B x .
+(decides-halting A B x))
+Note that so far we have not made any substantive assertions. Both of the above are con-
+servative deﬁnitions which essentially hold by stipulatio n. They are guaranteed to be con-
+sistent. In fact, the only real premise we will need to assert for the proof is the following:
+assert premise :=
+(forall A .
+exists B .
+forall x .
+((outputs A (input x @ x) (answer true)) ==>˜B halts-on input x)
+& ((outputs A (input x @ x) (answer false)) ==> B halts-on inpu t x))
+What does this sentence say, and why is it true? It says that fo r any algorithm A, there is an
+algorithm Bthat takes an input xand behaves as follows. It applies Ato the input pair (x,x);
+if and when that application outputs the answer true,Bgoes into an inﬁnite loop, and thus
+fails to halt on x(the outcome described on line 6); but if and when the applica tion of A
+
+fpmics 2015/12/8 11:38 Page 394 #416
+394 CHAPTER 5. FIRST ORDER LOGIC
+to(x,x)outputs the answer false ,Bhalts (with some unspeciﬁed output), as described on
+line 8. The premise does not specify the behavior of Bfor any other possibility.
+The premise is true simply because for any algorithm A, the existence of Bcan be
+ensured by construction . Given A, we can specify an algorithm Bthat behaves as described:
+Baccepts an input xand runs Aon the input pair (x,x). If the execution of Anever termi-
+nates for that input pair, then of course Bwill also go on forever. But if Adoes halt, we
+examine its output and act as follows. If the output is true, we deliberately get into an
+inﬁnite loop; if the output is false , we halt. In fact, if we regard algorithms as unary pro-
+cedures, we can easily implement this construction in Athen a as a higher-order procedure
+that takes Aas input ﬁrst and then produces the required algorithm B:
+define loop := lambda () (loop)
+define make-B :=
+lambda (A)
+lambda (x)
+match(A (x @ x)) {
+true => (loop)
+| false => /quotesingle.Varok
+}
+The problem asks you to prove that there exists no algorithm f or deciding the halting
+problem, or in our notation:
+define goal := (˜exists A . halting-decider A)
+That is, give a proof Dthat derives goal from the three asserted sentences.
+Exercise 5.14 (Russell’s paradox): Consider:
+domain D
+declare M: [D D] -> Boolean
+Prove:
+(˜exists x . forall y . y M x <==>˜y M y) (5.74)
+When we interpret Mas the membership relation among sets, so that (xMy)iff set xis a
+member of set y, then (5.74) states that there is no set whose members are all and only those
+sets that do not contain themselves. When we interpret Das a set of men and (xMy)as
+the statement that xis shaven by y, then (5.74) says that there is no one who shaves all and
+only those men who do not shave themselves. (That is the popul arized “barber” version
+of Russell’s paradox.) It is a remarkable fact that many trut hs of set theory, such as the
+non-existence of a set that contains all and only those sets t hat do not contain themselves,
+can be formulated and proved as tautologies of pure logic. Fo r additional examples refer to
+the text by Kalish and Montague [37].
+
+fpmics 2015/12/8 11:38 Page 395 #417
+5.7. ADDITIONAL EXERCISES 395
+Exercise 5.15 (Drinker’s principle): Prove the following:
+(∃x.D x⇒ ∀ y.D y).
+This is colloquially referred to as the drinker’s principle : there is always some individual
+xsuch that, if xis drinking, then everyone is drinking. Note that this is not a theorem in
+so-called intuitionist logics.
+Exercise 5.16 (Theory of Measurement): This exercise is based on a paper by Patrick
+Suppes [61] on the theory of empirical measurement of extens ive quantities, and in the
+present context, speciﬁcally on the measurement of mass. Th e vocabulary (or symbol set,
+in our terminology) of the theory contains a binary function symbol*and a binary predicate
+Q. Intuitively, the domain of the intended interpretation co nsists of a large set of physical
+objects whose masses are to be measured by a scale. We interpr et
+(xQy)
+as the proposition that when we place xon the left pan of the scale and yon the right, we
+observe one of two outcomes: either the scale is perfectly ba lanced, which means that x
+andyhave identical mass; or else youtweighs x:
+x
+y
+In other words, (xQy)holds iff the observed mass of xis less than or equal to that of y.30
+The operator *can be thought as a way to produce a new object by combining two existing
+objects. Intuitively, we can think of (x*y)as the operation of placing xfollowed by yon
+a pan of the scale. The theory is formalized through the follo wing ﬁve axioms, written here
+in conventional notation:
+30 Of course we could interpret Qdirectly as the usual numeric less-than relation, provided we also introduce a
+unary function symbol mfrom objects to real numbers, intended to represent their ma ss measurements. However,
+that would be putting the cart before the horse for the purpos e of theories such as that of Suppes, whose task is a
+conceptual investigation of the fundamental conditions th at a physical system must satisfy in order for numeric
+measurement to be possible (and meaningful). For more backg round on measurement theory refer to the historical
+overview of the ﬁeld by D´ ıez [31].
+
+fpmics 2015/12/8 11:38 Page 396 #418
+396 CHAPTER 5. FIRST ORDER LOGIC
+[A1] (∀x,y,z.xQy∧yQx⇒xQz)
+[A2] (∀x,y,z.(x*y)*zQx*(y*z))
+[A3] (∀x,y,z.xQy⇒x*yQy*z)
+[A4] (∀x,y.¬xQy⇒ ∃ z.xQy*z∧y*zQx)
+[A5] (∀x,y.¬x*yQy)
+You are asked to derive the following theorems from these axi oms:
+[T1] (∀x.xQx)
+[T2] (∀x,y.x*yQy*x)
+[T3] (∀x1,x2,x3,x4.x1Qx2∧x3Qx4⇒x1*x3Qx2*x4)
+[T4] (∀x,y,z.x*(y*z)Q(x*y)*z)
+[T5] (∀x,y.xQy∨yQx)
+[T6] (∀x,y,z.x*zQy*z⇒xQy)
+[T7] (∀x,y,z.y*zQu∧xQy⇒x*zQu)
+[T8] (∀x,y,z.uQx*z∧xQy⇒uQy*z)
+In Athena notation: derive theorem-1 throughtheorem-8 of module MT:
+module MT {
+  domain D
+  declare Q: [D D] -> Boolean
+  declare *: [D D] -> D
+  define [x y z z /quotesingle.Varu v x1 x2 x3 x4 x5] := [?x:D ?y:D ···?x5:D]
+  define [A1 A2 A3 A4 A5] :=
+  (map close [(x Q y & y Q z ==> x Q z)
+  ((x * y) * z Q x * (y * z))
+  (x Q y ==> x * z Q z * y)
+  (˜x Q y ==> exists z . x Q y * z & y * z Q x)
+  (˜x * y Q x)])
+  assert [A1 A2 A3 A4 A5]
+  define [theorem-1 theorem-2 theorem-3 theorem-4
+  theorem-5 theorem-6 theorem-7 theorem-8] :=
+  (map close [(x Q x)
+  (x * y Q y * x)
+  (x1 Q x2 & x3 Q x4 ==> x1 * x3 Q x2 * x4)
+  (x * (y * z) Q (x * y) * z)
+  (x Q y | y Q x)
+  (x * z Q y * z ==> x Q y)
+  (y * z Q u & x Q y ==> x * z Q u)
+  (u Q x * z & x Q y ==> u Q y * z)])
+}
+
+fpmics 2015/12/8 11:38 Page 397 #419
+5.8. CHAPTER NOTES 397
+5.8 Chapter notes
+Important patterns of inference with quantiﬁers were alrea dy introduced and studied by
+Aristotle in his logic of syllogisms [ ?], but were limited to sentences with single quantiﬁer
+occurrences, and therefore to unary predicates.31Quantiﬁed logic as we understand it today
+did not emerge until the work of Frege, Peano, and Russell in t he late 19th and early 20th
+centuries. Frege [ ?], in particular, was the ﬁrst to explicitly introduce a math ematically
+precise concept of a logical quantiﬁer. He was also the ﬁrst t o formulate predicate calculus
+(ﬁrst-order logic) in more or less the same form it has today.
+Multiple quantiﬁer nesting allowed for a huge leap in expres siveness from Aristotle’s
+unary predicates to arbitrary relations. Complicated prop ositions with intricate logical
+structure became readily expressible in predicate logic, w hich has turned out to be capa-
+ble of capturing all of mathematics and even much of natural l anguage. Frege’s work also
+enabled a much clearer distinction between syntax and seman tics, a distinction that was
+soon sharpened and investigated in depth by Hilbert, Tarski , and others, giving rise to the
+classic metatheoretic results for ﬁrst-order logic, such a s soundness, completeness, and
+compactness, as well as the negative results of G¨ odel. Clas sic mathematical logic text-
+books with rigorous discussions of such results include Kle ene’s Mathematical Logic [38]
+and Mendelson’s Introduction to Mathematical Logic [19]. For a more contemporary expo-
+sition see the textbook by Ebbinghaus et al. [21]. Recursive deﬁnitions of satisfaction rela-
+tions like the one shown in Figure 5.6 are speciﬁcally due to T arski’s seminal work [4].
+Exercise 5.16 also appears in a classic logic textbook by Sup pes [79]. Another classic text
+that has aged exceedingly well is Tarski’s Introduction to logic and to the methodology
+of the deductive sciences [5], which ﬁrst appeared (in Polish) in 1939. It is highly rec om-
+mended as a general—and very accessible—introduction to lo gic.
+In its usual formulations, ﬁrst-order logic is single-sorted , i.e., there are no sorts (or
+types).32It is assumed that there is only one universe of discourse U, so every n-ary func-
+tion symbol takes all its arguments from Uand produces an element of U. Yet types were
+integral to logic from the very beginning, and ﬁgured promin ently in the work of Russell
+and even of Frege (though in the latter case not in the convent ional contemporary sense).
+Classical ﬁrst-order logic enriched with a sort system resu lts in so-called many-sorted (or
+“multi-sorted”) ﬁrst-order logic, which is at the heart of A thena’s logic. The ﬁrst formula-
+tion of many-sorted logic as we understand it today appears t o have been given by Wang
+in 1952 [27]. Manzano [48] argues that many-sorted ﬁrst-ord er logic is distinguished by
+31 Although Aristotle viewed quantiﬁed statements as binar y relations obtaining between unary predicates
+(“terms”).
+32 In this text we use types to classify Athena’s denotable va lues, and sorts to classify Athena terms. Terms are
+just one type of value in Athena.
+
+fpmics 2015/12/8 11:38 Page 398 #420
+398 CHAPTER 5. FIRST ORDER LOGIC
+its naturalness and favorable theoretical properties, and that most reasonable logical sys-
+tems (including higher-order logic) have natural translat ions into many-sorted ﬁrst-order
+logic. Meinke and Tucker also single out many-sorted ﬁrst-o rder logic as a unique logic
+that “stands beside category theory and type theory as a very general mathematical frame-
+work which can: (i) support foundational studies; (ii) prov ide tools for solving speciﬁc
+problems; and (iii) be processed by machines. It is simpler t o use than category theory and
+type theory and closer to applications” [35] (p. xvi). Highe r-order logic has many of the
+same advantages as many-sorted ﬁrst-order logic, but at the expense of certain algorithmic
+and theoretical complications, such as an undecidable uniﬁ cation problem and deductive
+incompleteness.
+Athena further enhances many-sorted ﬁrst-order logic with Hindley-Milner-style poly-
+morphism [53], essentially the same type system found in programming languages like
+SML and Haskell. Athena discovers the most general sort for a given term using the same
+type-reconstruction inference algorithm invented by Miln er.33The advantages of paramet-
+ric polymorphism for logic and proofs are largely the same as they are for programming:
+we only need to prove a theorem once, using the most general po ssible sorts for its quan-
+tiﬁed variables; after that, we can directly apply the theor em to reason about any objects
+whose sorts are instances of the most general sorts. If we kno w that reversing a list ltwice
+produces l, where lis a list of anysort whatsoever (i.e., when the sort of lis a sort variable
+’S), then we can directly derive the same conclusion when lis a list of integers, or a list of
+identiﬁers, or a list of booleans, or a list of lists of intege rs, and so on. With few exceptions
+(such as the natural numbers), most of the theories and proof s that appear in subsequent
+chapters are polymorphic. For more background on universal algebra, refer to the excellent
+introduction by Meinke and Tucker [52] and the references th at appear there.
+33 The algorithm is modiﬁed—and complicated—in the presenc e of polymorphic subsorting.

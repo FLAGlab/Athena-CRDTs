@@ -1,0 +1,190 @@
+load "../utils/msets-simple"
+load "../utils/fmaps"
+load "../utils/pair"
+load "../utils/list-util"
+module Payload {
+datatype Unit := unit
+structure (PayloadOps State Value) :=
+  (payload-ops State)
+define (payload-init ops) :=
+  match ops {
+    (payload-ops init) => init
+  }
+# Generic payload operation declarations
+# Concrete payloads must define these via pattern matching
+declare payload-step: (State, Value) [(PayloadOps State Value) Value State] -> State
+declare payload-join: (State, Value) [(PayloadOps State Value) State State] -> State
+
+define (payload-apply ops value state) :=
+  (payload-step ops value state)
+datatype (Message Value Meta) := (msg Ide Value Meta)
+datatype (Configuration State Value Meta) :=
+  (kfg am:(FMap.Map Ide State)
+       net:(MSet.MSet (Message Value Meta)))
+define empty-map := FMap.empty-map
+define empty-mset := MSet.null
+define (am cfg) :=
+  match cfg {
+    (Payload.kfg actors _) => actors
+  }
+define (net cfg) :=
+  match cfg {
+    (Payload.kfg _ pending) => pending
+  }
+define (canonical-map candidate) :=
+  candidate
+define (map-lookup map target) :=
+  match (canonical-map map) {
+    FMap.empty-map => NONE
+  | (FMap.update (pair key value) rest) =>
+      match (equal? key target) {
+        true => (SOME value)
+      | false => (map-lookup rest target)
+      }
+  }
+define (reduce ops cfg) :=
+  match cfg {
+    (Payload.kfg actors MSet.null) => cfg
+  | (Payload.kfg actors (MSet.insert (msg id payload meta) rest)) =>
+      match (map-lookup actors id) {
+        NONE => (Payload.kfg actors rest)
+      | (SOME current) =>
+          (Payload.kfg (FMap.update (pair id (payload-apply ops payload current)) actors)
+                       rest)
+      }
+  }
+define (reduce* ops cfg) :=
+  match (net cfg) {
+    MSet.null => cfg
+  | (MSet.insert _ _) => (reduce* ops (reduce ops cfg))
+  }
+define (enqueue-with cfg id payload meta) :=
+  (Payload.kfg (canonical-map (am cfg))
+               (MSet.insert (msg id payload meta)
+                            (net cfg)))
+define (enqueue cfg id payload) :=
+  (enqueue-with cfg id payload unit)
+define (init-map ops ids) :=
+  match ids {
+    nil => empty-map
+  | (id :: rest) =>
+      (FMap.update (pair id (payload-init ops)) (init-map ops rest))
+  | _ => empty-map
+  }
+declare init: (State, Value)
+  [(PayloadOps State Value) (List Ide)] -> (Configuration State Value Payload.Unit)
+define (init ops ids) :=
+  (Payload.kfg (init-map ops ids) empty-mset)
+} 
+open Payload
+module TextPayload {
+  open Payload
+  define-sort State := (List Ide)
+  datatype Value := (insert Ide)
+       |  (delete Ide)
+  define state-empty := nil
+  define (text-step value state) :=
+    match value {
+      (insert text) => (text :: state)
+    | (delete _) => state
+    | _ => state
+    }
+  define (text-join _ right) := right
+  declare TEXT_PAYLOAD: [] -> (Payload.PayloadOps State Value)
+  define TEXT_PAYLOAD := (payload-ops state-empty)
+  define (payload-step TEXT_PAYLOAD value state) :=
+    (text-step value state)
+  define (payload-apply TEXT_PAYLOAD value state) :=
+    (payload-step TEXT_PAYLOAD value state)
+  define (payload-join TEXT_PAYLOAD left right) :=
+    (text-join left right)
+  define (payload-canonical-from-init-hook TEXT_PAYLOAD state-empty) :=
+    TEXT_PAYLOAD
+}
+module GCounterPayload {
+  open Payload
+  define-sort State := N
+  datatype Value := (increment N)
+  define state-empty := zero
+  define (gcounter-step value state) :=
+    match value {
+      (increment delta) => (N.+ state delta)
+    | _ => state
+    }
+  declare gcounter-max: [State State] -> State
+  assert gcounter-max-zero-left := (forall ?n . (gcounter-max zero ?n) = ?n)
+  assert gcounter-max-zero-right := (forall ?n . (gcounter-max ?n zero) = ?n)
+  assert gcounter-max-succ := (forall ?m ?k . (gcounter-max (S ?m) (S ?k)) = (S (gcounter-max ?m ?k)))
+  define (gcounter-max-eval left right) :=
+    match left {
+      zero => right
+    | (S left') =>
+      match right {
+        zero => left
+      | (S right') => (S (gcounter-max-eval left' right'))
+      | _ => left
+      }
+    | _ => right
+    }
+  declare GCOUNTER_PAYLOAD: [] -> (Payload.PayloadOps State Value)
+  define GCOUNTER_PAYLOAD := (payload-ops state-empty)
+  define (payload-step ops value state) :=
+    match ops {
+      (payload-ops _) => (gcounter-step value state)
+    }
+  define (payload-apply ops value state) :=
+    (payload-step ops value state)
+  define (payload-join ops left right) :=
+    match ops {
+      (payload-ops _) => (gcounter-max left right)
+    }
+  define (payload-normalize-hook _) :=
+    GCOUNTER_PAYLOAD
+  define (payload-canonical-from-init-hook ops init) :=
+    match ops {
+      (payload-ops _) =>
+        match init {
+          state-empty => GCOUNTER_PAYLOAD
+        | _ => (payload-ops init)
+        }
+    }
+} 
+module GSetPayload {
+  open Payload
+  open Set
+  define-sort State := (Set.Set Ide)
+  datatype Value := (op-add Ide)
+  define state-empty := Set.null:(Set.Set Ide)
+  define (gs-lookup state element) :=
+    (Set.in element state)
+  define (gs-step value state) :=
+    match value {
+      (op-add element) => (Set.insert element state)
+    }
+  define (gs-join left right) :=
+    (Set.union left right)
+  declare GSET_PAYLOAD: [] -> (Payload.PayloadOps State Value)
+  define GSET_PAYLOAD := (payload-ops state-empty)
+  define (payload-step ops value state) :=
+    match ops {
+      (payload-ops _) => (gs-step value state)
+    }
+  define (payload-apply ops value state) :=
+    (payload-step ops value state)
+  define (payload-join ops left right) :=
+    match ops {
+      (payload-ops _) => (gs-join left right)
+    }
+  define (payload-normalize-hook _) :=
+    GSET_PAYLOAD
+  define (payload-canonical-from-init-hook ops init) :=
+    match ops {
+      (payload-ops _) =>
+        match init {
+          state-empty => GSET_PAYLOAD
+        | _ => (payload-ops init)
+        }
+    }
+  define (gs-build-add element) :=
+    (op-add element)
+} 

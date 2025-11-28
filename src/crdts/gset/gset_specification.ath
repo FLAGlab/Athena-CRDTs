@@ -1,0 +1,128 @@
+load "../../framework/crdt_specification"
+load "../../framework/utils/sets-notp"
+load "../../framework/theory/semilattice_theory"
+
+module GSetSpec {
+  open Set
+  open SemilatticeTheory
+  
+  define-sort GSState := (Set.Set Ide)
+  datatype GSValue := (add Ide)
+  
+  # SINGLE SOURCE OF TRUTH: Define operations once
+  define (gs-merge left:GSState right:GSState) := (Set.union left right)
+  define gs-initial := Set.null:(Set.Set Ide)
+  define (gs-apply-update state:GSState value:GSValue) :=
+    match value {
+      (add element) => (Set.insert element state)
+    }
+  
+  assert gs-merge-is-union :=
+    (forall ?x:GSState ?y:GSState . (gs-merge ?x ?y) = (Set.union ?x ?y))
+  
+  # === CRDT-Specific Behavioral Properties ===
+  
+  # Add is permanent: once added, element stays in all merged states
+  conclude add-is-permanent :=
+    (forall ?e:Ide ?s:GSState . (Set.in ?e (gs-apply-update ?s (add ?e))))
+    pick-any e:Ide s:GSState
+      (!chain-> [true
+             ==> (e = e)
+             ==> (e Set.in (Set.insert e s))        [Set.in-lemma-1]
+             ==> (e Set.in (gs-apply-update s (add e)))  
+                 [(gs-apply-update s (add e)) = (Set.insert e s)]])
+  
+  # Merge preserves all additions (monotonic growth)
+  conclude merge-preserves-additions :=
+    (forall ?e:Ide ?s1:GSState ?s2:GSState . 
+      ((Set.in ?e ?s1) ==> (Set.in ?e (gs-merge ?s1 ?s2))))
+    pick-any e:Ide s1:GSState s2:GSState
+      assume hyp := (e Set.in s1)
+        (!chain-> [hyp
+               ==> (e Set.in s1 | e Set.in s2)      [alternate]
+               ==> (e Set.in (Set.union s1 s2))     [Set.UC]
+               ==> (e Set.in (gs-merge s1 s2))      [gs-merge-is-union]])
+  
+  # Set only grows under merge (subset property)
+  conclude set-only-grows :=
+    (forall ?s1:GSState ?s2:GSState . (Set.subset ?s1 (gs-merge ?s1 ?s2)))
+    pick-any s1:GSState s2:GSState
+      let {subgoal := 
+            (pick-any e:Ide
+              assume (e Set.in s1)
+                (!chain-> [(e Set.in s1)
+                       ==> (e Set.in s1 | e Set.in s2)     [alternate]
+                       ==> (e Set.in (Set.union s1 s2))    [Set.UC]
+                       ==> (e Set.in (gs-merge s1 s2))     [gs-merge-is-union]]))}
+      (!chain-> [subgoal
+             ==> (s1 Set.subset (gs-merge s1 s2))           [Set.SC]])
+  
+  # Cannot remove elements (grow-only constraint)
+  conclude no-removals :=
+    (forall ?e:Ide ?e2:Ide ?s:GSState . 
+      ((Set.in ?e ?s) ==> (Set.in ?e (gs-apply-update ?s (add ?e2)))))
+    pick-any e:Ide e2:Ide s:GSState
+      assume hyp := (e Set.in s)
+        (!chain-> [hyp
+               ==> (e = e2 | e Set.in s)              [alternate]
+               ==> (e Set.in (Set.insert e2 s))       [Set.in-def]
+               ==> (e Set.in (gs-apply-update s (add e2)))
+                   [(gs-apply-update s (add e2)) = (Set.insert e2 s)]])
+  
+  module Theory {
+    conclude merge-commutative-holds :=
+      (forall ?s1:GSState ?s2:GSState . 
+        (gs-merge ?s1 ?s2) = (gs-merge ?s2 ?s1))
+      pick-any s1:GSState s2:GSState
+        (!chain [(gs-merge s1 s2)
+               = (Set.union s1 s2)     [gs-merge-is-union]
+               = (Set.union s2 s1)     [Set.union-commutes]
+               = (gs-merge s2 s1)      [gs-merge-is-union]])
+    conclude merge-associative-holds :=
+      (forall ?s1:GSState ?s2:GSState ?s3:GSState .
+        (gs-merge (gs-merge ?s1 ?s2) ?s3) = (gs-merge ?s1 (gs-merge ?s2 ?s3)))
+      pick-any s1:GSState s2:GSState s3:GSState
+        (!chain [(gs-merge (gs-merge s1 s2) s3)
+               = (Set.union (Set.union s1 s2) s3)     [gs-merge-is-union]
+               = (Set.union s1 (Set.union s2 s3))     [Set.union-associativity]
+               = (gs-merge s1 (gs-merge s2 s3))       [gs-merge-is-union]])
+    conclude merge-idempotent-holds :=
+      (forall ?s:GSState . (gs-merge ?s ?s) = ?s)
+      pick-any s:GSState
+        (!chain [(gs-merge s s)
+               = (Set.union s s)  [gs-merge-is-union]
+               = s                [Set.\/-idempotence]])
+    
+    # Create theory with 3 core axioms (ACI)
+    define gs-theory :=
+      (make-theory [] [merge-commutative-holds merge-associative-holds 
+                       merge-idempotent-holds])
+    
+    # Adapter to connect to abstract semilattice theory
+    define GSet-To-Semilattice :=
+      (renaming |{SemilatticeTheory.join := gs-merge,
+                  SemilatticeTheory.bot := gs-initial}|)
+    
+    # Inherit derived theorems for FREE
+    define gs-absorption :=
+      (get-property SemilatticeTheory.absorption
+                    GSet-To-Semilattice
+                    SemilatticeTheory.theory)
+    
+    define gs-monotone-left :=
+      (get-property SemilatticeTheory.monotone-left
+                    GSet-To-Semilattice
+                    SemilatticeTheory.theory)
+    
+    define gs-monotone-right :=
+      (get-property SemilatticeTheory.monotone-right
+                    GSet-To-Semilattice
+                    SemilatticeTheory.theory)
+  }
+} 
+
+(print "\n=== GSet Specification with Theory Refinement ===\n")
+(print "[OK] Operations: merge = Set.union\n")
+(print "[OK] Proved ACI properties\n")
+(print "[OK] Inherited: absorption, monotone-left, monotone-right\n")
+(print "[SUCCESS] Theory refinement pattern applied!\n")

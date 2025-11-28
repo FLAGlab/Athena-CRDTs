@@ -1,0 +1,46 @@
+load "payload"
+open Payload
+module PayloadFrameworkProps {
+conclude payload-init-unfold :=
+  (forall ?init:'State
+    (= (payload-init (payload-ops ?init))
+       ?init))
+  pick-any init:'State
+    (!chain [(payload-init (payload-ops init))
+             = init [payload-init]])
+conclude payload-apply-delegates :=
+  (forall ?init:'State
+    (forall ?value:'Value
+      (forall ?state:'State
+        (= (payload-apply (payload-ops ?init) ?value ?state)
+           (payload-step (payload-ops ?init) ?value ?state)))))
+  pick-any init:'State value:'Value state:'State
+    (!chain [(payload-apply (payload-ops init) value state)
+             = (payload-step (payload-ops init) value state) [payload-apply]])
+define payload-join-commutative :=
+  (forall ?ops:(Payload.PayloadOps 'State 'Value)
+    (forall ?s1:'State
+      (forall ?s2:'State
+        (= (payload-join ?ops ?s1 ?s2)
+           (payload-join ?ops ?s2 ?s1)))))
+define payload-join-associative :=
+  (forall ?ops:(Payload.PayloadOps 'State 'Value)
+    (forall ?s1:'State
+      (forall ?s2:'State
+        (forall ?s3:'State
+          (= (payload-join ?ops (payload-join ?ops ?s1 ?s2) ?s3)
+             (payload-join ?ops ?s1 (payload-join ?ops ?s2 ?s3)))))))
+define payload-join-idempotent :=
+  (forall ?ops:(Payload.PayloadOps 'State 'Value)
+    (forall ?s:'State
+      (= (payload-join ?ops ?s ?s)
+         ?s)))
+define payload-step-preserves-join :=
+  (forall ?ops:(Payload.PayloadOps 'State 'Value)
+    (forall ?v:'Value
+      (forall ?s1:'State
+        (forall ?s2:'State
+          (= (payload-join ?ops (payload-step ?ops ?v ?s1) ?s2)
+             (payload-step ?ops ?v (payload-join ?ops ?s1 ?s2)))))))
+} 
+open PayloadFrameworkProps

@@ -1,0 +1,67 @@
+load "lww_register_specification"
+load "../../framework/backbone"
+
+# Adapter: Connects LWW-Register specification to Backbone
+# 
+# ENHANCED: Now uses Backbone's generic operations following
+# the Chapter 14 adapter pattern from Athena reference.
+#
+# Backbone provides:
+# - Vector clock tracking per actor
+# - Causal message delivery
+# - Generic parametric operations (update-local, broadcast-to, query-state)
+#
+# This adapter:
+# - Passes LWW-Register operations to generic backbone functions
+# - Demonstrates proper use of adapter pattern (like Semigroup → Monoid → Group)
+
+module LWWRegisterAdapter {
+  open LWWRegisterSpec
+  open Backbone
+  open VectorClocks
+  
+  # Initialize LWW-Register configuration with multiple actors
+  # Uses: init-with-clocks (core backbone operation)
+  define (lww-init actor-ids) :=
+    (init-with-clocks lww-merge lww-initial lww-apply-update actor-ids)
+  
+  # Update operation: actor writes a new value
+  # Uses: update-local (generic backbone operation)
+  # Replaces manual state/clock extraction with generic operation
+  define (lww-update cfg actor-id new-value) :=
+    (update-local cfg actor-id (write new-value) lww-initial lww-apply-update)
+  
+  # Broadcast: send update to all other actors
+  # Uses: broadcast-to (generic backbone operation)
+  # Replaces manual message creation and clock ticking
+  define (lww-broadcast cfg from-actor to-actors new-value) :=
+    (broadcast-to cfg from-actor to-actors (write new-value) lww-initial lww-apply-update)
+  
+  # Read: get current value at an actor
+  # Uses: query-state (generic backbone operation)
+  # Replaces manual state map lookup
+  define (lww-read-config cfg actor-id) :=
+    (query-state cfg actor-id lww-read (lww-read lww-initial))
+  
+  # Merge states: use specification's merge
+  # This is called when actors synchronize
+  define (lww-merge-states s1:LWWState s2:LWWState) :=
+    (lww-merge s1 s2)
+}
+
+(print "\n=== LWW-Register Payload Adapter (Enhanced) ===\n")
+(print "[OK] Adapter connects LWWRegisterSpec to Backbone\n")
+(print "[OK] Operations passed to backbone:\n")
+(print "     - merge-fn = lww-merge\n")
+(print "     - initial = lww-initial\n")
+(print "     - apply-fn = lww-apply-update\n")
+(print "\n[OK] Adapter functions (using generic backbone operations):\n")
+(print "     - lww-init: Uses init-with-clocks\n")
+(print "     - lww-update: Uses update-local (generic parametric op)\n")
+(print "     - lww-broadcast: Uses broadcast-to (generic parametric op)\n")
+(print "     - lww-read-config: Uses query-state (generic parametric op)\n")
+(print "\n[OK] DEMONSTRATES: Ch14 adapter pattern\n")
+(print "     - CRDT-specific functions passed as parameters\n")
+(print "     - Backbone provides generic infrastructure\n")
+(print "     - No manual state/clock manipulation needed\n")
+(print "\n[SUCCESS] LWW-Register adapter complete (refactored to use backbone generics)!\n")
