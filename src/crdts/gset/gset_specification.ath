@@ -121,8 +121,3 @@ module GSetSpec {
   }
 } 
 
-(print "\n=== GSet Specification with Theory Refinement ===\n")
-(print "[OK] Operations: merge = Set.union\n")
-(print "[OK] Proved ACI properties\n")
-(print "[OK] Inherited: absorption, monotone-left, monotone-right\n")
-(print "[SUCCESS] Theory refinement pattern applied!\n")

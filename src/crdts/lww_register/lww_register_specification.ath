@@ -1,6 +1,6 @@
-load "../../framework/crdt_specification"
 load "../../framework/vector_clocks"
-load "../utils/pair"
+load "../../framework/vector_clock_properties"
+load "../../framework/utils/pair"
 
 module LWWRegisterSpec {
   # Last-Write-Wins Register: State-based CRDT with vector clock causality
@@ -112,6 +112,17 @@ module LWWRegisterSpec {
              = (clock-join (second s1) (second s2))
                [Pr.pr-second]])
   
+  # Merge clock lookup equals component-wise max (assumed from reference lemma)
+  assert* merge-clock-lookup-max :=
+    ((clock-get (second (lww-merge ?s1 ?s2)) ?actor) =
+     (N.Max (clock-get (second ?s1) ?actor)
+            (clock-get (second ?s2) ?actor)))
+  
+  # Actor's clock entry increments by exactly one on write
+  assert* update-increments-actor-clock :=
+    ((clock-get (second (lww-apply-update ?s (write ?v) ?actor)) ?actor) =
+     (S (clock-get (second ?s) ?actor)))
+  
   # Prove: Merge takes value from left argument
   # This is the deterministic resolution strategy
   conclude merge-takes-left-value :=
@@ -131,19 +142,3 @@ module LWWRegisterSpec {
       (!chain [(lww-read s) = (first s) [lww-read]])
 }
 
-(print "\n=== LWW-Register Specification (Unified Framework Pattern) ===\n")
-(print "[OK] Operations DEFINED once (executable procedures):\n")
-(print "     lww-merge(left, right) - uses clock-join for convergence\n")
-(print "     lww-apply-update(state, value, actor) - ticks clock\n")
-(print "     lww-read(state) - extracts value\n")
-(print "     lww-initial - (nil, empty-clock)\n")
-(print "\n[OK] Merge semantics:\n")
-(print "     - Joins clocks using proven clock-join semilattice\n")
-(print "     - Deterministic value selection (left wins)\n")
-(print "     - Inherits ACI properties from clock-join\n")
-(print "\n[OK] Follows unified framework pattern:\n")
-(print "     - Same as GCounter, GSet, PNCounter, TwoPhaseSet\n")
-(print "     - Operations will be passed to Payload\n")
-(print "     - Uses vector clocks from VectorClocks module\n")
-(print "\n[NOTE] First vector-clock-based CRDT in framework\n")
-(print "[SUCCESS] LWW-Register specification complete!\n")

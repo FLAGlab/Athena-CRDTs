@@ -6,56 +6,50 @@ open Payload
 (print "GCounter Demo - Unified Framework\n")
 (print "========================================\n\n")
 
-# Create initial configuration with 3 actors
-define actors := ('a :: 'b :: 'c :: nil)
+# Create initial configuration with 3 replicas
+define actors := ('r1 :: 'r2 :: 'r3 :: nil)
 define cfg0 := (gc-init actors)
 
-(print "[Step 1] Initialize configuration with actors: a, b, c\n")
+(print "[Step 1] Initialize configuration with replicas: r1, r2, r3\n")
 (print "Initial state:\n")
 (eval (am cfg0))
 (print "\n")
 
-# Actor 'a increments by 2 - broadcast to self
-define cfg1 := (gc-broadcast cfg0 ('a :: nil) (GCounterSpec.increment (S (S zero))))
+# Replica r1 increments by 2 - broadcast to self
+define cfg1 := (gc-broadcast cfg0 ('r1 :: nil) (GCounterSpec.increment (S (S zero))))
 
-(print "[Step 2] Actor 'a increments by 2\n")
+(print "[Step 2] Replica r1 increments by 2\n")
 (print "Network has 1 message\n\n")
 
 # Deliver the message
 define cfg2 := (gc-reduce cfg1)
 
-(print "[Step 3] Deliver message to 'a\n")
+(print "[Step 3] Deliver message to r1\n")
 (print "State after delivery:\n")
 (eval (am cfg2))
 (print "\n")
 
-# Actor 'b increments by 3 - broadcast to self
-define cfg3 := (gc-broadcast cfg2 ('b :: nil) (GCounterSpec.increment (S (S (S zero)))))
+# Replica r2 increments by 3 - broadcast to self
+define cfg3 := (gc-broadcast cfg2 ('r2 :: nil) (GCounterSpec.increment (S (S (S zero)))))
 
-(print "[Step 4] Actor 'b increments by 3\n")
+(print "[Step 4] Replica r2 increments by 3\n")
 
 # Deliver
 define cfg4 := (gc-reduce cfg3)
 
-(print "[Step 5] Deliver message to 'b\n")
+(print "[Step 5] Deliver message to r2\n")
 (print "State after delivery:\n")
 (eval (am cfg4))
 (print "\n")
 
-# Actor 'c increments by 1 - broadcast to self
-define cfg5 := (gc-broadcast cfg4 ('c :: nil) (GCounterSpec.increment (S zero)))
+# Replica r3 increments by 1 - broadcast to self
+define cfg5 := (gc-broadcast cfg4 ('r3 :: nil) (GCounterSpec.increment (S zero)))
 
-(print "[Step 6] Actor 'c increments by 1\n")
+(print "[Step 6] Replica r3 increments by 1\n")
 
 # Deliver
 define cfg-final := (gc-reduce cfg5)
 
-(print "[Step 7] Deliver message to 'c\n")
+(print "[Step 7] Deliver message to r3\n")
 (print "Final state:\n")
 (eval (am cfg-final))
-(print "\n")
-
-(print "========================================\n")
-(print "Demo completed successfully!\n")
-(print "Total: a=2, b=3, c=1\n")
-(print "========================================\n")

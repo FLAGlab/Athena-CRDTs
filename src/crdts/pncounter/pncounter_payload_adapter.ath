@@ -39,8 +39,3 @@ module PNCounterAdapter {
                = s  [PNCounterSpec.Theory.merge-idempotent-holds]])
   }
 } 
-(print "\n=== PN-Counter Payload Adapter ===\n")
-(print "[OK] Operations from PNCounterSpec: pnc-merge, pnc-initial, pnc-apply-update\n")
-(print "[OK] Unified payload functions: pnc-init, pnc-reduce, pnc-merge-states\n")
-(print "[OK] Proved semilattice properties: commutative, associative, idempotent\n")
-(print "\n[SUCCESS] PN-Counter adapter complete!\n")

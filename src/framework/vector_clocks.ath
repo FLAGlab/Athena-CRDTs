@@ -294,39 +294,6 @@ assert* ClockJoin.commutative :=
 assert* ClockJoin.associative :=
   ((clock-join (clock-join ?c1 ?c2) ?c3) = (clock-join ?c1 (clock-join ?c2 ?c3)))
 
-define (clock-leq c1 c2) :=
-  match c1 {
-    FMap.empty-map => true
-  | (FMap.update (pair id val) rest) =>
-      check {
-        (N.<= val (clock-get c2 id)) => (clock-leq rest c2)
-      | else => false
-      }
-  }
-define (clock-eq c1 c2) :=
-  check {
-    (clock-leq c1 c2) =>
-      check {
-        (clock-leq c2 c1) => true
-      | else => false
-      }
-  | else => false
-  }
-define (clock-happens-before c1 c2) :=
-  check {
-    (clock-leq c1 c2) =>
-      check {
-        (clock-leq c2 c1) => false
-      | else => true
-      }
-  | else => false
-  }
-define (clock-concurrent c1 c2) :=
-  check {
-    (clock-leq c1 c2) => false
-  | (clock-leq c2 c1) => false
-  | else => true
-  }
 define (clock-get-exec clock id) :=
   match clock {
     FMap.empty-map => zero
@@ -363,44 +330,7 @@ define (registry-get registry id) :=
   }
 define (registry-set registry id clock) :=
   (FMap.update (pair id clock) registry)
-define (registry-insert registry id clock) :=
-  (registry-set registry id clock)
-define (registry-tick registry id) :=
-  (registry-set registry id (clock-tick-exec (registry-get registry id) id))
-define (registry-merge registry id incoming) :=
-  (registry-set registry id (clock-join-exec incoming (registry-get registry id)))
 
-define (clock-dominates clock-a clock-b) :=
-  (clock-happens-before clock-b clock-a)
-define (clock-dominated-by-any? clock-a entries get-clock-fn) :=
-  match entries {
-    Set.null => false
-  | (Set.insert entry rest) =>
-      match (clock-happens-before clock-a (get-clock-fn entry)) {
-        true => true
-      | false => (clock-dominated-by-any? clock-a rest get-clock-fn)
-      }
-  }
-define (clock-filter-dominated target-clock entries get-clock-fn) :=
-  match entries {
-    Set.null => Set.null
-  | (Set.insert entry rest) =>
-      (let ((pruned (clock-filter-dominated target-clock rest get-clock-fn))
-            (entry-clk (get-clock-fn entry)))
-        (check {
-          (clock-happens-before entry-clk target-clock) => pruned
-        | else => (Set.insert entry pruned)
-        }))
-  }
-define (clock-dominates-any? target-clock entries get-clock-fn) :=
-  match entries {
-    Set.null => false
-  | (Set.insert entry rest) =>
-      match (clock-happens-before (get-clock-fn entry) target-clock) {
-        true => true
-      | false => (clock-dominates-any? target-clock rest get-clock-fn)
-      }
-  }
 define (clock-get clock id) := (clock-get-exec clock id)
 define (clock-set clock id value) := (clock-set-exec clock id value)
 define (clock-tick clock id) := (clock-tick-exec clock id)

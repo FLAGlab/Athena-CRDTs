@@ -1,0 +1,70 @@
+% $Id: validation.tex 1784 2012-04-27 23:29:31Z  $
+% !TEX root = main.tex
+
+
+\chapter{Validation and Evaluation}\label{chap:validation}
+
+This chapter presents the validation strategy used to ensure the soundness and robustness of the framework introduced in Chapter~\ref{chap:framework}. The results build on two complementary approaches: formal proofs of safety and convergence, and interactive demos that expose dynamic behavior. We aim to validate both the abstract foundations (semilattice-based convergence) and the operational behavior (message delivery, liveness, and causality) of the CRDTs implemented in the framework.
+
+\section{Validation of the Payload Layer}
+
+The Payload layer introduced in Chapter~\ref{chap:payload} captures the semantics of state-based CRDTs. Its correctness relies on the algebraic properties of the merge and update operations.
+
+\subsection{Strong Eventual Consistency}
+
+As proved in Chapter~\ref{chap:theory}, any CRDT satisfying the five axioms---commutativity, associativity, idempotence, identity, and monotonicity---is guaranteed to be strongly eventually consistent. The \texttt{PayloadFramework} module encodes these requirements as abstract axioms, and all CRDTs instantiated in the Payload layer prove that their merge and update functions satisfy them. These proofs are fully mechanized in Athena and inherited automatically through the adapter pattern described in Chapter~\ref{chap:theory}.
+
+\subsection{Divergence avoidance}
+
+In the presence of duplicate or re-ordered messages, the Payload layer ensures that actor states still converge. This is a direct consequence of the idempotence and commutativity of the merge operator. By construction, the \texttt{reduce} function processes each message exactly once, but the semantics remain correct even under multiple deliveries. Executing \texttt{reduce*} on different message permutations yields the same final state.
+
+\section{Validation of the Backbone Layer}
+
+The Backbone layer introduced in Chapter~\ref{chap:backbone} extends the Payload model with causal metadata, using vector clocks to track delivery dependencies. The validation of this layer focuses on liveness and causal correctness.
+
+\subsection{Message enabling and causal delivery}
+
+The \texttt{Enabled} predicate determines whether a configuration contains a message that is safe to deliver. A message is only deliverable if its destination actor exists and the associated vector clock is below the actor's current clock (in the $\preceq$ order). The reduction step is therefore blocked until causal dependencies are satisfied, which guarantees that updates are never applied out of order.
+
+\subsection{Liveness properties}
+
+We define a configuration as \emph{reducible} if some message is enabled, and as \emph{deadlocked} if no messages can be delivered. The Backbone framework ensures that under eventual delivery, all messages will eventually be enabled. This guarantees that no update is permanently blocked, assuming that actors are not removed mid-execution. The system is guaranteed to reach a quiescent state (no pending messages) as long as no new updates are generated.
+
+\section{Evaluation via Executable Demos}
+
+Each CRDT implemented in Chapter~\ref{chap:implementations} is accompanied by an executable demo written in Athena. These demos serve both as test cases and as interactive validations.
+
+\subsection{Example: OR-Set}
+
+The OR-Set demo initializes two replicas and performs a concurrent add and remove of the same element. The demo confirms that the add wins, as expected under the causal semantics. The final state is computed via \texttt{reduce*}, and the presence of the element is verified using the CRDT’s visibility predicate.
+
+\subsection{Example: PN-Counter}
+
+The PN-Counter demo shows how independent positive and negative counters merge under max. Operations from different replicas are interleaved and merged in various orders. The final value remains consistent regardless of merge order, confirming the correctness of the semilattice construction.
+
+\subsection{Liveness experiments}
+
+We also created scenarios in which messages are delayed or shuffled to validate that convergence still holds. These experiments mimic real-world asynchrony. The outcomes match theoretical expectations: all configurations eventually stabilize to the same state.
+
+\section{Summary}
+
+This chapter validated the key guarantees of the framework:
+
+\begin{itemize}
+  \item Convergence of CRDTs under asynchronous delivery
+  \item Causal ordering in the Backbone layer
+  \item Liveness ensured by the message reduction logic
+  \item Agreement between theory and practice in executable demos
+\end{itemize}
+
+Together, these results confirm that the Payload and Backbone components behave correctly and can be instantiated with a wide range of CRDTs. The validation strategy supports the claim that the framework enables modular and verifiable CRDT design.
+
+\section{Reproducibility}
+
+All modules and proofs are in the public GitHub repository at \url{https://github.com/FLAGlab/Athena-CRDTs}. Bibliographic entries reside in \texttt{thesis/bib/}. Code snippets in this chapter correspond to files under \texttt{src/framework} and \texttt{src/crdts}.
+
+\section{Conclusion}
+
+The validation shows that our implementation realises the algebraic CRDT model: payloads satisfy semilattice and monotonicity laws, vector clocks provide causal metadata, and the backbone composes them to ensure convergence.
+
+\endinput

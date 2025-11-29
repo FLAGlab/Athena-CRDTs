@@ -1,0 +1,69 @@
+% $Id: vectors.tex 1784 2012-04-27 23:29:31Z  $
+% !TEX root = main.tex
+
+
+\chapter{Vector Clocks and Causality for State-Based CRDTs}\label{chap:vectors}
+
+Vector clocks provide an algebra for reasoning about causality in asynchronous distributed systems. We begin by contrasting them with Lamport’s logical clocks to motivate why vector clocks are used in causality-aware systems. Lamport’s classic \emph{happens-before} relation defines a partial order on events in a distributed system~\cite{lamport1978time}. This captures the idea that some events causally precede others, but Lamport’s scalar clock (a single counter per process) cannot distinguish concurrent events – it only guarantees that if one event causally happens-before another, the first’s timestamp is smaller. Vector clocks, introduced independently by Fidge and Mattern, extend this idea by assigning each process a vector of counters~\cite{fidge1988timestamps,mattern1989virtual}. By comparing vectors, one can detect concurrent events and thus achieve finer-grained ordering than Lamport clocks. In essence, vector clocks record causal histories that Lamport clocks compress into a single dimension, enabling a more exact tracking of partial order relationships.
+
+\section{Mathematical Model and Notation}
+
+We follow the standard definitions of causality in distributed executions~\cite{lamport1978time,fidge1988timestamps,mattern1989virtual}. Formally, the \emph{happens-before} relation ($\to$) is a transitive, irreflexive partial order on events. Intuitively, $e_1 \to e_2$ if event $e_1$ causally influences event $e_2$—for example, $e_1$ occurred in the same process before $e_2$, or $e_1$ was the send of a message that $e_2$ receives. If neither $e_1 \to e_2$ nor $e_2 \to e_1$, then the events are concurrent (denoted $e_1 \parallel e_2$).
+
+A vector clock captures this partial order by assigning each process its own logical counter. Formally, let $Ide$ be the set of actor identifiers and $\mathbb{N}$ the natural numbers. A vector clock is a function $C: Ide \to \mathbb{N}$, with missing entries interpreted as 0. The vector clock for actor $i$, $C(i)$, represents how many events $i$ has performed or seen.
+
+Given two vector clocks $C$ and $D$, we write $C \preceq D$ if $\forall i \in Ide,\; C(i) \le D(i)$. We write $C \prec D$ if $C \preceq D$ and $C \ne D$, and $C \parallel D$ if neither $C \preceq D$ nor $D \preceq C$. The join (merge) is defined pointwise: $(C \sqcup D)(i) = \max(C(i), D(i))$. The set of clocks with $\preceq$ and $\sqcup$ forms a join-semilattice~\cite{shapiro2011conflict}, ensuring monotonicity and idempotence for merges.
+
+\section{Our Approach in Athena}
+
+We model clocks as finite maps from identifiers to natural numbers (\texttt{Clock = FMap.Map Ide N}), and registries as maps from identifiers to clocks.
+
+\subsection*{Snippet 3.1: Tick}
+\begin{lstlisting}[language=Athena,style=athena]
+define (clock-tick clock actor) :=
+  (clock-set clock actor (S (clock-get clock actor)))
+\end{lstlisting}
+
+\subsection*{Snippet 3.2: Join}
+\begin{lstlisting}[language=Athena,style=athena]
+define (clock-join c1 c2) :=
+  match c1 {
+    FMap.empty-map => c2
+  | (FMap.update (pair id value) rest) =>
+      (clock-join rest 
+                 (clock-set c2 id (max value (clock-get c2 id))))
+  | _ => c2
+  }
+\end{lstlisting}
+
+\subsection*{Snippet 3.3: Comparison}
+\begin{lstlisting}[language=Athena,style=athena]
+define (clock-leq c1 c2) :=
+  match c1 {
+    FMap.empty-map => true
+  | (FMap.update (pair id val) rest) =>
+      if (val <= (clock-get c2 id))
+         (clock-leq rest c2)
+         false
+  | _ => true
+  }
+\end{lstlisting}
+
+\subsection*{Snippet 3.4: Registry Lookup}
+\begin{lstlisting}[language=Athena,style=athena]
+define (registry-get registry actor) :=
+  match registry {
+    FMap.empty-map => clock-empty
+  | (FMap.update (pair id clock) rest) =>
+      if (equal? id actor)
+         clock
+         (registry-get rest actor)
+  | _ => clock-empty
+  }
+\end{lstlisting}
+
+\section{Conclusion}
+
+Vector clocks capture causality precisely and support deterministic convergence. Their semilattice properties ensure safe merges. The Backbone (Chapter~\ref{chap:backbone}) builds on these definitions to enforce causal consistency in replicated CRDTs.
+
+\endinput

@@ -115,8 +115,3 @@ module Payload {
     define Idempotent := (forall s1 . (merge s1 s1) = s1)
   }
 } 
-(print "\n[OK] Payload Framework loaded\n")
-(print "     - Generic over CRDT operations (merge, initial, apply-update)\n")
-(print "     - Provides: init, reduce, reduce*, enqueue, broadcast, merge-states\n")
-(print "     - broadcast: Simple message broadcasting (no clocks)\n")
-(print "     - Each CRDT spec passes its operations as parameters\n")

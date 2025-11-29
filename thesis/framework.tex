@@ -1,0 +1,229 @@
+% $Id: framework.tex 1784 2012-04-27 23:29:31Z  $
+% !TEX root = main.tex
+
+\chapter{Framework Architecture}\label{chap:framework}
+
+\section{Overview of the Layered Architecture}
+
+\begin{figure}[b!]
+  \centering
+  \begin{tikzpicture}[
+    layer/.style={
+      rectangle,
+      draw,
+      rounded corners,
+      minimum width=4.5cm,
+      minimum height=0.9cm,
+      font=\small,
+      align=center
+    },
+    label/.style={
+      font=\small,
+      align=center
+    },
+    arrow/.style={
+      -{Latex[length=3pt]},
+      thick,
+      line width=1.5pt
+    },
+    dashed/.style={
+      -{Latex[length=3pt]},
+      thick,
+      line width=1.5pt,
+      dashed
+    }
+  ]
+  
+  % Theory layer (foundation)
+  \node[layer, fill=blue!15] (theory) at (0, 4) {
+    \textbf{Theory Layer}\\
+    Semilattice axioms, convergence
+  };
+  
+  % Payload layer
+  \node[layer, fill=green!15] (payload) at (0, 2.5) {
+    \textbf{Payload Layer}\\
+    State merge, monotonic updates
+  };
+  
+  % Backbone layer
+  \node[layer, fill=yellow!15] (backbone) at (0, 1) {
+    \textbf{Backbone Layer}\\
+    Causal delivery, vector clocks
+  };
+  
+  % Concrete implementations
+  \node[layer, fill=orange!15] (impl) at (0, -0.5) {
+    \textbf{Concrete CRDTs}\\
+    GCounter, GSet, PN-Counter, \ldots
+  };
+  
+  % Side annotations
+  \node[label, anchor=east] at (-2.5, 4) {\small Mathematical\\Foundation};
+  \node[label, anchor=east] at (-2.5, 2.5) {\small Generic CRDT\\Semantics};
+  \node[label, anchor=east] at (-2.5, 1) {\small Replication\\Protocol};
+  \node[label, anchor=east] at (-2.5, -0.5) {\small Application\\Layer};
+  
+  % Vertical composition arrows
+  \draw[arrow] (theory.south) -- (payload.north);
+  \draw[arrow] (payload.south) -- (backbone.north);
+  \draw[arrow] (backbone.south) -- (impl.north);
+  
+  % Side annotations for data/proofs flow
+  \node[label, anchor=west, font=\tiny] at (2.5, 3.3) {Axioms enable\\proof reuse};
+  \node[label, anchor=west, font=\tiny] at (2.5, 1.8) {Generic operations\\parametric types};
+  \node[label, anchor=west, font=\tiny] at (2.5, 0.3) {Adapters inherit\\axiom proofs};
+  \node[label, anchor=west, font=\tiny] at (2.5, -1.2) {Instantiation};
+  
+  \end{tikzpicture}
+  \caption{Layered framework architecture showing composition of theory, payload, backbone, and concrete implementations. Each layer inherits correctness guarantees from the layer below through the theory/adapter pattern. Axioms proven in the Theory layer are reused by all upper layers.}
+  \label{fig:layered-architecture}
+\end{figure}
+
+The verification framework is organized as a stack of four layers, as illustrated in Figure~\ref{fig:layered-architecture}: the Theory layer as the base, the Payload layer above of it, the Backbone layer next, and concrete CRDT implementations at the top. Each layer builds the abstractions of the layer below it, maintaining a clear separation of purposes that isolates algebraic correctness, state semantics, replication methods and specific logic into separate modules. This modularity enables extensibility and facilitates reasoning: each layer can be specified and verified in isolation, then composed to obtain full end-to-end guarantees. Section~\ref{sec:theory-layer} covers the foundational theory module, Section~\ref{sec:framework-payload} describes the payload semantics, Section~\ref{sec:framework-backbone} discusses the backbone for causal consistency, and Section~\ref{sec:crdt-adapters} explains how concrete CRDT implementations are connected using adapters.
+
+
+
+\section{Theory Layer: \texttt{SemilatticeTheory} and Abstract CRDT}
+\label{sec:theory-layer}
+
+The foundation of the framework is a formal semilattice theory (developed in Chapter~\ref{chap:theory}) that captures the algebraic conditions for convergence using five axioms: commutativity, associativity, and idempotence of merge; existence of an identity element; and monotonicity of updates. These axioms guarantee Strong Eventual Consistency (SEC). The Theory layer provides a mathematical foundation that all CRDT instances share: key convergence theorems are proven once at the abstract level, and each concrete CRDT can inherit these theorems by showing that its state and operations instantiate the Theory layer's axioms. This \emph{theory/adapter pattern} means each CRDT needs only provide a small proof (via an adapter) that the theory's conditions hold, rather than reproving convergence from scratch.
+
+The foundation also includes utilities that support the upper layers: library modules for finite maps (to represent mappings from replica identifiers to states or timestamps), multisets (to represent network message buffers), and a formalisation of vector clocks (finitely supported maps from replica IDs to counters).
+
+\section{Payload Layer: State-Based Semantics}
+\label{sec:framework-payload}
+
+The Payload layer implements the core semantics of state-based CRDTs on top of the abstract theory. This layer is supported by the \texttt{PayloadFramework} module which defines how CRDT states are maintained and how they evolve through message passing. The payload framework remains parametric over the actual CRDT state and update types: it assumes nothing about the concrete data structure beyond the semilattice properties ensured by the Theory layer. Instead, it provides a generic execution model that any semilattice-based CRDT can work with.
+
+\subsection{Payload Semantics}
+
+The Payload layer implements state-based CRDT semantics using the semilattice model from Chapter~\ref{chap:theory}. CRDT states live in such lattices, and updates must be monotonic with respect to the lattice order, ensuring SEC. Refer to Chapter~\ref{chap:theory} for the formal development of semilattice axioms and convergence guarantees.
+
+\subsection{The \texttt{PayloadFramework} Module}
+
+The \texttt{PayloadFramework} module declares two domains, \texttt{State} and \texttt{Update}, representing the type of the CRDT's state and update respectively. It then introduces the merge function \texttt{merge}, the order relation \texttt{leq}, and the update function \texttt{apply}, together with axioms capturing the semilattice and monotonicity requirements. Listing~\ref{lst:payloadframework-code} presents this specification:
+
+\AthenaCode{lst:payloadframework-code}{Abstract specification in \texttt{PayloadFramework}}
+\begin{lstlisting}[language=Athena,style=athena,label={lst:payloadframework-code},caption={PayloadFramework: Abstract specification}]
+module CRDTSpec {
+  domain (State T)
+  domain (Value V)
+
+  declare merge: (T) [T T] -> T
+  declare initial: (T) [] -> T  
+  declare apply-update: (T, V) [T V] -> T
+  
+  define Merge-Commutative := (forall s1 s2 . (merge s1 s2) = (merge s2 s1))
+  define Merge-Associative := (forall s1 s2 s3 . (merge (merge s1 s2) s3) = (merge s1 (merge s2 s3)))
+  define Merge-Idempotent := (forall s . (merge s s) = s)
+  define Initial-Left-Identity := (forall s . (merge initial s) = s)
+  define Initial-Right-Identity := (forall s . (merge s initial) = s)
+  define Update-Monotonic := (forall s v . (merge s (apply-update s v)) = (apply-update s v))
+}
+\end{lstlisting}
+
+The definition states that \texttt{merge} is a commutative, associative, idempotent operation with \texttt{leq} as the defined order. The axiom \texttt{update-monotone} requires that applying an update never decreases the state. Together, these conditions ensure that the state space forms a join-semilattice and that \texttt{apply} is monotonic. Shapiro \emph{et~al.}~\cite{shapiro2011conflict} proved that any state-based CRDT satisfying these axioms is strongly eventually consistent.
+
+\subsection{Payload Instantiation and Message Processing}
+
+The \texttt{Payload} module provides a wrapper for instantiating the abstract \texttt{PayloadFramework}. A payload instance stores the initial state, and two abstract operations \texttt{payload-step} and \texttt{payload-join} must be defined for that payload. A configuration contains a map from actor identifiers to their local states and a multiset of pending messages. The core operations are:
+
+\paragraph{Message reduction.}  The \texttt{reduce} function models the delivery of a single message. If the message network is empty, the configuration is returned unchanged. Otherwise, one message is removed from the multiset, the payload is applied to the current state and the state map is updated. Listing~\ref{lst:payload-reduce} implements this operation in the Payload module:
+\begin{lstlisting}[language=Athena,style=athena,label={lst:payload-reduce},caption={Message reduction in PayloadFramework}]
+define (reduce ops cfg) :=
+  match cfg {
+    (Payload.kfg actors MSet.null) => cfg
+  | (Payload.kfg actors (MSet.insert (msg id payload meta) rest)) =>
+      match (map-lookup actors id) {
+        NONE => (Payload.kfg actors rest)
+      | (SOME current) =>
+          (Payload.kfg (FMap.update
+                          (pair id
+                            (payload-apply ops payload current))
+                          actors)
+                       rest)}
+  }
+\end{lstlisting}
+
+The payload layer ensures that merges are always commutative and idempotent. Replicas that receive the same set of updates in any order will converge to the same state.
+
+\section{Backbone Layer: Causal Metadata and Replication}
+\label{sec:framework-backbone}
+
+While the payload layer works for purely state-based CRDTs, many CRDT designs require tracking causal ordering. The Backbone layer extends the framework with a replication protocol using causal metadata via vector clocks. A vector clock $C: Ide \to \mathbb{N}$ maps replica identifiers to counters. Two clocks are ordered $C \preceq D$ if $C(i) \leq D(i)$ for all $i$. The join operation $(C \sqcup D)(i) = \max(C(i), D(i))$ forms a semilattice.
+
+Concretely, vector clocks are formalized in Athena as finite maps from replica identifiers to natural numbers, as shown in Listing~\ref{lst:vector-clock-def}:
+
+\begin{lstlisting}[language=Athena,style=athena,label={lst:vector-clock-def},caption={Vector clock definition: finitely-supported map with pointwise join}]
+define-sort Clock := (FMap.Map Ide N)
+
+define (clock-leq c1:Clock c2:Clock) :=
+  (forall actor:Ide .
+    (N.<= (FMap.lookup c1 actor) (FMap.lookup c2 actor)))
+
+define (clock-join c1:Clock c2:Clock) :=
+  (FMap.map-merge N.Max c1 c2)
+
+\end{lstlisting}
+
+The \texttt{CRDTBackbone} module extends payload semantics with vector clock semantics. A configuration is equipped with a clock registry in addition to the state map and message buffer. Listing~\ref{lst:backbone-config-type} shows the configuration datatype:
+
+\AthenaCode{lst:backbone-config-type}{Configuration datatype}
+\begin{lstlisting}[language=Athena,style=athena,label={lst:backbone-config-type},caption={Configuration datatype for CRDTBackbone}]
+datatype (Configuration State Value) :=
+  (kfg astates:(FMap.Map Ide State)
+       clocks:Registry
+       net:(MSet.MSet (Message Value Clock)))
+\end{lstlisting}
+
+The helper functions select the appropriate fields without exposing the complete structure internally. Listing~\ref{lst:backbone-accessors} shows these accessors:
+
+\begin{lstlisting}[language=Athena,style=athena,label={lst:backbone-accessors},caption={Backbone configuration accessors: encapsulating internal structure}]
+# Configuration accessors - encapsulate fields without exposing structure
+define (get-cfg-states cfg) :=
+  match cfg {
+    (kfg states _ _) => states
+  | _ => FMap.empty-map 
+  }
+define (get-cfg-clocks cfg) :=
+  match cfg {
+    (kfg _ clks _) => clks
+  | _ => registry-empty 
+  }
+\end{lstlisting}
+
+The helper functions select the appropriate fields without exposing the complete structure internally.
+
+\subsection{Clock Management and Message Delivery}
+
+When a replica performs a local update, its vector clock advances. Listing~\ref{lst:backbone-tick} defines the function \texttt{cfg-tick}, which returns a new configuration with the caller's clock incremented accordingly but with the state and network unchanged:
+
+\AthenaCode{lst:backbone-tick}{Updating vector clocks}
+\begin{lstlisting}[language=Athena,style=athena,label={lst:backbone-tick},caption={Updating vector clocks: cfg-tick function}]
+define (cfg-tick cfg actor) :=
+  (Backbone.kfg (get-cfg-states cfg)
+                (registry-tick (get-cfg-clocks cfg) actor)
+                (get-cfg-net cfg))
+\end{lstlisting}
+
+Message delivery combines payload merge with clock merge: when a message with timestamp $clk$ arrives at replica $i$, the framework merges the payload into local state and performs pointwise comparison to the clock with $clk$.
+
+\subsection{Composition of State and Causality}
+
+The Backbone layer leverages the Theory layer by observing that vector clocks form a semilattice as well. The backbone combines the clock lattice with the payload's state lattice. We effectively work in the product lattice $S \times VC$: an element of the product is a pair $(s, v)$ of a payload state and a vector clock. The join is defined as:
+\[
+  (s_1, v_1)\sqcup(s_2, v_2) = (s_1\sqcup_S s_2, v_1\sqcup_{VC} v_2),
+\]
+that is, the payload states are joined by their $\sqcup$ and the clocks by pointwise maximum. This product construction is again a join-semilattice (it inherits ACI properties from each component). As a result, the entire backbone configuration space still satisfies the convergence axioms. Despite the added complexity of tracking clocks, the backbone layer's operations preserve the fundamental algebraic structure needed for SEC.
+
+\section{CRDT Adapters and Instantiation}
+\label{sec:crdt-adapters}
+
+The final layer of the architecture is where concrete CRDT implementations come into play. Instead of building each CRDT from scratch, the framework uses an adapter pattern to instantiate the generic payload/backbone tools with the details of a particular CRDT. A CRDT adapter is a  module that connects a CRDT's native state and operations to the interfaces expected by the Payload (and optionally Backbone) framework.
+
+Creating a new CRDT involves defining state and update types, implementing merge and apply functions, and proving the five semilattice axioms (A1--A5 from Chapter~\ref{chap:theory}). These proofs are typically brief, reducing to algebraic properties of the chosen data types (e.g., GCounter proofs reduce to properties of $\max$). Once proven, the framework automatically guarantees SEC via the theory/adapter pattern, eliminating the need to re-prove convergence for each CRDT.
+
+Every CRDT has a state type, merge operation, update function, and initial state. This connection enables proof reuse and eases the addition of new CRDTs. Product constructions inherit axiom proofs automatically. Because the framework is implemented in Athena, specifications are executable: the same adapter used in proofs can generate runnable instances for testing and demonstration. See Chapter~\ref{chap:implementations} for concrete examples.
+
+\endinput

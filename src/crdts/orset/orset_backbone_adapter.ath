@@ -86,20 +86,3 @@ module ORSetAdapter {
   }
 }
 
-(print "\n=== OR-Set Backbone Adapter ===\n")
-(print "[OK] Adapter connects ORSetSpec to Backbone\n")
-(print "[OK] Operations passed to backbone:\n")
-(print "     - merge-fn = orset-merge (union of sets)\n")
-(print "     - initial = orset-initial (empty sets)\n")
-(print "     - apply-fn = orset-apply-update (add tag or tombstone)\n")
-(print "\n[OK] Generic backbone operations used:\n")
-(print "     - update-local: Apply add/remove with clock tick\n")
-(print "     - broadcast-to: Send operation with causal metadata\n")
-(print "     - query-state: Check membership or get state\n")
-(print "     - reduce/reduce*: Deliver messages with causal ordering\n")
-(print "\n[OK] Proved semilattice properties: commutative, associative, idempotent\n")
-(print "\n[SUCCESS] OR-Set ready for causal distributed execution!\n")
-(print "[KEY DIFFERENCE FROM 2P-SET]:\n")
-(print "     - 2P-Set: Payload (no clocks) => can't re-add\n")
-(print "     - OR-Set: Backbone (vector clocks) => re-add enabled\n")
-(print "     - Demonstrates why causal CRDTs need backbone infrastructure\n")

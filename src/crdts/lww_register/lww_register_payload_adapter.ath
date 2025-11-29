@@ -48,20 +48,3 @@ module LWWRegisterAdapter {
   define (lww-merge-states s1:LWWState s2:LWWState) :=
     (lww-merge s1 s2)
 }
-
-(print "\n=== LWW-Register Payload Adapter (Enhanced) ===\n")
-(print "[OK] Adapter connects LWWRegisterSpec to Backbone\n")
-(print "[OK] Operations passed to backbone:\n")
-(print "     - merge-fn = lww-merge\n")
-(print "     - initial = lww-initial\n")
-(print "     - apply-fn = lww-apply-update\n")
-(print "\n[OK] Adapter functions (using generic backbone operations):\n")
-(print "     - lww-init: Uses init-with-clocks\n")
-(print "     - lww-update: Uses update-local (generic parametric op)\n")
-(print "     - lww-broadcast: Uses broadcast-to (generic parametric op)\n")
-(print "     - lww-read-config: Uses query-state (generic parametric op)\n")
-(print "\n[OK] DEMONSTRATES: Ch14 adapter pattern\n")
-(print "     - CRDT-specific functions passed as parameters\n")
-(print "     - Backbone provides generic infrastructure\n")
-(print "     - No manual state/clock manipulation needed\n")
-(print "\n[SUCCESS] LWW-Register adapter complete (refactored to use backbone generics)!\n")

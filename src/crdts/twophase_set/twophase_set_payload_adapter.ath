@@ -38,8 +38,3 @@ module TwoPhaseSetAdapter {
                = s  [TwoPhaseSetSpec.Theory.merge-idempotent-holds]])
   }
 } 
-(print "\n=== 2P-Set Payload Adapter ===\n")
-(print "[OK] Operations from TwoPhaseSetSpec: tps-merge, tps-initial, tps-apply-update\n")
-(print "[OK] Unified payload functions: tps-init, tps-reduce, tps-merge-states\n")
-(print "[OK] Proved semilattice properties: commutative, associative, idempotent\n")
-(print "\n[SUCCESS] 2P-Set adapter complete!\n")

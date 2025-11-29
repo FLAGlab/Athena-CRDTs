@@ -9,53 +9,43 @@ open Payload
 (print "========================================\n\n")
 
 # Step 1: Initialize configuration
-(print "[Step 1] Initialize configuration with actors: a, b, c\n")
-define actors := ('a :: 'b :: 'c :: nil)
+(print "[Step 1] Initialize configuration with replicas: r1, r2, r3\n")
+define actors := ('r1 :: 'r2 :: 'r3 :: nil)
 define cfg0 := (tps-init actors)
 
-# Step 2: Actor 'a adds element x - broadcast to self
-(print "[Step 2] Actor 'a adds element x\n")
-define cfg1 := (tps-broadcast cfg0 ('a :: nil) (TwoPhaseSetSpec.add 'x))
+# Step 2: Replica r1 adds element x - broadcast to self
+(print "[Step 2] Replica r1 adds element x\n")
+define cfg1 := (tps-broadcast cfg0 ('r1 :: nil) (TwoPhaseSetSpec.add 'x))
 
-# Step 3: Deliver to 'a
-(print "[Step 3] Deliver to 'a -> state: ({x}, {})\n")
+# Step 3: Deliver to r1
+(print "[Step 3] Deliver to r1 -> state: ({x}, {})\n")
 define cfg2 := (tps-reduce cfg1)
 
-# Step 4: Actor 'b adds element y - broadcast to self
-(print "[Step 4] Actor 'b adds element y\n")
-define cfg3 := (tps-broadcast cfg2 ('b :: nil) (TwoPhaseSetSpec.add 'y))
+# Step 4: Replica r2 adds element y - broadcast to self
+(print "[Step 4] Replica r2 adds element y\n")
+define cfg3 := (tps-broadcast cfg2 ('r2 :: nil) (TwoPhaseSetSpec.add 'y))
 
-# Step 5: Deliver to 'b
-(print "[Step 5] Deliver to 'b -> state: ({y}, {})\n")
+# Step 5: Deliver to r2
+(print "[Step 5] Deliver to r2 -> state: ({y}, {})\n")
 define cfg4 := (tps-reduce cfg3)
 
-# Step 6: Actor 'c removes element x (can only remove if previously added) - broadcast to self
-(print "[Step 6] Actor 'c removes element x\n")
-define cfg5 := (tps-broadcast cfg4 ('c :: nil) (TwoPhaseSetSpec.remove 'x))
+# Step 6: Replica r3 removes element x (can only remove if previously added) - broadcast to self
+(print "[Step 6] Replica r3 removes element x\n")
+define cfg5 := (tps-broadcast cfg4 ('r3 :: nil) (TwoPhaseSetSpec.remove 'x))
 
-# Step 7: Deliver to 'c
-(print "[Step 7] Deliver to 'c -> state: ({}, {x})\n")
+# Step 7: Deliver to r3
+(print "[Step 7] Deliver to r3 -> state: ({}, {x})\n")
 define cfg6 := (tps-reduce cfg5)
 
-# Step 8: Actor 'a adds element z - broadcast to self
-(print "[Step 8] Actor 'a adds element z\n")
-define cfg7 := (tps-broadcast cfg6 ('a :: nil) (TwoPhaseSetSpec.add 'z))
+# Step 8: Replica r1 adds element z - broadcast to self
+(print "[Step 8] Replica r1 adds element z\n")
+define cfg7 := (tps-broadcast cfg6 ('r1 :: nil) (TwoPhaseSetSpec.add 'z))
 
-# Step 9: Deliver to 'a
-(print "[Step 9] Deliver to 'a -> state: ({x, z}, {x})\n")
+# Step 9: Deliver to r1
+(print "[Step 9] Deliver to r1 -> state: ({x, z}, {x})\n")
 define cfg8 := (tps-reduce cfg7)
 
 # Final reduction to merge all states
 (print "\n[Final] Reduce all pending messages\n")
 define cfg-final := (tps-reduce* cfg8)
 
-# Display final state across all actors
-(print "\nFinal state structure:\n")
-(print "- Actor 'a: added set + removed set\n")
-(print "- Actor 'b: added set + removed set\n")
-(print "- Actor 'c: added set + removed set\n")
-(print "\nDemo completed successfully!\n")
-(print "2P-Set property: Once removed, element cannot be re-added\n")
-(print "Final visible elements = added \\ removed\n")
-(print "Expected: {y, z} (x is removed, cannot reappear)\n")
-(print "========================================\n")

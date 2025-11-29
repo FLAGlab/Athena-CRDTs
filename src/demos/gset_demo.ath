@@ -6,65 +6,59 @@ open Payload
 (print "GSet Demo - Unified Framework\n")
 (print "========================================\n\n")
 
-# Create initial configuration with 3 actors
-define actors := ('a :: 'b :: 'c :: nil)
+# Create initial configuration with 3 replicas
+define actors := ('r1 :: 'r2 :: 'r3 :: nil)
 define cfg0 := (gs-init actors)
 
-(print "[Step 1] Initialize configuration with actors: a, b, c\n")
+(print "[Step 1] Initialize configuration with replicas: r1, r2, r3\n")
 (print "Initial state:\n")
 (eval (am cfg0))
 (print "\n")
 
-# Actor 'a adds element 'x - broadcast to self
-define cfg1 := (gs-broadcast cfg0 ('a :: nil) (GSetSpec.add 'x))
+# Replica r1 adds element 'x - broadcast to self
+define cfg1 := (gs-broadcast cfg0 ('r1 :: nil) (GSetSpec.add 'x))
 
-(print "[Step 2] Actor 'a adds element 'x\n")
+(print "[Step 2] Replica r1 adds element 'x\n")
 
 # Deliver the message
 define cfg2 := (gs-reduce cfg1)
 
-(print "[Step 3] Deliver message to 'a\n")
+(print "[Step 3] Deliver message to r1\n")
 (print "State after delivery:\n")
 (eval (am cfg2))
 (print "\n")
 
-# Actor 'b adds element 'y - broadcast to self
-define cfg3 := (gs-broadcast cfg2 ('b :: nil) (GSetSpec.add 'y))
+# Replica r2 adds element 'y - broadcast to self
+define cfg3 := (gs-broadcast cfg2 ('r2 :: nil) (GSetSpec.add 'y))
 
-(print "[Step 4] Actor 'b adds element 'y\n")
+(print "[Step 4] Replica r2 adds element 'y\n")
 
 # Deliver
 define cfg4 := (gs-reduce cfg3)
 
-(print "[Step 5] Deliver message to 'b\n")
+(print "[Step 5] Deliver message to r2\n")
 (print "State after delivery:\n")
 (eval (am cfg4))
 (print "\n")
 
-# Actor 'c adds element 'z - broadcast to self
-define cfg5 := (gs-broadcast cfg4 ('c :: nil) (GSetSpec.add 'z))
+# Replica r3 adds element 'z - broadcast to self
+define cfg5 := (gs-broadcast cfg4 ('r3 :: nil) (GSetSpec.add 'z))
 
-(print "[Step 6] Actor 'c adds element 'z\n")
+(print "[Step 6] Replica r3 adds element 'z\n")
 
 # Deliver
 define cfg6 := (gs-reduce cfg5)
 
-(print "[Step 7] Deliver message to 'c\n")
+(print "[Step 7] Deliver message to r3\n")
 
-# Actor 'a adds element 'y (duplicate) - broadcast to self
-define cfg7 := (gs-broadcast cfg6 ('a :: nil) (GSetSpec.add 'y))
+# Replica r1 adds element 'y (duplicate) - broadcast to self
+define cfg7 := (gs-broadcast cfg6 ('r1 :: nil) (GSetSpec.add 'y))
 
-(print "[Step 8] Actor 'a adds element 'y (duplicate)\n")
+(print "[Step 8] Replica r1 adds element 'y (duplicate)\n")
 
 # Deliver
 define cfg-final := (gs-reduce cfg7)
 
-(print "[Step 9] Deliver message to 'a\n")
+(print "[Step 9] Deliver message to r1\n")
 (print "Final state:\n")
 (eval (am cfg-final))
-(print "\n")
-
-(print "========================================\n")
-(print "Demo completed successfully!\n")
-(print "Elements: {x, y, z}\n")
-(print "========================================\n")

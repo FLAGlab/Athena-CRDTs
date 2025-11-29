@@ -1,9 +1,10 @@
 load "../../framework/crdt_specification"
 load "../../framework/vector_clocks"
-load "../utils/pair"
-load "../utils/sets-notp"
+load "../../framework/utils/pair"
+load "../../framework/utils/sets-notp"
 
 module ORSetSpec {
+  open Set
   # OR-Set (Observed-Remove Set): Causal CRDT with add-wins semantics
   #
   # KEY INSIGHT: Unlike 2P-Set (which can't re-add removed elements),
@@ -72,6 +73,7 @@ module ORSetSpec {
             | false => (tags-for-element element rest)
             }
         }
+    | _ => tag-set
     }
   
   # Merge: Union of both add and remove sets (semilattice join)
@@ -89,7 +91,7 @@ module ORSetSpec {
   # Actor-id passed as parameter (like LWW) for unique tag generation
   define (orset-apply-update state:ORSetState operation:ORSetOp actor:ActorId) :=
     match operation {
-      (ORSetOp.add element) =>
+      (ORSetSpec.add element) =>
         # Add operation generates a NEW unique tag
         # Uses actor-id from the operation for uniqueness
         let {adds := (first state);
@@ -100,7 +102,7 @@ module ORSetSpec {
              new-tag := (tag element (pr zero actor));
              new-adds := (Set.insert new-tag adds)}
             (pr new-adds removes)
-    | (ORSetOp.remove element) =>
+    | (ORSetSpec.remove element) =>
         # Remove operation: tombstone all observed tags for this element
         let {adds := (first state);
              removes := (second state);
@@ -129,6 +131,56 @@ module ORSetSpec {
       # This is a simplified version - just returns the state
       # In a full implementation, we'd extract unique elements from (adds \ removes)
       state
+  
+  # Merge keeps existing add tags (monotonic first component)
+  conclude merge-preserves-adds :=
+    (forall ?s1:ORSetState ?s2:ORSetState .
+      (Set.subset (first ?s1) (first (orset-merge ?s1 ?s2))))
+    pick-any s1:ORSetState s2:ORSetState
+      let {adds1 := (first s1);
+           adds2 := (first s2);
+           removes1 := (second s1);
+           removes2 := (second s2);
+           merged-adds := (Set.union adds1 adds2);
+           merged-removes := (Set.union removes1 removes2);
+           first-eq := (!chain [(first (orset-merge s1 s2))
+                              = (first (pr merged-adds merged-removes))
+                              = merged-adds                                   [Pr.pr-first]]);
+           subset-proof :=
+             (pick-any t:Tag
+               assume hyp := (t Set.in adds1)
+                 (!chain-> [hyp
+                        ==> (t Set.in adds1 | t Set.in adds2)               [alternate]
+                        ==> (t Set.in merged-adds)                           [Set.UC]
+                        ==> (t Set.in (first (pr merged-adds merged-removes))) [Pr.pr-first]
+                        ==> (t Set.in (first (orset-merge s1 s2)))           [first-eq]]))}
+        (!chain-> [subset-proof
+               ==> (adds1 Set.subset (first (orset-merge s1 s2)))            [Set.SC]])
+  
+  # Removing an element tombstones all currently observed tags for it
+  conclude remove-tombstones-all-tags :=
+    (forall ?e:Ide ?s:ORSetState ?actor:ActorId .
+      (Set.subset (tags-for-element ?e (first ?s))
+                  (second (orset-apply-update ?s (ORSetSpec.remove ?e) ?actor))))
+    pick-any e:Ide s:ORSetState actor:ActorId
+      let {adds := (first s);
+           removes := (second s);
+           element-tags := (tags-for-element e adds);
+           second-eq := (!chain [(second (orset-apply-update s (ORSetSpec.remove e) actor))
+                               = (second (pr adds (Set.union removes element-tags)))
+                               = (Set.union removes element-tags)               [Pr.pr-second]
+                               = (Set.union element-tags removes)               [Set.union-commutes]]);
+           subset-proof :=
+             (pick-any t:Tag
+               assume hyp := (t Set.in element-tags)
+                 (!chain-> [hyp
+                        ==> (t Set.in element-tags | t Set.in removes)        [alternate]
+                        ==> (t Set.in (Set.union element-tags removes))        [Set.UC]
+                        ==> (t Set.in (second (orset-apply-update s (ORSetSpec.remove e) actor)))
+                            [second-eq]]))}
+        (!chain-> [subset-proof
+               ==> (element-tags Set.subset (second (orset-apply-update s (ORSetSpec.remove e) actor)))
+                   [Set.SC]])
   
   # === Theory Module: Prove Semilattice Properties ===
   
@@ -188,23 +240,3 @@ module ORSetSpec {
   }
 }
 
-(print "\n=== OR-Set Specification (Causal CRDT) ===\n")
-(print "[OK] Operations defined ONCE:\n")
-(print "     - orset-merge: Union of add/remove sets (commutative, associative, idempotent)\n")
-(print "     - orset-initial: Empty sets\n")
-(print "     - orset-apply-update: Add (new tag) or Remove (tombstone observed tags)\n")
-(print "     - orset-contains: Check membership (tags in adds \\ removes)\n")
-(print "\n[OK] Key Properties:\n")
-(print "     - ADD-WINS SEMANTICS: Concurrent add/remove => add wins\n")
-(print "     - UNIQUE TAGS: Each add gets unique (element, id) tag\n")
-(print "     - CAUSAL REMOVES: Remove only affects observed (causally prior) adds\n")
-(print "     - RE-ADD SUPPORT: Unlike 2P-Set, can add element after removal\n")
-(print "\n[OK] Lattice Structure:\n")
-(print "     - Product lattice: (Set<Tag>, Set<Tag>)\n")
-(print "     - Merge = pointwise union (semilattice join)\n")
-(print "     - Monotonic: sets only grow\n")
-(print "\n[OK] Theory: Proved semilattice axioms (commutative, associative, idempotent)\n")
-(print "\n[NOTE] Requires Backbone for:\n")
-(print "     - Vector clocks to generate unique tag IDs\n")
-(print "     - Causal delivery to ensure 'observed' semantics\n")
-(print "     - Differs from 2P-Set which uses Payload (simpler, no re-add)\n")

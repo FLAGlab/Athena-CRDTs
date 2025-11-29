@@ -4,16 +4,19 @@
 
 \chapter{Related work}\label{cha:related-work}
 %\label{cha:relatedwork}
-
-\textbf{Have to do: Add glue text here explaining what this chapter does.}
+This chapter reviews foundational literature on Conflict-Free Replicated Data Types (CRDTs). We begin by outlining the core principles of CRDTs and their role in achieving eventual consistency. The main focus is on formal specification and verification of these data structures. We survey various approaches including manual proof-checking, automated verification engines, and type-system-based methods. By surveying the state-of-the-art, this chapter establishes the context for our work and identifies research gaps that this thesis aims to address.
 
 \section{Conflict‐Free Replicated Data Types and eventual consistency}
 
-To provide context for CRDT verification, we start by reviewing the main ideas related to Conflict‐Free Replicated Data Types (CRDTs) and their role in Eventually Consistent systems. Replication is a typical strategy for achieving high availability and fault tolerance in distributed systems, however maintaining the consistent aspect of replicated data can be expensive. Traditional approaches that require strong consistency rely on global consensus which may create performance conflicts with availability under network partitions \cite{shapiro2011conflict}. The CAP theorem states that a distributed system can not guarantee availability, partition tolerance and strong consistency at the same time, thus systems often weaken consistency in favour of availability and partition tolerance \cite{zeller2014formal}.
+To provide context for CRDT verification, we start by reviewing the main ideas related to CRDTs (CRDTs) and their role in Eventually Consistent systems. Replication is a typical strategy for achieving high availability and fault tolerance in distributed systems, however maintaining the consistent aspect of replicated data can be expensive. Traditional approaches that require strong consistency rely on global consensus which may create performance conflicts with availability under network partitions \cite{shapiro2011conflict}. The CAP theorem states that a distributed system can not guarantee availability, partition tolerance and strong consistency at the same time, thus systems often weaken consistency in favour of availability and partition tolerance \cite{zeller2014formal}.
 
 Shapiro et~al. formalised this trade‐off by introducing the model of \emph{Strong Eventual Consistency} (SEC). In the context of a eventually consistent system, updates when executed at one replica are propagated to other replicas asynchronously, possibly in different orders: once all updates have been distributed, all replicas must converge to the same state \cite{shapiro2011conflict}. Under SEC two properties are required: (1) \emph{eventual delivery} which means every update that is delivered to one specific replica eventually is delivered to all replicas and (2) \emph{convergence}, meaning that replicas that have delivered the same updates eventually reach equivalent states \cite{nieto2022modular}. CRDTs are a class of replicated data structures aimed to satisfy SEC by construction. They mix conflict resolution into the data type itself allowing updates in a concurrent state to be applied locally and merged deterministically without any coordination. Early work observed that both state‐based and operation‐based CRDTs can be specified by algebraic conditions: in \emph{state‐based} CRDTs, the state space is a join‐semilattice and the merge operation computes the least upper bound requiring commutativity, associativity and idempotence \cite{zeller2014formal,shapiro2011conflict}, in \emph{operation‐based} CRDTs, updates (operations) are broadcast in causal order and they have to commute so that replicas that apply the same set of operations reach the same state \cite{nieto2022modular}.
 
-Designing CRDTs that guarantee SEC is non trivial. One of the most simple examples such as grow‐only counter can be specified using per replica counters and merged by taking component-wise maxima \cite{zeller2014formal}. Some other and more complex data types such as sets that support both addition and removal require semantics designed to avoid anomalies like resurrecting deleted elements. This innovative work inspired research on CRDT design and verification. \textbf{This section is missing a clear definition of what is operation-based CRDTs and state-based CRDTs, which will be the focus of this work. But need to add them both and make it clear what the difference is}
+Designing CRDTs that guarantee SEC is non trivial. One of the most simple examples such as grow‐only counter can be specified using per replica counters and merged by taking component-wise maxima \cite{zeller2014formal}. Some other more complex data types such as sets that support both addition and removal require semantics designed to avoid anomalies like resurrecting deleted elements.
+
+\subsection{Classification of CRDTs: State-based and Operation-based Approaches}
+
+CRDTs are classified into two families based on what is replicated: \emph{state-based} and \emph{operation-based} designs. In a \emph{state-based} CRDT, each replica maintains local state and periodically sends it to the rest of the replicas. Merging received state with local state requires a deterministic \emph{merge} function. SEC is guaranteed whenever the state space forms a join-semilattice and the merge function computes the least upper bound, requiring that merge be commutative, associative, and idempotent, and that local updates be monotone (moving state upward in the lattice) \cite{zeller2014formal,shapiro2011conflict}. In an \emph{operation-based} CRDT, replicas broadcast \emph{operations} (or \emph{effectors}) instead of full state. Each update splits into a generator and an effector. SEC requires that effector broadcast be always causal, reliable, and that concurrent effectors commute \cite{shapiro2011conflict,nieto2022modular}. Both approaches rely on algebraic properties to guarantee convergence, but they differ fundamentally: state-based CRDTs assume replicas can exchange full state and require monotonicity at the data-type level, while operation-based CRDTs assume ordered delivery and require operational commutativity.
 
 \section{Formal specification and verification frameworks}
 
@@ -47,15 +50,12 @@ Katara (2022) introduced a novel approach to synthesizing CRDTs using verified l
 
 \subsection{Comparative Analysis: Defining Grammar, Rule Inference, and Formal Verification}
 
-In order to provide a clearer understanding of the landscape of CRDT research, we summarize the state-of-the-art in a \ref{tab:comparison} that highlights the following dimensions for each paper: (1) Definition of CRDT grammar, (2) Inference of rules or operations, (3) Implementation in programming languages, (4) Formal verification of properties, and (5) Byzantine Fault Tolerance (BFT).
-
-\usepackage{tabularx}
-\usepackage{booktabs}
+In order to provide a clearer understanding of the landscape of CRDT research, we summarize the state-of-the-art in Table~\ref{tab:comparison} that highlights the following dimensions for each paper: (1) Definition of CRDT grammar, (2) Inference of rules or operations, (3) Implementation in programming languages, (4) Formal verification of properties, and (5) Byzantine Fault Tolerance (BFT).
 
 \begin{table}[h!]
   \centering
   \small
-  \setlength{\tabcolsep}{4pt}
+  \setlength{\tabcolsep}{1pt}
   \caption{Comparison of CRDT research proposals}
   \label{tab:comparison}
   \begin{tabular}{lccccc}

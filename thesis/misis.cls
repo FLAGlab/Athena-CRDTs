@@ -429,6 +429,33 @@
 
 \newcommand{\scode}[1]{\textrm{\texttt{#1}}}
 \def\sdcode{\lstinline[style=scala]}
+
+% Athena Proof Assistant language definition and styling
+\definecolor{athBg}{HTML}{F7F7F7}
+\definecolor{athRule}{HTML}{B6BCC1}
+\definecolor{athMono}{HTML}{111111}
+
+\lstdefinelanguage{Athena}{
+  morekeywords={load,module,define,define-sort,datatype,match,let,if,then,else,forall,conclude,declare},
+  sensitive=true,
+  morecomment=[l]{\#},
+  morestring=[b]"
+}
+
+\lstdefinestyle{athena}{
+  language=Athena,
+  basicstyle=\ttfamily\small\color{athMono},
+  keywordstyle=\color{athMono},
+  commentstyle=\color{athMono},
+  stringstyle=\color{athMono},
+  numberstyle=\scriptsize\color{athMono},
+  numbers=left, numbersep=8pt,
+  breaklines=true, showstringspaces=false,
+  frame=single, rulecolor=\color{athRule},
+  backgroundcolor=\color{athBg}, tabsize=2, captionpos=b
+}
+
+\newcommand{\AthenaCode}[2]{\lstset{style=athena, label={#1}, caption={#2}}}
  
 
 %    ****************************************
@@ -476,6 +503,7 @@
 
 %% Pictures
 \RequirePackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes,fit,calc,decorations.pathreplacing}
 \RequirePackage{tikz-qtree}
 
 % Comments

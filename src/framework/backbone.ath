@@ -278,14 +278,4 @@ module Backbone {
   define (network cfg) :=
     (get-cfg-net cfg)
 } 
-(print "\n[OK] Backbone Connector loaded\n")
-(print "     - Integrates Payload with causal delivery\n")
-(print "\n[OK] Core operations:\n")
-(print "     - init-with-clocks: Initialize multi-actor configuration\n")
-(print "     - reduce/reduce*: Process messages with causal ordering\n")
-(print "     - merge-configs: Partition healing with state/clock merge\n")
-(print "\n[OK] Generic parametric operations (Ch14 adapter pattern):\n")
-(print "     - update-local: Local update with clock tick (any CRDT)\n")
-(print "     - broadcast-to: Targeted broadcast with clocks (any CRDT)\n")
-(print "     - query-state: Read with transform function (any CRDT)\n")
-(print "\n[OK] Supports: vector clocks, causal ordering, generic CRDT operations\n")
+

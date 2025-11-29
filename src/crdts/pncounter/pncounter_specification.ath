@@ -16,10 +16,14 @@ module PNCounterSpec {
       (inc-pos delta) => (pr (N.+ (first state) delta) (second state))
     | (inc-neg delta) => (pr (first state) (N.+ (second state) delta))
     }
-  assert pnc-merge-is-pointwise-max :=
+  
+  # Prove that pnc-merge expands to its definition
+  conclude pnc-merge-is-pointwise-max :=
     (forall ?x:PNCState ?y:PNCState . 
       (pnc-merge ?x ?y) = (pr (N.Max (first ?x) (first ?y))
                               (N.Max (second ?x) (second ?y))))
+    pick-any x:PNCState y:PNCState
+      (!reflex (pnc-merge x y))
   
   # === CRDT-Specific Behavioral Properties ===
   
@@ -115,18 +119,59 @@ module PNCounterSpec {
       (!chain [(second (pnc-apply-update s (inc-neg d)))
              = (N.+ (second s) d)                          [Pr.pr-second]])
   
+  # === Progress Properties ===
+  
+  # 1. Update Monotonicity: Increments never decrease components
+  conclude increment-pos-monotonic :=
+    (forall ?s:PNCState ?d:N . (first ?s) N.<= (first (pnc-apply-update ?s (inc-pos ?d))))
+    pick-any s:PNCState d:N
+      let {A := (!chain [(first (pnc-apply-update s (inc-pos d)))
+                       = ((first s) N.+ d)   [increment-increases-P]])}
+        (!chain-> [A ==> ((first s) N.<= (first (pnc-apply-update s (inc-pos d)))) [N.Less=.k-Less=]])
+  
+  conclude increment-neg-monotonic :=
+    (forall ?s:PNCState ?d:N . (second ?s) N.<= (second (pnc-apply-update ?s (inc-neg ?d))))
+    pick-any s:PNCState d:N
+      let {A := (!chain [(second (pnc-apply-update s (inc-neg d)))
+                       = ((second s) N.+ d)   [decrement-increases-N]])}
+        (!chain-> [A ==> ((second s) N.<= (second (pnc-apply-update s (inc-neg d)))) [N.Less=.k-Less=]])
+  
+  # 2. Merge Preserves Updates: After update, merging never loses the increment
+  conclude merge-preserves-pos-update :=
+    (forall ?s:PNCState ?s2:PNCState ?d:N .
+      (first (pnc-apply-update ?s (inc-pos ?d))) N.<= 
+      (first (pnc-merge (pnc-apply-update ?s (inc-pos ?d)) ?s2)))
+    pick-any s:PNCState s2:PNCState d:N
+      let {s-updated := (pnc-apply-update s (inc-pos d))}
+        (!uspec (!uspec positive-component-monotonic s-updated) s2)
+  
+  conclude merge-preserves-neg-update :=
+    (forall ?s:PNCState ?s2:PNCState ?d:N .
+      (second (pnc-apply-update ?s (inc-neg ?d))) N.<= 
+      (second (pnc-merge (pnc-apply-update ?s (inc-neg ?d)) ?s2)))
+    pick-any s:PNCState s2:PNCState d:N
+      let {s-updated := (pnc-apply-update s (inc-neg d))}
+        (!uspec (!uspec negative-component-monotonic s-updated) s2)
+
   module Theory {
     # Helper lemmas for pair accessors
-    define first-of-merge := 
+    conclude first-helper := 
       (forall ?s1:PNCState ?s2:PNCState .
         (first (pnc-merge ?s1 ?s2)) = (N.Max (first ?s1) (first ?s2)))
+      pick-any s1:PNCState s2:PNCState
+        (!chain [(first (pnc-merge s1 s2))
+               = (first (pr (N.Max (first s1) (first s2))
+                            (N.Max (second s1) (second s2))))  [pnc-merge-is-pointwise-max]
+               = (N.Max (first s1) (first s2))                [Pr.pr-first]])
     
-    define second-of-merge :=
+    conclude second-helper :=
       (forall ?s1:PNCState ?s2:PNCState .
         (second (pnc-merge ?s1 ?s2)) = (N.Max (second ?s1) (second ?s2)))
-    
-    assert first-helper := first-of-merge
-    assert second-helper := second-of-merge
+      pick-any s1:PNCState s2:PNCState
+        (!chain [(second (pnc-merge s1 s2))
+               = (second (pr (N.Max (first s1) (first s2))
+                             (N.Max (second s1) (second s2)))) [pnc-merge-is-pointwise-max]
+               = (N.Max (second s1) (second s2))               [Pr.pr-second]])
     
     conclude merge-commutative-holds :=
       (forall ?s1:PNCState ?s2:PNCState . 
@@ -203,9 +248,3 @@ module PNCounterSpec {
                = (pnc-merge s1 s2)                  [merge-commutative-holds]])
   }
 } 
-
-(print "\n=== PN-Counter Specification with Theory Refinement ===\n")
-(print "[OK] Operations: merge = pointwise max(pos, neg)\n")
-(print "[OK] Proved ACI properties + derived theorems\n")
-(print "[OK] Absorption, monotone-left, monotone-right proven directly\n")
-(print "[SUCCESS] Theory refinement pattern applied!\n")

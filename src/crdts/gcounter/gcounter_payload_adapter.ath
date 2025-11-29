@@ -42,8 +42,3 @@ module GCounterAdapter {
                = s  [GCounterSpec.Theory.merge-idempotent-holds]])
   }
 } 
-(print "\n=== GCounter Payload Adapter ===\n")
-(print "[OK] Operations from GCounterSpec: gc-merge, gc-initial, gc-apply-update\n")
-(print "[OK] Unified payload functions: gc-init, gc-reduce, gc-merge-states\n")
-(print "[OK] Proved semilattice properties: commutative, associative, idempotent\n")
-(print "\n[SUCCESS] Single source of truth - operations defined once, used everywhere!\n")

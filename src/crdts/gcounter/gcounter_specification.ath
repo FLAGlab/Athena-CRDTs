@@ -123,18 +123,3 @@ module GCounterSpec {
   }
 } 
 
-(print "\n=== GCounter Specification with Theory Refinement ===\n")
-(print "[OK] Operations defined ONCE:\n")
-(print "     merge(x,y) = N.Max(x,y)\n")
-(print "     initial = zero\n")
-(print "     apply-update(s, increment(d)) = s + d\n")
-(print "\n[OK] Theory side:\n")
-(print "     - Proved 5 axioms: ACI + identity\n")
-(print "     - Created theory with make-theory\n")
-(print "     - Adapter connects to SemilatticeTheory\n")
-(print "\n[OK] Inherited theorems (via get-property):\n")
-(print "     - absorption: If x join y = y then y join x = y\n")
-(print "     - monotone-left: x join (x join y) = x join y\n")
-(print "     - monotone-right: y join (x join y) = x join y\n")
-(print "\n[SUCCESS] Theory refinement pattern applied!\n")
-(print "[SUCCESS] Single source of truth - operations defined once, used everywhere!\n")

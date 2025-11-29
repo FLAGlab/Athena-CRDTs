@@ -41,8 +41,3 @@ module GSetAdapter {
                = s  [GSetSpec.Theory.merge-idempotent-holds]])
   }
 } 
-(print "\n=== GSet Payload Adapter ===\n")
-(print "[OK] Operations from GSetSpec: gs-merge, gs-initial, gs-apply-update\n")
-(print "[OK] Unified payload functions: gs-init, gs-reduce, gs-merge-states\n")
-(print "[OK] Proved semilattice properties: commutative, associative, idempotent\n")
-(print "\n[SUCCESS] GSet adapter complete - single source of truth!\n")
