@@ -1,9 +1,0 @@
-load "src/crdts/gcounter_semilattice_adapter.ath"
-load "src/crdts/gset_semilattice_adapter.ath"
-load "src/crdts/2p_set_semilattice_adapter.ath"
-load "src/crdts/pn_counter_semilattice_adapter.ath"
-load "src/crdts/mv_register_semilattice_adapter.ath"
-load "src/crdts/lww_register_semilattice_adapter.ath"
-load "src/crdts/orset_semilattice_adapter.ath"
-
-(print "\n=== All 7 Semilattice Adapters Validated ===")
