@@ -1,0 +1,314 @@
+load "../../framework/vector_clocks"
+load "../../framework/utils/pair"
+load "../../framework/utils/sets-notp"
+
+module ORSetSpec {
+  open Set
+  open VectorClocks.Properties
+  
+  open VectorClocks
+  
+  datatype Tag := (tag tag-element:Ide tag-id:(Pr N Ide))
+  
+  assert tag-dt-axioms := (datatype-axioms "Tag")
+  define [tag-no-conf tag-no-junk] := tag-dt-axioms
+  
+  assert tag-selector-axioms := (selector-axioms "Tag")
+  define [tag-element-selector tag-id-selector] := tag-selector-axioms
+  
+
+  datatype ORSetState := (orset-state Clock (Set.Set Tag) (Set.Set Tag))
+  
+  define-sort ActorId := Ide
+  
+  datatype ORSetOp := 
+    (add Ide)      # Add element
+  | (remove Ide)   # Remove element
+  
+
+
+  define [c c1 c2 a a1 a2 r r1 r2 s s1 s2 s3 e actor tags] :=
+    [?c:Clock ?c1:Clock ?c2:Clock
+     ?a:(Set.Set Tag) ?a1:(Set.Set Tag) ?a2:(Set.Set Tag)
+     ?r:(Set.Set Tag) ?r1:(Set.Set Tag) ?r2:(Set.Set Tag)
+     ?s:ORSetState ?s1:ORSetState ?s2:ORSetState ?s3:ORSetState
+     ?e:Ide
+     ?actor:ActorId
+     ?tags:(Set.Set Tag)]
+  
+
+  declare orset-clock: [ORSetState] -> Clock
+  declare orset-adds: [ORSetState] -> (Set.Set Tag)
+  declare orset-removes: [ORSetState] -> (Set.Set Tag)
+  
+
+  assert* orset-state-axioms :=
+    [((orset-clock (orset-state c a r)) = c)
+     ((orset-adds (orset-state c a r)) = a)
+     ((orset-removes (orset-state c a r)) = r)
+     (s = (orset-state (orset-clock s) (orset-adds s) (orset-removes s)))]
+  
+
+  #Operations
+  
+  # Initial state: empty clock, empty adds and removes sets
+  define orset-initial := (orset-state clock-empty Set.null Set.null)
+  
+  # Helper: Generate unique tag for an element using vector clock
+  define (make-tag element:Ide clock:Clock actor:ActorId) :=
+    let {timestamp := (clock-get clock actor)}
+      (tag element (pr timestamp actor))
+  
+  # Helper: Find all tags for a given element in a set
+  define (tags-for-element element:Ide tag-set:(Set.Set Tag)) :=
+    match tag-set {
+      Set.null => Set.null
+    | (Set.insert t rest) =>
+        match t {
+          (tag e _) =>
+            match (equal? e element) {
+              true => (Set.insert t (tags-for-element element rest))
+            | false => (tags-for-element element rest)
+            }
+        }
+    | _ => tag-set
+    }
+  
+  
+  assert* tags-visible-empty :=
+    [((tags-visible-at e Set.null c) = Set.null)]
+
+  assert* tags-visible-subset :=
+    [(Set.subset (tags-visible-at e tags c) tags)]
+  
+  declare orset-merge: [ORSetState ORSetState] -> ORSetState
+  declare orset-apply-update: [ORSetState ORSetOp ActorId] -> ORSetState
+  
+  assert* orset-merge-def :=
+    [((orset-merge s1 s2) =
+      (orset-state (clock-join (orset-clock s1) (orset-clock s2))
+                   (Set.union (orset-adds s1) (orset-adds s2))
+                   (Set.union (orset-removes s1) (orset-removes s2))))]
+  
+  assert* orset-add-structure :=
+    [((orset-removes (orset-apply-update (orset-state c a r) (add e) actor)) = r)]
+  
+  assert* orset-remove-preserves-adds :=
+    [((orset-adds (orset-apply-update (orset-state c a r) (remove e) actor)) = a)]
+
+  
+  define (orset-contains state:ORSetState element:Ide) :=
+    let {adds := (orset-adds state);
+         removes := (orset-removes state);
+         element-tags := (tags-for-element element adds);
+         visible-tags := (diff element-tags removes)}
+      (non-empty visible-tags)
+  
+  # Helper: Get all visible elements (for display)
+  define (orset-elements state:ORSetState) :=
+    let {adds := (orset-adds state);
+         removes := (orset-removes state)}
+      state
+  
+
+  
+  module Theory {
+    open VectorClocks
+    open VectorClocks.Properties
+
+    conclude first-helper := 
+      (forall c1 c2 a1 a2 r1 r2 .
+        (orset-clock (orset-merge (orset-state c1 a1 r1) 
+                                  (orset-state c2 a2 r2))) = 
+        (clock-join c1 c2))
+      pick-any c1 c2 a1 a2 r1 r2
+        let {s1 := (orset-state c1 a1 r1);
+             s2 := (orset-state c2 a2 r2)}
+          (!chain [(orset-clock (orset-merge s1 s2))
+                 = (orset-clock (orset-state (clock-join (orset-clock s1) (orset-clock s2))
+                                            (Set.union (orset-adds s1) (orset-adds s2))
+                                            (Set.union (orset-removes s1) (orset-removes s2))))
+                   [orset-merge-def]
+                 = (clock-join (orset-clock s1) (orset-clock s2))
+                   [orset-state-axioms]
+                 = (clock-join c1 c2)
+                   [orset-state-axioms]])
+    
+    conclude second-helper :=
+      (forall c1 c2 a1 a2 r1 r2 .
+        (orset-adds (orset-merge (orset-state c1 a1 r1) 
+                                 (orset-state c2 a2 r2))) = 
+        (Set.union a1 a2))
+      pick-any c1 c2 a1 a2 r1 r2
+        let {s1 := (orset-state c1 a1 r1);
+             s2 := (orset-state c2 a2 r2)}
+          (!chain [(orset-adds (orset-merge s1 s2))
+                 = (orset-adds (orset-state (clock-join (orset-clock s1) (orset-clock s2))
+                                           (Set.union (orset-adds s1) (orset-adds s2))
+                                           (Set.union (orset-removes s1) (orset-removes s2))))
+                   [orset-merge-def]
+                 = (Set.union (orset-adds s1) (orset-adds s2))
+                   [orset-state-axioms]
+                 = (Set.union a1 a2)
+                   [orset-state-axioms]])
+    
+    conclude third-helper :=
+      (forall c1 c2 a1 a2 r1 r2 .
+        (orset-removes (orset-merge (orset-state c1 a1 r1) 
+                                    (orset-state c2 a2 r2))) = 
+        (Set.union r1 r2))
+      pick-any c1 c2 a1 a2 r1 r2
+        let {s1 := (orset-state c1 a1 r1);
+             s2 := (orset-state c2 a2 r2)}
+          (!chain [(orset-removes (orset-merge s1 s2))
+                 = (orset-removes (orset-state (clock-join (orset-clock s1) (orset-clock s2))
+                                              (Set.union (orset-adds s1) (orset-adds s2))
+                                              (Set.union (orset-removes s1) (orset-removes s2))))
+                   [orset-merge-def]
+                 = (Set.union (orset-removes s1) (orset-removes s2))
+                   [orset-state-axioms]
+                 = (Set.union r1 r2)
+                   [orset-state-axioms]])
+    
+    conclude merge-commutative :=
+      (forall s1 s2 .
+        (orset-merge s1 s2) = (orset-merge s2 s1))
+      pick-any s1:ORSetState s2:ORSetState
+        (!chain [(orset-merge s1 s2)
+               = (orset-state (clock-join (orset-clock s1) (orset-clock s2))
+                             (Set.union (orset-adds s1) (orset-adds s2))
+                             (Set.union (orset-removes s1) (orset-removes s2)))
+                 [orset-merge-def]
+               = (orset-state (clock-join (orset-clock s2) (orset-clock s1))
+                             (Set.union (orset-adds s2) (orset-adds s1))
+                             (Set.union (orset-removes s2) (orset-removes s1)))
+                 [clock-join-commutative union-commutes]
+               = (orset-merge s2 s1)
+                 [orset-merge-def]])
+    
+
+    conclude merge-associative :=
+      (forall s1 s2 s3 .
+        (orset-merge (orset-merge s1 s2) s3) =
+        (orset-merge s1 (orset-merge s2 s3)))
+    pick-any s1:ORSetState s2:ORSetState s3:ORSetState
+        let {# First, expand both sides to see the structure
+             lhs := (!chain [(orset-merge (orset-merge s1 s2) s3)
+                           = (orset-state 
+                               (clock-join (orset-clock (orset-merge s1 s2)) (orset-clock s3))
+                               (Set.union (orset-adds (orset-merge s1 s2)) (orset-adds s3))
+                               (Set.union (orset-removes (orset-merge s1 s2)) (orset-removes s3)))
+                             [orset-merge-def]]);
+             rhs := (!chain [(orset-merge s1 (orset-merge s2 s3))
+                           = (orset-state 
+                               (clock-join (orset-clock s1) (orset-clock (orset-merge s2 s3)))
+                               (Set.union (orset-adds s1) (orset-adds (orset-merge s2 s3)))
+                               (Set.union (orset-removes s1) (orset-removes (orset-merge s2 s3))))
+                             [orset-merge-def]])}
+          (!combine-equations
+            (!chain [(orset-merge (orset-merge s1 s2) s3)
+                   = (orset-state 
+                       (clock-join (orset-clock (orset-merge s1 s2)) (orset-clock s3))
+                       (Set.union (orset-adds (orset-merge s1 s2)) (orset-adds s3))
+                       (Set.union (orset-removes (orset-merge s1 s2)) (orset-removes s3)))
+                     [orset-merge-def]
+                   = (orset-state 
+                       (clock-join (clock-join (orset-clock s1) (orset-clock s2)) (orset-clock s3))
+                       (Set.union (Set.union (orset-adds s1) (orset-adds s2)) (orset-adds s3))
+                       (Set.union (Set.union (orset-removes s1) (orset-removes s2)) (orset-removes s3)))
+                     [first-helper second-helper third-helper]
+                   = (orset-state 
+                       (clock-join (orset-clock s1) (clock-join (orset-clock s2) (orset-clock s3)))
+                       (Set.union (orset-adds s1) (Set.union (orset-adds s2) (orset-adds s3)))
+                       (Set.union (orset-removes s1) (Set.union (orset-removes s2) (orset-removes s3))))
+                     [clock-join-associative union-associativity]])
+            (!chain [(orset-merge s1 (orset-merge s2 s3))
+                   = (orset-state 
+                       (clock-join (orset-clock s1) (orset-clock (orset-merge s2 s3)))
+                       (Set.union (orset-adds s1) (orset-adds (orset-merge s2 s3)))
+                       (Set.union (orset-removes s1) (orset-removes (orset-merge s2 s3))))
+                     [orset-merge-def]
+                   = (orset-state 
+                       (clock-join (orset-clock s1) (clock-join (orset-clock s2) (orset-clock s3)))
+                       (Set.union (orset-adds s1) (Set.union (orset-adds s2) (orset-adds s3)))
+                       (Set.union (orset-removes s1) (Set.union (orset-removes s2) (orset-removes s3))))
+                     [first-helper second-helper third-helper]]))
+    
+    conclude merge-idempotent :=
+      (forall s . (orset-merge s s) = s)
+      pick-any s:ORSetState
+        (!chain [(orset-merge s s)
+               = (orset-state (clock-join (orset-clock s) (orset-clock s))
+                             (Set.union (orset-adds s) (orset-adds s))
+                             (Set.union (orset-removes s) (orset-removes s)))
+                 [orset-merge-def]
+               = (orset-state (orset-clock s)
+                             (orset-adds s)
+                             (orset-removes s))
+                 [clock-join-idempotent \/-idempotence]
+               = s
+                 [orset-state-axioms]])
+    
+
+    conclude merge-left-identity :=
+      (forall s . (orset-merge orset-initial s) = s)
+      pick-any s:ORSetState
+        (!chain [(orset-merge orset-initial s)
+               = (orset-merge (orset-state clock-empty Set.null Set.null) s)
+                 [orset-initial]
+               = (orset-state (clock-join (orset-clock (orset-state clock-empty Set.null Set.null)) 
+                                         (orset-clock s))
+                             (Set.union (orset-adds (orset-state clock-empty Set.null Set.null)) 
+                                       (orset-adds s))
+                             (Set.union (orset-removes (orset-state clock-empty Set.null Set.null)) 
+                                       (orset-removes s)))
+                 [orset-merge-def]
+               = (orset-state (clock-join clock-empty (orset-clock s))
+                             (Set.union Set.null (orset-adds s))
+                             (Set.union Set.null (orset-removes s)))
+                 [orset-state-axioms]
+               = (orset-state (orset-clock s)
+                             (orset-adds s)
+                             (orset-removes s))
+                 [clock-empty-is-bottom union-def]
+               = s
+                 [orset-state-axioms]])
+    
+
+    conclude merge-right-identity :=
+      (forall s . (orset-merge s orset-initial) = s)
+      pick-any s:ORSetState
+        (!chain [(orset-merge s orset-initial)
+               = (orset-merge s (orset-state clock-empty Set.null Set.null))
+                 [orset-initial]
+               = (orset-state (clock-join (orset-clock s) 
+                                         (orset-clock (orset-state clock-empty Set.null Set.null)))
+                             (Set.union (orset-adds s) 
+                                       (orset-adds (orset-state clock-empty Set.null Set.null)))
+                             (Set.union (orset-removes s) 
+                                       (orset-removes (orset-state clock-empty Set.null Set.null))))
+                 [orset-merge-def]
+               = (orset-state (clock-join (orset-clock s) clock-empty)
+                             (Set.union (orset-adds s) Set.null)
+                             (Set.union (orset-removes s) Set.null))
+                 [orset-state-axioms]
+               = (orset-state (clock-join clock-empty (orset-clock s))
+                             (Set.union Set.null (orset-adds s))
+                             (Set.union Set.null (orset-removes s)))
+                 [clock-join-commutative union-commutes]
+               = (orset-state (orset-clock s)
+                             (orset-adds s)
+                             (orset-removes s))
+                 [clock-empty-is-bottom union-def]
+               = s
+                 [orset-state-axioms]])
+    
+    define orset-theory :=
+      (make-theory ['ORSetSpec] 
+                   [merge-commutative-holds
+                    merge-associative-holds
+                    merge-idempotent-holds
+                    merge-left-identity
+                    merge-right-identity])
+  }
+}

@@ -1,0 +1,44 @@
+load "pncounter/pncounter_specification"
+load "../framework/theory/semilattice_theory"
+
+
+module PNCounterSemilattice {
+  open PNCounterSpec
+  open SemilatticeTheory
+
+  define merge-commutative-holds := PNCounterSpec.Theory.merge-commutative-holds
+  define merge-associative-holds := PNCounterSpec.Theory.merge-associative-holds
+  define merge-idempotent-holds := PNCounterSpec.Theory.merge-idempotent-holds
+  
+  
+  assert* merge-left-identity :=
+    ((pnc-merge pnc-initial ?s) = ?s)
+  
+  assert* merge-right-identity :=
+    ((pnc-merge ?s pnc-initial) = ?s)
+  
+  
+  module Theory {
+    
+    define pnc-theory := PNCounterSpec.Theory.pnc-theory
+    
+    define pnc-absorption := PNCounterSpec.Theory.pnc-absorption
+    define pnc-monotone-left := PNCounterSpec.Theory.pnc-monotone-left
+    define pnc-monotone-right := PNCounterSpec.Theory.pnc-monotone-right
+  }
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+}

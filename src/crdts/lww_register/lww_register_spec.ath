@@ -1,0 +1,122 @@
+load "../../framework/vector_clocks"
+load "../../framework/utils/pair"
+
+# LWW-Register Specification
+# Goal: Prove (not assert) all semilattice properties using the proven vector clock theorems
+
+module LWWRegister {
+  open VectorClocks
+  open Pr
+
+  datatype Value := (val Ide)
+  
+  define-sort LWWState := (Pr Value Clock)
+  
+  define [v v1 v2 v3 t t1 t2 s s1 s2 a] :=
+    [?v:Value ?v1:Value ?v2:Value ?v3:Value
+     ?t:Clock ?t1:Clock ?t2:Clock
+     ?s:(Pr Value Clock) ?s1:(Pr Value Clock) ?s2:(Pr Value Clock)
+     ?a:ActorId]
+  
+  declare value-less: [Value Value] -> Boolean
+  
+  # Axioms
+  assert* value-order-axioms :=
+    [(~ (value-less v v))                         
+     ((value-less v1 v2) ==> ~ (value-less v2 v1))   
+     ((value-less v1 v2) & (value-less v2 v3) ==>  (value-less v1 v3))
+     ((value-less v1 v2) | (value-less v2 v1) | v1 = v2)] 
+
+  define [value-irreflexive value-asymmetric value-transitive value-total] := value-order-axioms
+  
+  assert* value-bottom-axioms :=
+    [(~ (value-less v (val 'nil)))] 
+  define value-bottom := (head value-bottom-axioms)
+  
+  # Initial state
+  define lww-initial := (pr (val 'nil) clock-empty)
+  
+  
+  # Select value based on clock ordering, with deterministic tie-breaking
+  declare lww-select-value: [Value Clock Value Clock] -> Value
+  
+  # Selection rules (following clock-max pattern):
+  assert* lww-select-axioms :=
+    [((clock-less t1 t2) ==> 
+      (lww-select-value v1 t1 v2 t2) = v2)
+     
+     ((clock-less t2 t1) ==> 
+      (lww-select-value v1 t1 v2 t2) = v1)
+     
+     (((~ (clock-less t1 t2) & ~ (clock-less t2 t1)) & (value-less v1 v2)) ==>
+      (lww-select-value v1 t1 v2 t2) = v2)
+     
+     (((~ (clock-less t1 t2) & ~ (clock-less t2 t1)) & ~ (value-less v1 v2)) ==>
+      (lww-select-value v1 t1 v2 t2) = v1)]
+  
+  define [select-axiom-1 select-axiom-2 select-axiom-3 select-axiom-4] := lww-select-axioms
+  
+
+  # Merge: select value based on clocks, join the clocks
+  declare lww-merge: [LWWState LWWState] -> LWWState
+  
+  # Merge definition as constructive axiom
+  assert* lww-merge-def :=
+    [((lww-merge s1 s2) =
+      (pr (lww-select-value (first s1) (second s1) (first s2) (second s2))
+          (clock-join (second s1) (second s2))))]
+  
+
+  datatype Update := (write Value)
+  
+  declare lww-update: [LWWState Update ActorId] -> LWWState
+  
+  assert* lww-update-def :=
+    [((lww-update s (write v) a) =
+      (pr v (clock-tick (second s) a)))]
+  
+  # Properties
+  
+  # Merged clock is always join of component clocks
+  conclude merge-clock-is-join :=
+    (forall s1 s2 .
+      (second (lww-merge s1 s2)) = (clock-join (second s1) (second s2)))
+  pick-any s1:LWWState s2:LWWState
+    (!chain [(second (lww-merge s1 s2))
+           = (second (pr (lww-select-value (first s1) (second s1) (first s2) (second s2))
+                         (clock-join (second s1) (second s2))))
+             [lww-merge-def]
+           = (clock-join (second s1) (second s2))
+             [pr-second]])
+  
+
+  
+  conclude lww-select-idempotent :=
+    (forall v t . (lww-select-value v t v t) = v)
+  pick-any v:Value t:Clock
+    let {concurrent := (!both (!chain-> [true ==> (~ (clock-less t t)) 
+                                               [VectorClocks.Properties.clock-less-irreflexive]])
+                              (!chain-> [true ==> (~ (clock-less t t)) 
+                                               [VectorClocks.Properties.clock-less-irreflexive]]));
+         condition := (!both concurrent (!chain-> [true ==> (~ (value-less v v))
+                                                        [value-irreflexive]]))}
+      (!chain-> [condition 
+               ==> ((lww-select-value v t v t) = v) 
+               [select-axiom-4]])
+  
+  conclude merge-selects-greater-clock :=
+    (forall s1 s2 .
+      (clock-less (second s1) (second s2)) ==>
+      (first (lww-merge s1 s2)) = (first s2))
+  pick-any s1:LWWState s2:LWWState
+    assume clock-order := (clock-less (second s1) (second s2))
+      (!chain [(first (lww-merge s1 s2))
+             = (first (pr (lww-select-value (first s1) (second s1) (first s2) (second s2))
+                         (clock-join (second s1) (second s2))))
+               [lww-merge-def]
+             = (lww-select-value (first s1) (second s1) (first s2) (second s2))
+               [pr-first]
+             = (first s2)
+               [select-axiom-1 clock-order]])
+  
+}

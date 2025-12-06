@@ -1,0 +1,48 @@
+module SemilatticeTheory {
+  declare join: (T) [T T] -> T
+  declare bot: (T) [] -> T
+  define [x y z] := [?x ?y ?z]
+  assert* Commutative := ((x join y) = (y join x))
+  assert* Associative := (((x join y) join z) = (x join (y join z)))
+  assert* Idempotent := ((x join x) = x)
+  assert* LeftIdentity := ((bot join x) = x)
+  assert* RightIdentity := ((x join bot) = x)
+  define theory :=
+    (make-theory [] [Commutative Associative Idempotent LeftIdentity RightIdentity])
+} 
+extend-module SemilatticeTheory {
+  define absorption :=
+    (forall x y . (x join y) = y ==> (y join x) = y)
+  define monotone-left :=
+    (forall x y . (x join (x join y)) = (x join y))
+  define monotone-right :=
+    (forall x y . (y join (x join y)) = (x join y))
+  define proofs :=
+    method (theorem adapt)
+      let {[get prove chain chain-> chain<-] := (proof-tools adapt theory);
+           [join bot] := (adapt [join bot])}
+        match theorem {
+          (val-of absorption) =>
+            conclude (adapt theorem)
+            pick-any x y
+              assume hyp := ((x join y) = y)
+                (!chain [(y join x)
+                       = (x join y)   [Commutative]
+                       = y            [hyp]])
+          | (val-of monotone-left) =>
+            conclude (adapt theorem)
+            pick-any x y
+              (!chain [(x join (x join y))
+                     = ((x join x) join y)   [Associative]
+                     = (x join y)            [Idempotent]])
+          | (val-of monotone-right) =>
+            conclude (adapt theorem)
+            pick-any x y
+              (!chain [(y join (x join y))
+                     = (y join (y join x))   [Commutative]
+                     = ((y join y) join x)   [Associative]
+                     = (y join x)            [Idempotent]
+                     = (x join y)            [Commutative]])
+        }
+  (add-theorems theory |{[absorption monotone-left monotone-right] := proofs}|)
+} 

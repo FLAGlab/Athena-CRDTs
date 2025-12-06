@@ -1,0 +1,42 @@
+load "gset_specification"
+load "../../framework/payload"
+module GSetAdapter {
+  open GSetSpec
+  open Payload
+  
+  define (gs-init ids) := (init gs-initial ids)
+  define (gs-reduce cfg) := (reduce gs-apply-update cfg)
+  define (gs-reduce* cfg) := (reduce* gs-apply-update cfg)
+  define (gs-broadcast cfg to-actors operation) := (broadcast cfg to-actors operation)
+  define (gs-merge-states left right) := (merge-states gs-merge left right)
+  
+  # Prove that gs-merge satisfies abstract semilattice properties
+  module SemilatticeProofs {
+    # Instantiate abstract Properties with gs-merge
+    define commutative-for-gs-merge :=
+      (forall ?s1:GSState ?s2:GSState . (gs-merge ?s1 ?s2) = (gs-merge ?s2 ?s1))
+    
+    define associative-for-gs-merge :=
+      (forall ?s1:GSState ?s2:GSState ?s3:GSState . 
+        (gs-merge (gs-merge ?s1 ?s2) ?s3) = (gs-merge ?s1 (gs-merge ?s2 ?s3)))
+    
+    define idempotent-for-gs-merge :=
+      (forall ?s:GSState . (gs-merge ?s ?s) = ?s)
+    
+    # Prove these by referencing the theory proofs
+    conclude commutative := commutative-for-gs-merge
+      pick-any s1:GSState s2:GSState
+        (!chain [(gs-merge s1 s2)
+               = (gs-merge s2 s1)  [GSetSpec.Theory.merge-commutative]])
+    
+    conclude associative := associative-for-gs-merge
+      pick-any s1:GSState s2:GSState s3:GSState
+        (!chain [(gs-merge (gs-merge s1 s2) s3)
+               = (gs-merge s1 (gs-merge s2 s3))  [GSetSpec.Theory.merge-associative]])
+    
+    conclude idempotent := idempotent-for-gs-merge
+      pick-any s:GSState
+        (!chain [(gs-merge s s)
+               = s  [GSetSpec.Theory.merge-idempotent]])
+  }
+} 

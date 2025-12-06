@@ -1,0 +1,329 @@
+% $Id: theory.tex 1784 2012-04-27 23:29:31Z  $
+% !TEX root = main.tex
+
+\chapter{Theoretical Foundations}\label{chap:theory}
+
+State-based Conflict-Free Replicated Data Types rely on join-semilattice theory. A join-semilattice is an algebraic structure in which any two elements can be combined via a \emph{join} operation that is commutative, associative and idempotent. These three properties ensure that replicas merging their states in different orders will converge to the same result.\\
+
+This chapter develops the theory behind our framework. We begin by defining join-semilattices and explaining how their algebraic properties guarantee convergence. We then present the abstract CRDT specification consisting of five axioms that, when satisfied, guarantee Strong Eventual Consistency (SEC). 
+
+Finally, we show how concrete CRDTs such as GCounter, GSet and PN-Counter instantiate this theory and inherit convergence guarantees through a \emph{theory/adapter} proof pattern.
+
+
+\section{Semilattices}
+
+A \emph{join-semilattice} is a set equipped with a binary operation satisfying three axioms. Formally:
+
+\begin{definition}[Join-Semilattice]
+A join-semilattice is a structure $(S, \sqcup)$ where $S$ is a set and $\sqcup: S \times S \to S$ is a binary operation satisfying:
+\begin{enumerate}
+  \item \textbf{Commutativity} {$\forall x, y \in S. \; x \sqcup y = y \sqcup x$}
+  \item \textbf{Associativity} {$\forall x, y, z \in S. \; (x \sqcup y) \sqcup z = x \sqcup (y \sqcup z)$}
+  \item \textbf{Idempotence} {$\forall x \in S. \; x \sqcup x = x$}
+\end{enumerate}
+\end{definition}
+
+\vspace{0.5cm}
+
+
+\noindent \\These three properties are fundamental to CRDT convergence. Each property plays a specific role:
+
+\begin{itemize}
+  \item \textbf{Commutativity} ensures the order in which two states are merged does not affect the result. If replica $A$ merges with replica $B$, and replica $B$ merges with replica $A$ then they produce the same state.
+  \item \textbf{Associativity} ensures when merging multiple states, the way they are grouped does not matter. Replicas can merge states in any order and produce the same result.
+  \item \textbf{Idempotence} ensures merging a state with itself produces the same state. This property is crucial for handling duplicate messages or repeated merge operations.
+\end{itemize}
+
+\begin{figure}[h]
+  \centering
+  \begin{tikzpicture}[
+    node distance=2.5cm and 2.5cm,
+    lattice/.style={circle, draw, line width=1.5pt, minimum size=1.1cm, font=\normalsize},
+    edge/.style={-, line width=1.5pt, color=black!60},
+    join-arrow/.style={->, line width=1.5pt, color=blue!70, bend left=25}
+  ]
+    % Top element (most information)
+    \node[lattice] (top) at (0,3) {$\{a,b\}$};
+    \node[font=\scriptsize, align=center] at (0,3.8) {\textit{most info}};
+    
+    % Middle elements
+    \node[lattice] (a) at (-2,1) {$\{a\}$};
+    \node[lattice] (b) at (2,1) {$\{b\}$};
+    
+    % Bottom element (least information)
+    \node[lattice] (bot) at (0,-1) {$\emptyset$};
+    \node[font=\scriptsize, align=center] at (0,-1.8) {\textit{least info}};
+    
+    % Covering edges (black, solid)
+    \draw[edge] (bot) -- (a);
+    \draw[edge] (bot) -- (b);
+    \draw[edge] (a) -- (top);
+    \draw[edge] (b) -- (top);
+    
+    % Join operation visualization (blue arrows)
+    \draw[join-arrow] (a) to node[above, sloped, font=\scriptsize, color=blue!70] {join} (top);
+    \draw[join-arrow] (b) to (top);
+    
+    % Information flow annotations
+    \node[font=\scriptsize, color=gray, align=center] at (-3.5, 1) {$\uparrow$ more\\info};
+    \node[font=\scriptsize, color=gray, align=center] at (3.5, 1) {$\uparrow$ more\\info};
+  \end{tikzpicture}
+  \caption{\footnotesize Hasse diagram of the join-semilattice $(\mathcal{P}(\{a,b\}), \cup)$. The power set of a two-element set $\{a, b\}$ is ordered by subset inclusion ($\subseteq$), forming a lattice. The join operation is set union ($\cup$): for example, $\{a\} \sqcup \{b\} = \{a,b\}$ is shown as the blue arrows (join). Elements higher in the diagram represent states with more information. The join of any two elements is their least upper bound.}
+  \label{fig:semilattice-hasse}
+\end{figure}
+
+\\The join operation induces a partial order on $S$ defined by:
+\[
+  x \leq y \iff x \sqcup y = y.
+\]
+
+Intuitively, $x \leq y$ means that $y$ contains at least as much information as $x$. The join operation computes the least upper bound of two elements with respect to this order. Figure~\ref{fig:semilattice-hasse} illustrates a simple join-semilattice as a Hasse diagram, where edges represent the covering relation and the join of two elements is their least common ancestor.
+
+Partial order is crucial to guarantee CRDT convergence. Updates must be \emph{monotonic}, meaning they only move states upward in the lattice. Once a replica has reached a certain state, subsequent merges can only increase information, never decrease it.
+
+\subsection*{Semilattice theory in Athena}
+
+We encode the semilattice axioms in Athena as an abstract module that declares the join operation and asserts the three axioms. The module is polymorphic in the element type, allowing it to be instantiated for different data types. Listing~\ref{lst:semilattice-theory} shows the core module definition:\\
+
+\begin{lstlisting}[language=Athena,style=athena,label={lst:semilattice-theory},caption={SemilatticeTheory: Abstract semilattice axioms}]
+module SemilatticeTheory {
+  declare join: (T) [T T] -> T
+  declare bot: (T) [] -> T
+  define [x y z] := [?x ?y ?z]
+
+  assert* Commutative := ((x join y) = (y join x))
+  assert* Associative := (((x join y) join z) = (x join (y join z)))
+  assert* Idempotent := ((x join x) = x)
+  assert* LeftIdentity := ((bot join x) = x)
+  assert* RightIdentity := ((x join bot) = x)
+
+  define theory := (make-theory [] [Commutative Associative Idempotent LeftIdentity RightIdentity])}
+\end{lstlisting}
+
+The module declares \lstinline{join} as a polymorphic binary operation and \lstinline{bot} as the bottom element (identity). The five assertions capture the semilattice axioms plus identity laws. We also define derived properties such as absorption and monotonicity that follow from the axioms. These are proven once in the abstract theory and inherited by all concrete instantiations. Listing~\ref{lst:semilattice-extension} extends this theory with derived properties.\\\
+
+\begin{lstlisting}[language=Athena,style=athena,label={lst:semilattice-extension},caption={Extending SemilatticeTheory with derived properties}]
+extend-module SemilatticeTheory {
+  define absorption :=
+    (forall x y . (x join y) = y ==> (y join x) = y)
+  define proofs :=
+    method (theorem adapt)
+      let {[get prove chain] := (proof-tools adapt theory);
+           [join bot] := (adapt [join bot])}
+        match theorem {
+          (val-of absorption) => 
+            conclude (adapt theorem)
+            pick-any x y
+              assume hyp := ((x join y) = y)
+                (!chain [(y join x) = (x join y) [Commutative]
+                                     = y         [hyp]])}
+  (add-theorems theory |{[absorption] := proofs}|)
+}
+\end{lstlisting}
+
+The \lstinline{!chain} construct builds a chain of equalities justified by the axioms. Once proven, these theorems are added to the theory and can be used when verifying concrete CRDTs.
+
+\section{State-based CRDT model}
+
+Building on the semilattice foundation, we define an abstract state-based CRDT as a structure with five core components and corresponding axioms that guarantee convergence.
+
+\begin{definition}[Abstract CRDT]\label{def:abstract-crdt}
+A CRDT is a five-tuple $\langle S, V, \mathit{initial}, \mathit{update}, \mathit{merge}\rangle$ where:
+\begin{itemize}
+  \item $S$ is the state domain (elements of the semilattice)
+  \item $V$ is the update domain (operations that modify state)
+  \item $\mathit{initial}: () \to S$ returns the bottom element as State S
+  \item $\mathit{update}: S \times V \to S$ applies an update V to a state S
+  \item $\mathit{merge}: S \times S \to S$ is the semilattice join operation
+\end{itemize}
+satisfying the five axioms listed below.
+\end{definition}
+
+\subsection*{Convergence axioms}
+
+The abstract specification consists of five axioms that together guarantee convergence. For all states $s, s_1, s_2, s_3 \in S$ and updates $v \in V$:
+
+\textbf{A1. Merge Commutativity:} $\mathit{merge}(s_1, s_2) = \mathit{merge}(s_2, s_1)$.
+
+\textbf{A2. Merge Associativity:} $\mathit{merge}(\mathit{merge}(s_1, s_2), s_3) = \mathit{merge}(s_1, \mathit{merge}(s_2, s_3))$.
+
+\textbf{A3. Merge Idempotence:} $\mathit{merge}(s, s) = s$.
+
+\textbf{A4. Initial Identity:} $\mathit{merge}(\mathit{initial}(), s) = s$.
+
+\textbf{A5. Update Monotonicity:} $\mathit{merge}(s, \mathit{update}(s, v)) = \mathit{update}(s, v)$.
+
+This axiom ensures \emph{progress}: once a replica applies an update, that update remains visible after merging with concurrent states. This guarantees no data loss during synchronization.
+
+\subsection*{Axioms in Athena}
+
+The five axioms are encoded in Athena as assertions within a CRDT specification module. Listing~\ref{lst:crdt-axioms} shows how these axioms appear in a concrete implementation (simplified GCounter):
+
+\begin{lstlisting}[language=Athena,style=athena,label={lst:crdt-axioms},caption={The five CRDT axioms encoded in Athena}]
+module GCounter {
+  assert merge-commutative:= (forall n1 n2 .(merge n1 n2)=(merge n2 n1))
+  assert merge-associative:=
+    (forall n1 n2 n3 .(merge (merge n1 n2) n3)=(merge n1 (merge n2 n3)))
+  assert merge-idempotent:= (forall n . (merge n n) = n)
+  assert merge-left-identity:= (forall n . (merge initial n) = n)
+  assert update-monotonic:=
+    (forall n v .(merge n (update n v)) = (update n v))}
+\end{lstlisting}
+
+These axioms together guarantee convergence: commutativity and associativity ensure merge order independence, idempotence handles duplicate messages, identity anchors the lattice, and monotonicity preserves updates across replicas.
+
+\subsection*{Strong Eventual Consistency}
+
+Strong Eventual Consistency (SEC) is a correctness criterion for replicated data types introduced by Shapiro \emph{et~al.}~\cite{shapiro2011conflict}. It consists of two properties:
+
+\begin{definition}[Strong Eventual Consistency]
+A replicated data type satisfies SEC if it guarantees:
+\begin{enumerate}
+  \item \textbf{Eventual Delivery}: An update delivered at one replica is eventually delivered to all replicas.
+  \item \textbf{Convergence}: Replicas that have delivered the same set of updates have equivalent states.
+\end{enumerate}
+\end{definition}
+
+Eventual delivery is a liveness property that depends on the underlying network and delivery mechanism; it is typically assumed rather than proven. Convergence, on the other hand, is a safety property that can be proven from the CRDT axioms. The key insight is that the semilattice structure ensures deterministic convergence.
+
+\subsection*{Convergence theorem}
+
+The central theorem in CRDT theory is the Strong Eventual Consistency Theorem, which establishes that when a CRDT satisfies the five axioms above, all replicas that receive the same set of updates  will converge to a unique state. This fundamental result was formalized by Shapiro \emph{et~al.}~\cite{shapiro2011conflict} and forms the theoretical foundation for all CRDT designs.
+
+\begin{figure}[t]
+  \centering
+  \begin{tikzpicture}[
+    node distance=2cm and 3cm,
+    state/.style={rectangle, draw, rounded corners, minimum width=2cm, minimum height=0.8cm, font=\small, align=center},
+    arrow/.style={-{Latex[length=3pt]}, thick}
+  ]
+    % Initial state
+    \node[state] (s0) at (0,0) {$s_0$\\{\scriptsize (initial)}};
+    
+    % Replica 1 path (left)
+    \node[state] (s0v1) at (-3,-2) {$s'_1$\\{\scriptsize update($s_0$, $v_1$)}};
+    \node[state] (s0v1v2) at (-3,-4) {$s_1$\\{\scriptsize update($s'_1$, $v_2$)}};
+    
+    % Replica 2 path (right)
+    \node[state] (s0v2) at (3,-2) {$s'_2$\\{\scriptsize update($s_0$, $v_2$)}};
+    \node[state] (s0v2v1) at (3,-4) {$s_2$\\{\scriptsize update($s'_2$, $v_1$)}};
+    
+    % Merged state
+    \node[state, fill=green!10] (merged) at (0,-6) {$s_{\text{final}}$\\{\scriptsize merge($s_1$, $s_2$)}};
+    
+    % Arrows
+    \draw[arrow] (s0) -- node[left,font=\scriptsize] {$v_1$} (s0v1);
+    \draw[arrow] (s0v1) -- node[left,font=\scriptsize] {$v_2$} (s0v1v2);
+    
+    \draw[arrow] (s0) -- node[right,font=\scriptsize] {$v_2$} (s0v2);
+    \draw[arrow] (s0v2) -- node[right,font=\scriptsize] {$v_1$} (s0v2v1);
+    
+    \draw[arrow, dashed] (s0v1v2) -- node[left,font=\scriptsize] {merge} (merged);
+    \draw[arrow, dashed] (s0v2v1) -- node[right,font=\scriptsize] {merge} (merged);
+    
+    % Annotations
+    \node[anchor=east, font=\scriptsize, align=right] at (-4.5,-3) {
+      Replica 1:\\
+      order: $v_1, v_2$
+    };
+    \node[anchor=west, font=\scriptsize, align=left] at (4.5,-3) {
+      Replica 2:\\
+      order: $v_2, v_1$
+    };
+    
+  \end{tikzpicture}
+  \caption{Strong Eventual Consistency from semilattice axioms. Two replicas start from the same state $s_0$ and apply updates $v_1$ and $v_2$ in different orders. By Axiom 5 (monotonicity), states increase at each step. By Axioms 1--3 (commutativity, associativity, idempotence), merging the final states yields the same result regardless of update order.}
+  \label{fig:sec-from-axioms}
+\end{figure}
+
+
+\section{Concrete CRDT theories in Athena}
+
+Having established the abstract theory, we now explain how concrete CRDTs specifications instantiate the abstract theory of CRDT without having to prove again the five axioms from scratch. Athena's \emph{theory/adapter} pattern enables modular verification: prove properties once in a base theory, then create lightweight adapters for specific CRDTs that inherit those proofs automatically.
+
+Many CRDTs share common algebraic structures:
+\begin{itemize}
+  \item Counters use the $\max$ operation on natural numbers.
+  \item Sets use the $\cup$ (union) operation on sets.
+  \item Composite CRDTs often combine existing semilattices (e.g. via product constructions).
+\end{itemize}
+
+Instead of proving commutativity, associativity, and idempotence separately for each CRDT, we prove these properties once for the base operations ($\max$, $\cup$, etc.) and then create a \emph{renaming adapter} that maps the CRDT's operations to those initial operations. 
+
+For instance, a grow-only counter CRDT with merge operation defined pointwise by maximum:
+\[
+ \mathit{merge}(s_1, s_2) = \lambda i.\; \max(s_1(i), s_2(i)),
+\] 
+i.e. for each replica identifier $i$, the merged counter holds the maximum of the two replica values. If we have proven that $\max$ on $\mathbb{N}$ is commutative, associative, and idempotent, then the counter's merge inherits these properties directly by reduction to the $\max$ operation, without needing a new proof of ACI. Figure~\ref{fig:theory-adapter-pattern} illustrates the pattern architecture.
+
+
+We apply this pattern systematically across our CRDT implementations:
+\begin{itemize}
+  \item \textbf{Counters} (GCounter, PN-Counter) reuse the theory of $\max$ on $\mathbb{N}$.
+  \item \textbf{Sets} (GSet, Two-Phase Set) reuse the theory of $\cup$ (set union) on power sets.
+  \item \textbf{Causal CRDTs} (OR-Set, LWW-Register) compose a payload semilattice with a vector clock semilattice.
+\end{itemize}
+
+\begin{figure}[h]
+  \centering
+  \begin{tikzpicture}[
+    node distance=2.5cm and 3cm,
+    box/.style={rectangle, draw, rounded corners, minimum width=3.5cm, minimum height=1.2cm, font=\small, align=center},
+    arrow/.style={-{Latex[length=3pt]}, thick}
+  ]
+    % Theory layer
+    \node[box, fill=blue!10] (theory) at (0,3) {
+      \textbf{Semilattice Theory}\\
+      axioms + theorems
+    };
+    
+    % Base instance
+    \node[box, fill=green!10] (base) at (-3,1) {
+      \textbf{Base Theory}\\
+      (e.g., Max, Union)
+    };
+    
+    % Adapter
+    \node[box, fill=yellow!10] (adapter) at (3,1) {
+      \textbf{CRDT Adapter}\\
+      renaming proof
+    };
+    
+    % Concrete CRDT
+    \node[box, fill=orange!10] (crdt) at (0,-1) {
+      \textbf{CRDT Implementation}\\
+      inherits convergence
+    };
+    
+    % Arrows
+    \draw[arrow] (theory) -- node[left, font=\scriptsize] {instantiate} (base);
+    \draw[arrow] (theory) -- node[right, font=\scriptsize] {instantiate} (adapter);
+    \draw[arrow, dashed] (base) -- node[above, font=\scriptsize] {reuse proofs} (adapter);
+    \draw[arrow] (adapter) -- (crdt);
+    
+  \end{tikzpicture}
+  \caption{The theory/adapter pattern for modular CRDT verification. Abstract semilattice theorems are proven once at the theory layer and instantiated via base theories (e.g., $\max$, $\cup$). CRDT adapters provide renaming maps that inherit all proven properties. This pattern reduces redundant proof effort across multiple CRDTs.}
+  \label{fig:theory-adapter-pattern}
+\end{figure}
+
+
+Each adapter proof is mostly mechanical, reducing the CRDT axioms to the base semilattice axioms, whereas a from-scratch proof would require repeating the reasoning about commutativity, associativity, idempotence, and monotonicity each time.
+
+the theory layer also supports building semilattices from smaller ones:
+\begin{itemize}
+  \item \textbf{Product semilattices}: If $(S_1, \sqcup_1)$ and $(S_2, \sqcup_2)$ are semilattices, then their product $(S_1 \times S_2, \sqcup)$ defined by 
+  \[
+    (a,b) \sqcup (c,d) = (a \sqcup_1 c,\; b \sqcup_2 d)
+  \] 
+  is also a semilattice. We use this principle to construct composite CRDTs like the PN-Counter (which combines a positive and a negative counter). By proving the product construction correct once, we can reuse it for any combination of semilattices.
+  \item \textbf{Causal overlays}: For CRDTs requiring causality tracking, we layer vector clocks over payload semilattices. Section~\ref{sec:framework-backbone} of the framework provides this composition: the vector clock timestamps also form a semilattice (under pointwise max), which is combined with the payload's semilattice. This ensures that causal metadata and payload state both grow monotonically and can be merged without conflict.
+\end{itemize}
+
+
+The six concrete CRDT implementations verified in this work follow this approach and are presented in detail in Chapter~\ref{chap:implementations}.
+
+\bigskip
+
+In summary, the algebraic laws of semilattices and the five CRDT axioms provide a  foundation for eventual consistency. By coding these laws in Athena’s theory modules, we can build replicated data types through extensions and adapters, with convergence proofs largely automated. In the next chapter, we build on this foundation to develop the Payload Framework, which provides the executable semantics for state-based CRDT replication.
+
+\endinput

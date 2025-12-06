@@ -1,0 +1,111 @@
+load "../crdts/gcounter/gcounter_payload_adapter"
+open GCounterAdapter
+open Payload
+
+(print "\n========================================\n")
+(print "GCounter Demo - Unified Framework\n")
+(print "========================================\n\n")
+
+# Create initial configuration with 3 replicas
+define actors := ('r1 :: 'r2 :: 'r3 :: nil)
+define cfg0 := (gc-init actors)
+
+(print "[Step 1] Initialize configuration with replicas: r1, r2, r3\n")
+(print "Initial state:\n")
+(eval (am cfg0))
+(print "\n")
+
+# Replica r1 increments by 2 - broadcast to self
+define cfg1 := (gc-broadcast cfg0 ('r1 :: nil) (GCounterSpec.increment (S (S zero))))
+
+(print "[Step 2] Replica r1 increments by 2\n")
+(print "Network has 1 message\n\n")
+
+# Deliver the message
+define cfg2 := (gc-reduce cfg1)
+
+(print "[Step 3] Deliver message to r1\n")
+(print "State after delivery:\n")
+(eval (am cfg2))
+(print "\n")
+
+# Replica r2 increments by 3 - broadcast to self
+define cfg3 := (gc-broadcast cfg2 ('r2 :: nil) (GCounterSpec.increment (S (S (S zero)))))
+
+(print "[Step 4] Replica r2 increments by 3\n")
+
+# Deliver
+define cfg4 := (gc-reduce cfg3)
+
+(print "[Step 5] Deliver message to r2\n")
+(print "State after delivery:\n")
+(eval (am cfg4))
+(print "\n")
+
+# Replica r3 increments by 1 - broadcast to self
+define cfg5 := (gc-broadcast cfg4 ('r3 :: nil) (GCounterSpec.increment (S zero)))
+
+(print "[Step 6] Replica r3 increments by 1\n")
+
+# Deliver
+define cfg-final := (gc-reduce cfg5)
+
+(print "[Step 7] Deliver message to r3\n")
+(print "Final state:\n")
+(eval (am cfg-final))
+
+(print "\n========================================\n")
+(print "Convergence and Semilattice Properties\n")
+(print "========================================\n\n")
+
+(print "Demonstrating Strong Eventual Consistency:\n")
+(print "All replicas reach the same state after seeing all updates.\n\n")
+
+# Concurrent increments scenario
+(print "[Convergence Test] Concurrent increments from all replicas\n")
+define conv-cfg0 := (gc-init actors)
+
+(print "  r1: +4, r2: +2, r3: +1 (all concurrent from initial state)\n\n")
+
+# All replicas increment concurrently from same base state
+define conv-cfg1 := (gc-broadcast conv-cfg0 ('r1 :: nil) (GCounterSpec.increment (S (S (S (S zero))))))
+define conv-cfg2 := (gc-broadcast conv-cfg0 ('r2 :: nil) (GCounterSpec.increment (S (S zero))))
+define conv-cfg3 := (gc-broadcast conv-cfg0 ('r3 :: nil) (GCounterSpec.increment (S zero)))
+
+(print "Broadcasting all increments to all replicas...\n")
+# Broadcast each to the others
+define conv-cfg4 := (gc-broadcast conv-cfg1 ('r2 :: 'r3 :: nil) (GCounterSpec.increment zero))
+define conv-cfg5 := (gc-broadcast conv-cfg2 ('r1 :: 'r3 :: nil) (GCounterSpec.increment zero))
+define conv-cfg6 := (gc-broadcast conv-cfg3 ('r1 :: 'r2 :: nil) (GCounterSpec.increment zero))
+
+(print "Reducing all messages to full convergence...\n")
+define conv-final := (gc-reduce* conv-cfg6)
+
+(print "\nConverged state (all replicas have same value):\n")
+(print "  Expected: max(4, 2, 1) = 4 (NOT sum = 7!)\n")
+(print "  GCounter merge is MAX, not SUM\n")
+(print "  This is why each replica tracks its own counter\n\n")
+
+(print "Final converged states:\n")
+(eval (am conv-final))
+(print "\n")
+
+(print "[Commutativity Test] Order of merge doesn't matter\n")
+(print "  merge(4, 2) = max(4, 2) = 4\n")
+(print "  merge(2, 4) = max(2, 4) = 4\n")
+(print "  Result is identical (proven in semilattice adapter)\n\n")
+
+(print "[Idempotence Test] Merging with self is identity\n")
+(print "  merge(4, 4) = max(4, 4) = 4\n")
+(print "  Duplicate messages don't change state\n\n")
+
+(print "[Monotonicity] Counter only grows\n")
+(print "  No decrement operation exists (grow-only)\n")
+(print "  merge(a, b) >= a AND merge(a, b) >= b [upper bound]\n")
+(print "  This is proven in specification: merge-upper-bound\n\n")
+
+(print "Demo complete. GCounter guarantees:\n")
+(print "  1. Monotonic growth (never decreases)\n")
+(print "  2. Convergence (all replicas reach same state)\n")
+(print "  3. Commutativity (order doesn't matter)\n")
+(print "  4. Idempotence (duplicates don't affect state)\n")

@@ -1,0 +1,86 @@
+load "twophase_set/twophase_set_specification"
+load "../framework/theory/semilattice_theory"
+
+
+module TwoPhaseSetSemilattice {
+  open TwoPhaseSetSpec
+  open SemilatticeTheory
+  open Set
+  
+  conclude union-null-left :=
+    (forall ?A:(Set.Set Ide) . (Set.union Set.null ?A) = ?A)
+  pick-any A:(Set.Set Ide)
+    let {subset1 := pick-any x
+                      assume (x in Set.union Set.null A)
+                        (!chain-> [(x in Set.union Set.null A)
+                              ==> ((x in Set.null) | (x in A))  [Set.UC]
+                              ==> (false | (x in A))            [Set.NC]
+                              ==> (x in A)                      [prop-taut]]);
+         subset2 := pick-any x
+                      assume (x in A)
+                        (!chain-> [(x in A)
+                              ==> (false | (x in A))                   [prop-taut]
+                              ==> ((x in Set.null) | (x in A))         [Set.NC]
+                              ==> (x in Set.union Set.null A)          [Set.UC]]);
+         p1 := (!Set.subset-intro subset1);
+         p2 := (!Set.subset-intro subset2)}
+      (!Set.set-identity-intro p1 p2)
+  
+  conclude merge-left-identity :=
+    (forall ?s:TPSState . (tps-merge tps-initial ?s) = ?s)
+  pick-any s:TPSState
+    (!chain [(tps-merge tps-initial s)
+           = (pr (Set.union (first tps-initial) (first s))
+                 (Set.union (second tps-initial) (second s)))  [tps-merge-is-pointwise-union]
+           = (pr (Set.union Set.null (first s))
+                 (Set.union (second tps-initial) (second s)))  [TwoPhaseSetSpec.tps-initial-first]
+           = (pr (Set.union Set.null (first s))
+                 (Set.union Set.null (second s)))              [TwoPhaseSetSpec.tps-initial-second]
+           = (pr (first s) (Set.union Set.null (second s)))    [union-null-left]
+           = (pr (first s) (second s))                          [union-null-left]
+           = s                                                  [Pr.correctness']])
+  
+  conclude union-null-right :=
+    (forall ?A:(Set.Set Ide) . (Set.union ?A Set.null) = ?A)
+  pick-any A:(Set.Set Ide)
+    let {subset1 := pick-any x
+                      assume (x in Set.union A Set.null)
+                        (!chain-> [(x in Set.union A Set.null)
+                              ==> ((x in A) | (x in Set.null))  [Set.UC]
+                              ==> ((x in A) | false)            [Set.NC]
+                              ==> (x in A)                      [prop-taut]]);
+         subset2 := pick-any x
+                      assume (x in A)
+                        (!chain-> [(x in A)
+                              ==> ((x in A) | false)                   [prop-taut]
+                              ==> ((x in A) | (x in Set.null))         [Set.NC]
+                              ==> (x in Set.union A Set.null)          [Set.UC]]);
+         p1 := (!Set.subset-intro subset1);
+         p2 := (!Set.subset-intro subset2)}
+      (!Set.set-identity-intro p1 p2)
+  
+  conclude merge-right-identity :=
+    (forall ?s:TPSState . (tps-merge ?s tps-initial) = ?s)
+  pick-any s:TPSState
+    (!chain [(tps-merge s tps-initial)
+           = (pr (Set.union (first s) (first tps-initial))
+                 (Set.union (second s) (second tps-initial)))  [tps-merge-is-pointwise-union]
+           = (pr (Set.union (first s) Set.null)
+                 (Set.union (second s) (second tps-initial)))  [TwoPhaseSetSpec.tps-initial-first]
+           = (pr (Set.union (first s) Set.null)
+                 (Set.union (second s) Set.null))              [TwoPhaseSetSpec.tps-initial-second]
+           = (pr (first s) (Set.union (second s) Set.null))    [union-null-right]
+           = (pr (first s) (second s))                          [union-null-right]
+           = s                                                  [Pr.correctness']])
+  
+
+  
+  module Theory {
+    define tps-theory := TwoPhaseSetSpec.Theory.tps-theory
+    
+    define tps-absorption := TwoPhaseSetSpec.Theory.tps-absorption
+    define tps-monotone-left := TwoPhaseSetSpec.Theory.tps-monotone-left
+    define tps-monotone-right := TwoPhaseSetSpec.Theory.tps-monotone-right
+  }
+  
+}

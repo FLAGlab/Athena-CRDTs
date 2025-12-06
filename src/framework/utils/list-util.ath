@@ -1,0 +1,15 @@
+load "list-of"
+extend-module List {
+declare take: (S) [(List S) N] -> (List S)
+module take {
+assert* take-def :=
+[((take l zero) =  nil)
+ ((take (h :: t) (S n)) = (h :: take t n))]
+} 
+declare drop: (S) [(List S) N] -> (List S)
+module drop {
+assert* drop-def :=
+[((drop l zero) =  l)
+ ((drop (h :: t) (S n)) = (drop t n))]
+} 
+} 

@@ -1,0 +1,66 @@
+# Minimal Multiset Module
+# Based on official msets-notp.ath but with asserted axioms instead of proofs
+# Created to avoid Set/MSet operator conflict while the official library is being fixed
+#
+# Strategy (per AKM.md and Athena Reference Ch. 2-3):
+# 1. Use `declare` for axiomatic function symbols
+# 2. Use `assert*` for axioms (auto-quantifies free variables)
+# 3. Avoid pre-defining variables - let assert* handle quantification
+# 4. Keep it minimal - only operations actually used by framework
+
+module MSet {
+  
+# === CORE DATATYPE ===
+structure (MSet S) := null | (insert S (MSet S))
+
+# === LIST CONVERSIONS (for input expansion) ===
+define (lst->mset L) :=
+  match L {
+    [] => null 
+  | (list-of x rest) => (insert x (lst->mset rest))
+  | _ => L 
+  }
+
+# === MEMBERSHIP ===
+declare in: (T) [T (MSet T)] -> Boolean [[id lst->mset]]
+
+# === OPERATOR OVERLOADING (define early for use in axioms) ===
+# Note: We define ++ but with DIFFERENT precedence than Set.++ to avoid conflicts
+# Set uses ++ at precedence 140, we use 210
+expand-input insert [id lst->mset]
+define ++ := insert
+set-precedence ++ 210
+
+# Axiom: nothing is in null, element in insert means equal to head or in tail
+assert* in-def := 
+  [(~ ?x in null)
+   (?x in ?h ++ ?t <==> ?x = ?h | ?x in ?t)]
+
+# === SINGLETON ===
+declare singleton: (T) [T] -> (MSet T)
+
+assert* singleton-axiom := (singleton ?x = insert ?x null)
+
+# === REMOVE ===
+# Note: Not actually used by framework, but backbone.ath line 26 references MSet.-
+# (though it's immediately shadowed by FMap.- on line 27, so never actually called)
+declare remove: (S) [(MSet S) S] -> (MSet S)
+
+# Define - as an alias for remove (for backbone.ath line 26 compatibility)
+define - := remove
+
+# === UNION ===
+# This IS actually used by unified_backbone.ath line 143: (MSet.union net1 net2)
+declare union: (S) [(MSet S) (MSet S)] -> (MSet S) [[lst->mset lst->mset]]
+
+# Axioms: union with null is identity, union distributes over insert
+assert* union-def :=
+  [((union null ?s) = ?s)
+   ((union (?h ++ ?t) ?s) = (?h ++ (union ?t ?s)))]
+
+}  # close module MSet
+
+# Minimal MSet module loaded
+# - Axioms: in-def, singleton-axiom, union-def
+# - Operations: null, insert, union, remove, in, singleton
+# - No proofs, no operator conflicts

@@ -1,0 +1,46 @@
+load "gcounter/gcounter_specification"
+load "../framework/theory/semilattice_theory"
+
+
+
+module GCounterSemilattice {
+  open GCounterSpec
+  open SemilatticeTheory
+
+  define merge-commutative-holds := GCounterSpec.Theory.merge-commutative-holds
+  define merge-associative-holds := GCounterSpec.Theory.merge-associative-holds
+  define merge-idempotent-holds := GCounterSpec.Theory.merge-idempotent-holds
+  
+  assert* merge-left-identity :=
+    ((gc-merge gc-initial ?s) = ?s)
+  
+  assert* merge-right-identity :=
+    ((gc-merge ?s gc-initial) = ?s)
+  
+  
+  module Theory {
+    
+    define gc-theory := GCounterSpec.Theory.gc-theory
+    define GCounter-To-Semilattice := GCounterSpec.Theory.GCounter-To-Semilattice
+    
+    
+    define gc-absorption := GCounterSpec.Theory.gc-absorption
+    define gc-monotone-left := GCounterSpec.Theory.gc-monotone-left
+    define gc-monotone-right := GCounterSpec.Theory.gc-monotone-right
+  }
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+}

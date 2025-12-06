@@ -1,0 +1,138 @@
+load "../../framework/utils/nat/nat-max"
+load "../../framework/theory/semilattice_theory"
+
+module GCounterSpec {
+  open N
+  open SemilatticeTheory
+  
+  define-sort GCState := N
+  datatype GCValue := (increment N)
+  
+  declare gc-merge: [GCState GCState] -> GCState
+  declare gc-initial: GCState
+  declare gc-apply-update: [GCState GCValue] -> GCState
+  
+  assert* gc-merge-is-max :=
+    [((gc-merge ?x ?y) = (N.Max ?x ?y))]
+  
+  assert* gc-initial-def :=
+    [(gc-initial = zero)]
+  
+  assert* gc-apply-update-def :=
+    [((gc-apply-update ?s (increment ?delta)) = (N.+ ?s ?delta))]
+  
+  # === CRDT-Specific Behavioral Properties ===
+  
+  # Increment never decreases the counter value  
+  conclude increment-monotonic :=
+    (forall ?s:N ?delta:N . (N.<= ?s (N.+ ?s ?delta)))
+    pick-any s:N delta:N
+      let {sum := (s N.+ delta);
+           eq := (!reflex sum);
+           cond := (!instance N.Less=.k-Less= [delta s sum])}
+        (!mp cond eq)
+  
+  # Increment preserves partial order (monotonicity)
+  conclude increment-preserves-order :=
+    (forall ?s:N ?delta:N . (N.<= ?s (gc-apply-update ?s (increment ?delta))))
+    pick-any s:N delta:N
+      (!chain-> [true
+             ==> (s N.<= (s N.+ delta))  [increment-monotonic]
+             ==> (s N.<= (gc-apply-update s (increment delta)))
+                 [gc-apply-update-def]])
+  
+  # Merge always produces value >= both inputs (left)
+  conclude merge-upper-bound-left :=
+    (forall ?s1:N ?s2:N . (N.<= ?s1 (gc-merge ?s1 ?s2)))
+    pick-any s1:N s2:N
+      (!cases (!excluded-middle (s2 N.< s1))
+        assume case1 := (s2 N.< s1)
+          (!chain-> [(gc-merge s1 s2) = (N.Max s1 s2) [gc-merge-is-max]
+                                       = s1            [N.Max.less2]
+                     ==> (s1 = s1)                     
+                     ==> (N.<= s1 s1)                  [N.Less=.Implied-by-equal]
+                     ==> (N.<= s1 (gc-merge s1 s2))    [(gc-merge s1 s2) = s1]])
+        assume case2 := (~ s2 N.< s1)
+          (!chain-> [(gc-merge s1 s2) = (N.Max s1 s2) [gc-merge-is-max]
+                                       = s2            [N.Max.not-less2]
+                     ==> (~ s2 N.< s1)                 
+                     ==> (N.<= s1 s2)                  [N.Less=.trichotomy2]
+                     ==> (N.<= s1 (gc-merge s1 s2))    [(gc-merge s1 s2) = s2]]))
+  
+  # Merge always produces value >= both inputs (right)
+  conclude merge-upper-bound-right :=
+    (forall ?s2:N ?s1:N . (N.<= ?s2 (gc-merge ?s1 ?s2)))
+    pick-any s2:N s1:N
+      (!chain-> [true
+             ==> (s2 N.<= (gc-merge s2 s1))  [merge-upper-bound-left]
+             ==> (s2 N.<= (gc-merge s1 s2))  [N.Max.commutative gc-merge-is-max]])
+  
+  
+  module Theory {
+
+    conclude merge-commutative :=
+      (forall ?s1:GCState ?s2:GCState . 
+        (gc-merge ?s1 ?s2) = (gc-merge ?s2 ?s1))
+      pick-any s1:GCState s2:GCState
+        (!chain [(gc-merge s1 s2)
+               = (N.Max s1 s2)     [gc-merge-is-max]
+               = (N.Max s2 s1)     [N.Max.commutative]
+               = (gc-merge s2 s1)  [gc-merge-is-max]])
+    
+    conclude merge-associative :=
+      (forall ?s1:GCState ?s2:GCState ?s3:GCState .
+        (gc-merge (gc-merge ?s1 ?s2) ?s3) = (gc-merge ?s1 (gc-merge ?s2 ?s3)))
+      pick-any s1:GCState s2:GCState s3:GCState
+        (!chain [(gc-merge (gc-merge s1 s2) s3)
+               = (N.Max (N.Max s1 s2) s3)      [gc-merge-is-max]
+               = (N.Max s1 (N.Max s2 s3))      [N.Max.associative]
+               = (gc-merge s1 (gc-merge s2 s3)) [gc-merge-is-max]])
+    
+    conclude merge-idempotent :=
+      (forall ?s:GCState . (gc-merge ?s ?s) = ?s)
+      pick-any s:GCState
+        (!chain [(gc-merge s s)
+               = (N.Max s s)  [gc-merge-is-max]
+               = s            [N.Max.idempotent]])
+    
+
+    conclude merge-left-identity :=
+      (forall ?s:GCState . (gc-merge gc-initial ?s) = ?s)
+      pick-any s:GCState
+        (!chain [(gc-merge gc-initial s)
+               = (N.Max gc-initial s)   [gc-merge-is-max]
+               = (N.Max zero s)         [gc-initial-def]
+               = s                      [N.Max.zero-left]])
+    
+    conclude merge-right-identity :=
+      (forall ?s:GCState . (gc-merge ?s gc-initial) = ?s)
+      pick-any s:GCState
+        (!chain [(gc-merge s gc-initial)
+               = (gc-merge gc-initial s)  [merge-commutative]
+               = s                        [merge-left-identity]])
+    
+    define gc-theory :=
+      (make-theory [] [merge-commutative merge-associative 
+                       merge-idempotent])
+    
+    define GCounter-To-Semilattice :=
+      (renaming |{SemilatticeTheory.join := gc-merge,
+                  SemilatticeTheory.bot := gc-initial}|)
+    
+    define gc-absorption :=
+      (get-property SemilatticeTheory.absorption
+                    GCounter-To-Semilattice
+                    SemilatticeTheory.theory)
+    
+    define gc-monotone-left :=
+      (get-property SemilatticeTheory.monotone-left
+                    GCounter-To-Semilattice
+                    SemilatticeTheory.theory)
+    
+    define gc-monotone-right :=
+      (get-property SemilatticeTheory.monotone-right
+                    GCounter-To-Semilattice
+                    SemilatticeTheory.theory)
+  }
+} 
+

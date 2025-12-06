@@ -1,0 +1,73 @@
+load "orset_specification"
+
+extend-module ORSetSpec {
+  
+  open VectorClocks
+  open Set
+  
+  #Remove Operation Properties
+  
+  conclude remove-preserves-adds :=
+    (forall ?e ?s ?actor .
+      (orset-adds (orset-apply-update ?s (ORSetSpec.remove ?e) ?actor)) = (orset-adds ?s))
+  pick-any e:Ide s:ORSetState actor:ActorId
+    (!chain [(orset-adds (orset-apply-update s (ORSetSpec.remove e) actor))
+           = (orset-adds (orset-state (orset-clock s) (orset-adds s) (orset-removes s)))
+             [(head orset-remove-preserves-adds)]
+           = (orset-adds s)
+             [(head (tail (tail (tail orset-state-axioms))))]])
+  
+  # Tag Uniqueness
+  define tag-equality-implies-actor-equality :=
+    (forall ?e:Ide ?a1:ActorId ?a2:ActorId .
+      (tag ?e (pr 0 ?a1)) = (tag ?e (pr 0 ?a2)) ==> ?a1 = ?a2)
+  
+  conclude tag-equality-implies-actor-equality :=
+    (forall ?e:Ide ?a1:ActorId ?a2:ActorId .
+      (tag ?e (pr 0 ?a1)) = (tag ?e (pr 0 ?a2)) ==> ?a1 = ?a2)
+  pick-any e:Ide a1:ActorId a2:ActorId
+      assume tags-eq := ((tag e (pr 0 a1)) = (tag e (pr 0 a2)))
+        # From Tag no-confusion: (tag e p1) = (tag e p2) <==> (e = e & p1 = p2)
+        let {tag-fwd := (!left-iff tag-no-conf);
+             components-eq := (!mp tag-fwd tags-eq);
+             pr-eq := (!right-and components-eq);
+             # From Pr no-confusion: (pr 0 a1) = (pr 0 a2) <==> (0 = 0 & a1 = a2)
+             pr-fwd := (!left-iff Pr.pr-no-conf);
+             actors-and := (!mp pr-fwd pr-eq)}
+          (!right-and actors-and)
+  
+
+  conclude tag-uniqueness-by-actor :=
+    (forall ?e:Ide ?clock:Clock ?a1:ActorId ?a2:ActorId .
+      (?a1 =/= ?a2) ==>
+      (tag ?e (pr 0 ?a1)) =/= (tag ?e (pr 0 ?a2)))
+  pick-any e:Ide clock:Clock a1:ActorId a2:ActorId
+      assume actors-neq := (a1 =/= a2)
+        (!by-contradiction ((tag e (pr 0 a1)) =/= (tag e (pr 0 a2)))
+          assume tags-eq := ((tag e (pr 0 a1)) = (tag e (pr 0 a2)))
+            let {actors-eq := (!mp tag-equality-implies-actor-equality tags-eq)}
+              (!absurd actors-eq actors-neq))
+  
+  
+  
+    # Tag Element
+  
+  conclude tag-element-property :=
+    (forall ?e ?id . (tag-element (tag ?e ?id)) = ?e)
+  pick-any e:Ide id:(Pr Int Ide)
+    # This follows directly from the tag-element selector axiom
+    tag-element-selector
+  
+  # Remove Monotonicity
+  
+  conclude subset-of-union-left :=
+    (forall ?a ?b . (Set.subset ?a (Set.union ?a ?b)))
+  pick-any a:(Set.Set Tag) b:(Set.Set Tag)
+    (!Set.subset-intro
+      (pick-any t
+        assume (t in a)
+          (!chain-> [(t in a)
+                 ==> (t in a | t in b)        [alternate]
+                 ==> (t in (Set.union a b))   [Set.UC]])))
+  
+} # extend-module ORSetSpec

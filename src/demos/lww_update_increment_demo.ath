@@ -1,0 +1,88 @@
+# Demo: Testing update-increments-actor-clock property
+# Verifying that clock-tick actually increments the actor's clock component
+
+load "../framework/vector_clocks"
+load "../framework/vector_clock_properties"
+
+module LWWUpdateDemo {
+  open VectorClocks
+  
+  # Test with concrete values
+  define replica1 := (string->id "replica1")
+  define replica2 := (string->id "replica2")
+  
+  # Start with empty clock
+  define empty-clock := clock-empty
+  
+  # Tick replica1's clock
+  define clock-after-replica1-tick := (clock-tick empty-clock replica1)
+  
+  # What should happen:
+  # (clock-get empty-clock replica1) = zero (by ClockGet.empty)
+  # (clock-get (clock-tick empty-clock replica1) replica1) = (S zero) (by tick-increments-component)
+  
+  # Let's verify this step by step
+  (print "\n=== Testing clock-tick increment property ===\n")
+  
+  # Step 1: What is the value before tick?
+  (print "Before tick: (clock-get empty-clock replica1) = ")
+  (print (eval (clock-get empty-clock replica1)))
+  (print "\n")
+  
+  # Step 2: What is the value after tick?
+  (print "After tick: (clock-get (clock-tick empty-clock replica1) replica1) = ")
+  (print (eval (clock-get (clock-tick empty-clock replica1) replica1)))
+  (print "\n")
+  
+  # Step 3: What is S of the before value?
+  (print "Expected: (S (clock-get empty-clock replica1)) = ")
+  (print (eval (S (clock-get empty-clock replica1))))
+  (print "\n")
+  
+  # Now let's try with a non-empty clock
+  define clock-with-replica2 := (clock-tick empty-clock replica2)
+  define clock-with-both := (clock-tick clock-with-replica2 replica1)
+  
+  (print "\n=== Testing with non-empty clock ===\n")
+  (print "Clock with replica2 ticked once, replica1 component: ")
+  (print (eval (clock-get clock-with-replica2 replica1)))
+  (print "\n")
+  
+  (print "After ticking replica1: ")
+  (print (eval (clock-get clock-with-both replica1)))
+  (print "\n")
+  
+  (print "Expected (S of previous): ")
+  (print (eval (S (clock-get clock-with-replica2 replica1))))
+  (print "\n")
+  
+  # Now let's try to PROVE it using the framework theorem
+  (print "\n=== Attempting proof ===\n")
+  
+  # VectorClockProperties.tick-increments-component says:
+  # (forall ?c ?id . (clock-get (clock-tick ?c ?id) ?id) = (S (clock-get ?c ?id)))
+  
+  # For empty-clock and replica1:
+  conclude test-empty-case :=
+    ((clock-get (clock-tick empty-clock replica1) replica1) = 
+     (S (clock-get empty-clock replica1)))
+    (!chain [(clock-get (clock-tick empty-clock replica1) replica1)
+           = (S (clock-get empty-clock replica1))
+             [VectorClockProperties.tick-increments-component]])
+  
+  (print "Proved for empty clock case\n")
+  
+  # For clock-with-replica2 and replica1:
+  conclude test-nonempty-case :=
+    ((clock-get (clock-tick clock-with-replica2 replica1) replica1) = 
+     (S (clock-get clock-with-replica2 replica1)))
+    (!chain [(clock-get (clock-tick clock-with-replica2 replica1) replica1)
+           = (S (clock-get clock-with-replica2 replica1))
+             [VectorClockProperties.tick-increments-component]])
+  
+  (print "Proved for non-empty clock case\n")
+  
+  (print "\n=== Conclusion ===")
+  (print "\nThe theorem VectorClockProperties.tick-increments-component works!")
+  (print "\nIt can be used directly in !chain without manual instantiation.\n")
+}

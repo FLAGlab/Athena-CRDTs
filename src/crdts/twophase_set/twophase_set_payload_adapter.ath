@@ -1,0 +1,40 @@
+load "twophase_set_specification"
+load "../../framework/payload"
+module TwoPhaseSetAdapter {
+  open TwoPhaseSetSpec
+  open Payload
+  
+
+  define (tps-init ids) := (init tps-initial ids)
+  define (tps-reduce cfg) := (reduce tps-apply-update cfg)
+  define (tps-reduce* cfg) := (reduce* tps-apply-update cfg)
+  define (tps-broadcast cfg to-actors operation) := (broadcast cfg to-actors operation)
+  define (tps-merge-states left right) := (merge-states tps-merge left right)
+  
+  module SemilatticeProofs {
+    define commutative-for-tps-merge :=
+      (forall ?s1:TPSState ?s2:TPSState . (tps-merge ?s1 ?s2) = (tps-merge ?s2 ?s1))
+    
+    define associative-for-tps-merge :=
+      (forall ?s1:TPSState ?s2:TPSState ?s3:TPSState . 
+        (tps-merge (tps-merge ?s1 ?s2) ?s3) = (tps-merge ?s1 (tps-merge ?s2 ?s3)))
+    
+    define idempotent-for-tps-merge :=
+      (forall ?s:TPSState . (tps-merge ?s ?s) = ?s)
+    
+    conclude commutative := commutative-for-tps-merge
+      pick-any s1:TPSState s2:TPSState
+        (!chain [(tps-merge s1 s2)
+               = (tps-merge s2 s1)  [TwoPhaseSetSpec.Theory.merge-commutative]])
+    
+    conclude associative := associative-for-tps-merge
+      pick-any s1:TPSState s2:TPSState s3:TPSState
+        (!chain [(tps-merge (tps-merge s1 s2) s3)
+               = (tps-merge s1 (tps-merge s2 s3))  [TwoPhaseSetSpec.Theory.merge-associative]])
+    
+    conclude idempotent := idempotent-for-tps-merge
+      pick-any s:TPSState
+        (!chain [(tps-merge s s)
+               = s  [TwoPhaseSetSpec.Theory.merge-idempotent]])
+  }
+} 

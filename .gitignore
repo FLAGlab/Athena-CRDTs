@@ -1,0 +1,37 @@
+thesis/main.pdf
+thesis/*.aux
+thesis/*.log
+thesis/*.idx
+thesis/*.ind
+thesis/symbols.ilg
+thesis/main.bbl
+thesis/main.blg
+thesis/main.toc   
+thesis/main.ilg
+thesis/main.lof
+thesis/*.gz
+thesis/*.synctex(busy)
+thesis/*.fdb_latexmk
+thesis/*.fls
+src/ins.txt
+main.pdf
+athena_run
+athena-run
+
+# Project files
+.todo
+.vscode/
+
+# Folders to exclude
+docs/
+archive/
+tests/
+src/parameters/
+src/athena_reference/
+
+# File types
+*.md
+!README.md
+
+# Specific files
+thesis/ARCHIVE_MANIFEST.txt

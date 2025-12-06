@@ -1,0 +1,23 @@
+load "lww_register_spec"
+load "../../framework/backbone"
+
+module LWWRegisterAdapter {
+  open LWWRegisterSpec
+  open Backbone
+  open VectorClocks
+  
+  define (lww-init actor-ids) :=
+    (init-with-clocks lww-merge lww-initial lww-apply-update actor-ids)
+  
+  define (lww-update cfg actor-id new-value) :=
+    (update-local cfg actor-id (write new-value) lww-initial lww-apply-update)
+  
+  define (lww-broadcast cfg from-actor to-actors new-value) :=
+    (broadcast-to cfg from-actor to-actors (write new-value) lww-initial lww-apply-update)
+  
+  define (lww-read-config cfg actor-id) :=
+    (query-state cfg actor-id lww-read (lww-read lww-initial))
+  
+  define (lww-merge-states s1:LWWState s2:LWWState) :=
+    (lww-merge s1 s2)
+}

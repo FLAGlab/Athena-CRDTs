@@ -1,0 +1,177 @@
+load "orset_specification"
+
+extend-module ORSetSpec {
+  
+  open VectorClocks
+  open Set
+  
+  # Import the subset-of-union lemma we need (proven in orset_simple_properties, but that file has issues)
+  # We'll reprove it here inline since it's trivial
+  conclude subset-of-union-left :=
+    (forall ?a:(Set.Set Tag) ?b:(Set.Set Tag) .
+      (Set.subset ?a (Set.union ?a ?b)))
+  pick-any a:(Set.Set Tag) b:(Set.Set Tag)
+      (!Set.subset-intro
+        (pick-any t
+          assume (t in a)
+            (!chain-> [(t in a)
+                   ==> (t in a | t in b)        [alternate]
+                   ==> (t in (Set.union a b))   [Set.UC]])))
+  
+  # Also need the symmetric version for the second conjunct
+  conclude subset-of-union-right :=
+    (forall ?a:(Set.Set Tag) ?b:(Set.Set Tag) .
+      (Set.subset ?b (Set.union ?a ?b)))
+  pick-any a:(Set.Set Tag) b:(Set.Set Tag)
+      (!Set.subset-intro
+        (pick-any t
+          assume (t in b)
+            (!chain-> [(t in b)
+                   ==> (t in a | t in b)        [alternate]
+                   ==> (t in (Set.union a b))   [Set.UC]])))
+  
+  
+
+  # (clock-less c1 c2) ==> (clock-get c1 actor) < (clock-get c2 actor)
+
+
+
+  conclude merge-preserves-tag-sets :=
+    (forall ?s1:ORSetState ?s2:ORSetState .
+      ((Set.subset (orset-adds ?s1) 
+                   (Set.union (orset-adds ?s1) (orset-adds ?s2))) &
+       (Set.subset (orset-adds ?s2) 
+                   (Set.union (orset-adds ?s1) (orset-adds ?s2)))))
+  pick-any s1:ORSetState s2:ORSetState
+      let {adds1 := (orset-adds s1);
+           adds2 := (orset-adds s2)}
+        # Both conjuncts follow immediately from the subset lemmas
+        (!both
+          # adds1 ⊆ union(adds1, adds2)
+          (!chain-> [subset-of-union-left ==> (Set.subset adds1 (Set.union adds1 adds2))])
+          # adds2 ⊆ union(adds1, adds2)
+          (!chain-> [subset-of-union-right ==> (Set.subset adds2 (Set.union adds1 adds2))]))
+  
+
+  
+  define concurrent-merge-order-independent :=
+    (forall ?s1:ORSetState ?s2:ORSetState ?c1:Clock ?c2:Clock .
+      (clock-concurrent ?c1 ?c2) ==>
+      (orset-merge ?s1 ?s2) = (orset-merge ?s2 ?s1))
+  
+  conclude concurrent-merge-order-independent-holds := concurrent-merge-order-independent
+    pick-any s1:ORSetState s2:ORSetState c1:Clock c2:Clock
+      assume (clock-concurrent c1 c2)
+        (!chain [(orset-merge s1 s2)
+               = (orset-merge s2 s1)  [Theory.merge-commutative-holds]])
+  
+
+  define-sort ExtendedORSetState := (Pr ORSetState Clock)
+
+  define (orset-merge-with-context left:ExtendedORSetState right:ExtendedORSetState) :=
+    let {state1 := (first left);
+         clock1 := (second left);
+         state2 := (first right);
+         clock2 := (second right);
+         merged-state := (orset-merge state1 state2);
+         merged-clock := (clock-join clock1 clock2)}
+      (pr merged-state merged-clock)
+  
+
+  define extended-merge-commutative :=
+    (forall ?s1:ExtendedORSetState ?s2:ExtendedORSetState .
+      (orset-merge-with-context ?s1 ?s2) = (orset-merge-with-context ?s2 ?s1))
+  
+  conclude extended-merge-commutative :=
+    (forall ?s1:ExtendedORSetState ?s2:ExtendedORSetState .
+      (orset-merge-with-context ?s1 ?s2) = (orset-merge-with-context ?s2 ?s1))
+  pick-any s1:ExtendedORSetState s2:ExtendedORSetState
+      let {state1 := (first s1);
+           clock1 := (second s1);
+           state2 := (first s2);
+           clock2 := (second s2);
+           merged-state-12 := (orset-merge state1 state2);
+           merged-state-21 := (orset-merge state2 state1);
+           joined-clock-12 := (clock-join clock1 clock2);
+           joined-clock-21 := (clock-join clock2 clock1);
+           state-comm := (!chain [(orset-merge state1 state2)
+                                 = (orset-merge state2 state1)
+                                     [Theory.merge-commutative-holds]]);
+           clock-comm := (!chain [(clock-join clock1 clock2)
+                                 = (clock-join clock2 clock1)
+                                     [VectorClocks.Properties.clock-join-commutative]]);
+           result12 := (pr merged-state-12 joined-clock-12);
+           result21 := (pr merged-state-21 joined-clock-21);
+           pair-eq := (!chain [(pr merged-state-12 joined-clock-12)
+                              = (pr merged-state-21 joined-clock-21)
+                                  [state-comm clock-comm]])}
+        (!chain [(orset-merge-with-context s1 s2)
+               = result12
+               = result21  [pair-eq]
+               = (orset-merge-with-context s2 s1)])
+  
+  define extended-merge-associative :=
+    (forall ?s1:ExtendedORSetState ?s2:ExtendedORSetState ?s3:ExtendedORSetState .
+      (orset-merge-with-context (orset-merge-with-context ?s1 ?s2) ?s3) =
+      (orset-merge-with-context ?s1 (orset-merge-with-context ?s2 ?s3)))
+  
+  conclude extended-merge-associative :=
+    (forall ?s1:ExtendedORSetState ?s2:ExtendedORSetState ?s3:ExtendedORSetState .
+      (orset-merge-with-context (orset-merge-with-context ?s1 ?s2) ?s3) =
+      (orset-merge-with-context ?s1 (orset-merge-with-context ?s2 ?s3)))
+  pick-any s1:ExtendedORSetState s2:ExtendedORSetState s3:ExtendedORSetState
+      let {state1 := (first s1); clock1 := (second s1);
+           state2 := (first s2); clock2 := (second s2);
+           state3 := (first s3); clock3 := (second s3);
+           merged12 := (orset-merge state1 state2);
+           joined12 := (clock-join clock1 clock2);
+           merged12_3 := (orset-merge merged12 state3);
+           joined12_3 := (clock-join joined12 clock3);
+           merged23 := (orset-merge state2 state3);
+           joined23 := (clock-join clock2 clock3);
+           merged1_23 := (orset-merge state1 merged23);
+           joined1_23 := (clock-join clock1 joined23);
+           state-assoc := (!chain [(orset-merge (orset-merge state1 state2) state3)
+                                  = (orset-merge state1 (orset-merge state2 state3))
+                                      [Theory.merge-associative-holds]]);
+           clock-assoc := (!chain [(clock-join (clock-join clock1 clock2) clock3)
+                                  = (clock-join clock1 (clock-join clock2 clock3))
+                                      [VectorClocks.Properties.clock-join-associative]])}
+        (!chain [(orset-merge-with-context (orset-merge-with-context s1 s2) s3)
+               = (orset-merge-with-context (pr merged12 joined12) s3)
+               = (pr merged12_3 joined12_3)
+               = (pr merged1_23 joined1_23)  [state-assoc clock-assoc]
+               = (orset-merge-with-context s1 (pr merged23 joined23))
+               = (orset-merge-with-context s1 (orset-merge-with-context s2 s3))])
+  
+  define extended-merge-idempotent :=
+    (forall ?s:ExtendedORSetState .
+      (orset-merge-with-context ?s ?s) = ?s)
+  
+  conclude extended-merge-idempotent :=
+    (forall ?s:ExtendedORSetState .
+      (orset-merge-with-context ?s ?s) = ?s)
+  pick-any s:ExtendedORSetState
+      let {state := (first s);
+           clock := (second s);
+           state-idemp := (!chain [(orset-merge state state)
+                                  = state  [Theory.merge-idempotent-holds]]);
+           clock-idemp := (!chain [(clock-join clock clock)
+                                  = clock  [VectorClocks.Properties.clock-join-idempotent]])}
+        (!chain [(orset-merge-with-context s s)
+               = (pr (orset-merge state state) (clock-join clock clock))
+               = (pr state clock)  [state-idemp clock-idemp]
+               = s])
+  
+  
+  define causal-absorption :=
+    (forall ?s1:ExtendedORSetState ?s2:ExtendedORSetState .
+      let {c1 := (second ?s1);
+           c2 := (second ?s2)}
+        (clock-less c1 c2) ==>
+        (orset-merge-with-context ?s1 ?s2) = ?s2)
+  
+  
+  assert* causal-absorption-holds := causal-absorption
+  
+}

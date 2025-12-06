@@ -1,0 +1,8 @@
+# Minimal N module creation to avoid nat-plus library bug
+# N datatype is built-in: datatype N := zero | (S N)
+# We just create the module wrapper
+
+module N {
+  # Module exists - provides namespace for Max
+  ()  # placeholder
+}

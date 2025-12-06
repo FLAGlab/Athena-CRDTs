@@ -1,0 +1,41 @@
+load "pncounter_specification"
+load "../../framework/payload"
+module PNCounterAdapter {
+  open PNCounterSpec
+  open Payload
+
+
+  define (pnc-init ids) := (init pnc-initial ids)
+  define (pnc-reduce cfg) := (reduce pnc-apply-update cfg)
+  define (pnc-reduce* cfg) := (reduce* pnc-apply-update cfg)
+  define (pnc-broadcast cfg to-actors operation) := (broadcast cfg to-actors operation)
+  define (pnc-merge-states left right) := (merge-states pnc-merge left right)
+  
+  # Prove that pnc-merge satisfies abstract semilattice properties
+  module SemilatticeProofs {
+    define commutative-for-pnc-merge :=
+      (forall ?s1:PNCState ?s2:PNCState . (pnc-merge ?s1 ?s2) = (pnc-merge ?s2 ?s1))
+    
+    define associative-for-pnc-merge :=
+      (forall ?s1:PNCState ?s2:PNCState ?s3:PNCState . 
+        (pnc-merge (pnc-merge ?s1 ?s2) ?s3) = (pnc-merge ?s1 (pnc-merge ?s2 ?s3)))
+    
+    define idempotent-for-pnc-merge :=
+      (forall ?s:PNCState . (pnc-merge ?s ?s) = ?s)
+    
+    conclude commutative := commutative-for-pnc-merge
+      pick-any s1:PNCState s2:PNCState
+        (!chain [(pnc-merge s1 s2)
+               = (pnc-merge s2 s1)  [PNCounterSpec.Theory.merge-commutative]])
+    
+    conclude associative := associative-for-pnc-merge
+      pick-any s1:PNCState s2:PNCState s3:PNCState
+        (!chain [(pnc-merge (pnc-merge s1 s2) s3)
+               = (pnc-merge s1 (pnc-merge s2 s3))  [PNCounterSpec.Theory.merge-associative]])
+    
+    conclude idempotent := idempotent-for-pnc-merge
+      pick-any s:PNCState
+        (!chain [(pnc-merge s s)
+               = s  [PNCounterSpec.Theory.merge-idempotent]])
+  }
+} 

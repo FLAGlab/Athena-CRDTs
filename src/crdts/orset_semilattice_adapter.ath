@@ -1,0 +1,46 @@
+load "orset/orset_specification"
+load "../framework/theory/semilattice_theory"
+load "../framework/vector_clocks"
+
+module ORSetSemilattice {
+  open ORSetSpec
+  open SemilatticeTheory  
+  
+  conclude merge-commutative-holds :=
+    (forall ?s1:ORSetState ?s2:ORSetState . 
+      (orset-merge ?s1 ?s2) = (orset-merge ?s2 ?s1))
+    (!claim ORSetSpec.Theory.merge-commutative-holds)
+  
+  conclude merge-associative-holds :=
+    (forall ?s1:ORSetState ?s2:ORSetState ?s3:ORSetState . 
+      (orset-merge (orset-merge ?s1 ?s2) ?s3) = 
+      (orset-merge ?s1 (orset-merge ?s2 ?s3)))
+    (!claim ORSetSpec.Theory.merge-associative-holds)
+  
+  
+  conclude merge-idempotent-holds :=
+    (forall ?s:ORSetState . (orset-merge ?s ?s) = ?s)
+    (!claim ORSetSpec.Theory.merge-idempotent-holds)
+  
+  
+  conclude merge-left-identity-holds :=
+    (forall ?s:ORSetState . (orset-merge orset-initial ?s) = ?s)
+    (!claim ORSetSpec.Theory.merge-left-identity)
+  
+  
+  conclude merge-right-identity-holds :=
+    (forall ?s:ORSetState . (orset-merge ?s orset-initial) = ?s)
+    (!claim ORSetSpec.Theory.merge-right-identity)
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+}

@@ -1,0 +1,126 @@
+load "../crdts/orset/orset_backbone_adapter"
+
+open ORSetAdapter
+open ORSetSpec
+
+(print "\n========================================================================\n")
+(print "OR-Set Demo - Demonstrating Add-Wins Semantics with Causal CRDTs\n")
+(print "========================================================================\n\n")
+
+(print "=== SCENARIO: Why OR-Set needs Backbone ===\n\n")
+(print "Unlike 2P-Set (which uses Payload):\n")
+(print "  - 2P-Set LIMITATION: Once removed, element can NEVER be re-added\n")
+(print "  - OR-Set SOLUTION: Uses vector clocks to track causality\n")
+(print "  - OR-Set enables: Re-adding elements after removal\n")
+(print "  - OR-Set semantics: ADD-WINS for concurrent operations\n\n")
+
+# ------------------------------------------------------------------
+# Setup: Three actors
+# ------------------------------------------------------------------
+
+(print "[Setup] Initialize three actors: r1, r2, r3\n\n")
+
+define r1 := 'r1
+define r2 := 'r2
+define r3 := 'r3
+define actors := (r1 :: r2 :: r3 :: nil)
+
+define cfg0 := (orset-init actors)
+
+(print "Initial state:\n")
+(eval (Backbone.snapshot cfg0))
+(print "\n")
+
+# ------------------------------------------------------------------
+# Scenario 1: Simple Add/Remove/Re-Add (impossible in 2P-Set)
+# ------------------------------------------------------------------
+
+(print "========================================================================\n")
+(print "SCENARIO 1: Re-adding elements (impossible in 2P-Set)\n")
+(print "========================================================================\n\n")
+
+(print "[Step 1] R1 adds 'x to the set\n")
+define cfg1 := (orset-broadcast cfg0 r1 (r1 :: r2 :: r3 :: nil) (add 'x))
+(print "State after add:\n")
+(eval (Backbone.snapshot cfg1))
+(print "\n")
+
+(print "[Step 2] R2 removes 'x from the set\n")
+define cfg2 := (orset-broadcast cfg1 r2 (r1 :: r2 :: r3 :: nil) (remove 'x))
+(print "State after remove:\n")
+(eval (Backbone.snapshot cfg2))
+(print "\n")
+
+(print "[Step 3] R3 adds 'x AGAIN (this works in OR-Set!)\n")
+(print "  In 2P-Set, this would fail - once removed, never re-added\n")
+(print "  In OR-Set, this creates a NEW unique tag for 'x\n")
+define cfg3 := (orset-broadcast cfg2 r3 (r1 :: r2 :: r3 :: nil) (add 'x))
+(print "State after re-add:\n")
+(eval (Backbone.snapshot cfg3))
+(print "\n")
+
+(print "[Result] Element 'x was removed and then successfully re-added\n")
+(print "  This demonstrates OR-Set's advantage over 2P-Set\n\n")
+
+# ------------------------------------------------------------------
+# Scenario 2: Concurrent Add/Remove - ADD WINS
+# ------------------------------------------------------------------
+
+(print "========================================================================\n")
+(print "SCENARIO 2: Concurrent Add/Remove - Demonstrating ADD-WINS semantics\n")
+(print "========================================================================\n\n")
+
+(print "[Setup] Start fresh with element 'y\n")
+define cfg4 := (orset-broadcast cfg3 r1 (r1 :: r2 :: r3 :: nil) (add 'y))
+(print "State:\n")
+(eval (Backbone.snapshot cfg4))
+(print "\n")
+
+(print "[Concurrent Operations]\n")
+(print "  R1: Removes 'y (operation A)\n")
+(print "  R2:   Adds 'y (operation B) - concurrent with R1's remove\n")
+(print "  These operations happen concurrently (neither observes the other)\n\n")
+
+define cfg5a := (orset-broadcast cfg4 r1 (r2 :: r3 :: nil) (remove 'y))
+define cfg5b := (orset-broadcast cfg4 r2 (r1 :: r3 :: nil) (add 'y))
+
+(print "[Step 1] Deliver messages to all actors\n")
+(print "  R1's remove: Tombstones the tag she observed\n")
+(print "  R2's add: Creates a NEW unique tag (concurrent, not observed by R1)\n")
+(print "  Result: ADD WINS - R2's tag survives\n\n")
+
+(print "[Result] After convergence:\n")
+(print "  State: {x, y} - Element 'y is PRESENT\n")
+(print "  Why: R2's add created a new tag that R1's remove didn't observe\n")
+(print "  This is the ADD-WINS semantics: concurrent add beats concurrent remove\n\n")
+
+# ------------------------------------------------------------------
+# Scenario 3: Multiple adds and selective removes
+# ------------------------------------------------------------------
+
+(print "========================================================================\n")
+(print "SCENARIO 3: Multiple concurrent adds and selective removes\n")
+(print "========================================================================\n\n")
+
+(print "[Step 1] All three actors add 'z concurrently\n")
+(print "  Each add creates a unique tag: (z, r1-id), (z, r2-id), (z, r3-id)\n")
+define cfg6a := (orset-broadcast cfg5b r1 (r2 :: r3 :: nil) (add 'z))
+define cfg6b := (orset-broadcast cfg5b r2 (r1 :: r3 :: nil) (add 'z))
+define cfg6c := (orset-broadcast cfg5b r3 (r1 :: r2 :: nil) (add 'z))
+
+(print "  State: {x, y, z} with three different tags for 'z\n\n")
+
+(print "[Step 2] R1 removes 'z (observing all three tags)\n")
+define cfg7 := (orset-broadcast cfg6c r1 (r2 :: r3 :: nil) (remove 'z))
+
+(print "  R1's remove tombstones all three tags she observed\n")
+(print "  State: {x, y} - All 'z tags are removed\n\n")
+
+(print "[Step 3] R2 adds 'z again (after the remove)\n")
+define cfg8 := (orset-broadcast cfg7 r2 (r1 :: r3 :: nil) (add 'z))
+
+(print "  R2 creates a NEW tag that wasn't tombstoned\n")
+(print "Final state:\n")
+(eval (Backbone.snapshot cfg8))
+(print "\n\n")
+

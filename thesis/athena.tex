@@ -1,0 +1,250 @@
+% Athena in a Nutshell
+% !TEX root = main.tex
+
+\chapter{Athena in a Nutshell}\label{chap:athena}
+
+This chapter introduces Athena, the declarative proof language used over this thesis for formalizing CRDT specifications. Athena~\cite{athenaref} is a multi-paradigm language that combines automated reasoning with user-guided proof construction, making it well-suited for theorem proving about algebraic structures like semilattices.
+
+We present the essential Athena constructs through practical examples, building from basic declarations to complete proofs. This prepares readers to understand the formal specifications without requiring prior Athena experience.
+
+\section{Why Athena for CRDT Verification?}
+
+CRDTs rely on algebraic properties (commutativity, associativity, idempotence) that must hold for all states and operations. Athena provides:
+
+\begin{itemize}
+  \item \textbf{Equational reasoning}: Natural expression properties through equality chains
+  \item \textbf{Modularity}: Theory hierarchies that factor common proofs
+  \item \textbf{Automation}: Built-in inference methods reduce proof load.
+\end{itemize}
+
+\section{Basic Constructs}
+
+\subsection{Modules and Namespaces}
+
+Modules encapsulate related definitions and theorems. Each module creates a namespace that enables a hierarchical organization of proofs.:
+
+\begin{lstlisting}[language=Athena,style=athena,caption={Module definition with nested namespace}]
+module GCounter {
+  # Declarations visible within GCounter module
+  declare merge: [N N] -> N
+  
+  module Theory {
+    # Nested module for theorems
+    conclude commutative := (forall ?n1:N ?n2:N . 
+      (merge ?n1 ?n2) = (merge ?n2 ?n1))}
+}
+
+(!chain [(GCounter.merge x y) 
+       = (GCounter.merge y x)  [GCounter.Theory.commutative]])
+\end{lstlisting}
+
+The \lstinline{open} directive imports module contents into the current namespace, reducing verbosity when working extensively with a module's statements.
+
+\subsection{Sorts and Declarations}
+
+Athena is multi-sorted: every term has a sort (type), and operations declare their input and output sorts. The \lstinline{declare} keyword introduces uninterpreted function symbols:
+
+\begin{lstlisting}[language=Athena,style=athena,caption={Sort declarations and function signatures}]
+# Define custom sorts
+define-sort State := (Pair N N)  # Product type
+datatype Value := (int N) | (str String)  # Sum type
+
+# Declare operations with sort signatures
+declare initial: [] -> State        # Nullary (constant)
+declare update: [State Value] -> State  # Binary function
+declare merge: [State State] -> State   # Binary operation
+
+define [s s1 s2] := [?s:State ?s1:State ?s2:State]
+\end{lstlisting}
+
+Pattern variables (prefixed with \lstinline{?}) range over their declared sorts. The expression \lstinline{define [s ...] := [?s:State ...]} reduces repetition in axioms and theorems.
+
+\subsection{Assertions: Stating Axioms}
+
+The \lstinline{assert} directive introduces axioms/propositions assumed without proof. The \lstinline{assert*} variant allows multiple axioms in a list:
+
+\begin{lstlisting}[language=Athena,style=athena,caption={Axiomatic specification of merge}]
+# Single assertion
+assert merge-commutative := 
+  (forall ?s1:State ?s2:State . (merge s1 s2) = (merge s2 s1))
+# Multiple related axioms
+assert* merge-axioms := [
+  (forall ?s1 ?s2 . (merge s1 s2) = (merge s2 s1))  # Commutativity
+  (forall ?s . (merge s s) = s)                      # Idempotence]
+\end{lstlisting}
+
+Axioms form the foundation of a specification.
+
+\subsection{Proofs: The \texttt{conclude} Construct}
+
+While \lstinline{assert} states axioms, \lstinline{conclude} proves theorems. A proof provides a \emph{deduction} that justifies the conclusion:
+
+\begin{lstlisting}[language=Athena,style=athena,caption={Basic proof structure}]
+conclude merge-symmetric := 
+  (forall ?s1:State ?s2:State . 
+    (merge s1 s2) = (merge s2 s1) ==> (merge s2 s1) = (merge s1 s2))
+  pick-any s1:State s2:State
+    assume hyp := ((merge s1 s2) = (merge s2 s1))
+      (!sym hyp)  # Symmetry of equality
+\end{lstlisting}
+
+The proof structure follows the logical form:
+\begin{enumerate}
+  \item \lstinline{pick-any} introduces universally quantified variables
+  \item \lstinline{assume} binds the hypothesis of an implication
+  \item Inference methods (prefixed with \lstinline{!}) construct the deduction
+\end{enumerate}
+
+\section{Proof Methods}
+
+Athena provides primitive inference rules as well as high-level proof methods. Methods automate common reasoning patterns.
+
+\subsection{Equational Reasoning with \texttt{!chain}}
+
+The \lstinline{!chain} method builds a chain of equalities, where each step is justified by an axiom or theorem:\\
+
+\begin{lstlisting}[language=Athena,style=athena,caption={Equational chain proof}]
+conclude merge-associative-demo := 
+  (forall ?s1:State ?s2:State . 
+    (merge (merge s1 s2) s2) = (merge s1 s2))
+  pick-any s1:State s2:State
+    (!chain [(merge (merge s1 s2) s2)
+           = (merge s1 (merge s2 s2))  [merge-associative]
+           = (merge s1 s2)             [merge-idempotent]])
+\end{lstlisting}
+
+Each line in the chain states an equality, and the term in brackets names the justification. This style emulates standard mathematical practice and makes proofs highly readable.
+
+\subsection{Implication Chain with \texttt{!chain->}}
+
+For proving implications, \lstinline{!chain->} sequences modus ponens steps:
+
+\begin{lstlisting}[language=Athena,style=athena,caption={Implication chain}]
+# Given: (P ==> Q) and (Q ==> R) axioms
+conclude transitive-implication := (P ==> R)
+  (!chain-> [P ==> Q  [axiom-1]
+               ==> R  [axiom-2]])
+\end{lstlisting}
+
+This is particularly useful for monotonicity proofs, where we show that one property implies another through a sequence of intermediate steps.
+
+\subsection{Universal Instantiation with \texttt{!uspec}}
+
+When an axiom or theorem is universally quantified, \lstinline{!uspec} specializes it to concrete terms:
+
+\begin{lstlisting}[language=Athena,style=athena,caption={Universal specialization}]
+# Given axiom: (forall ?s1 ?s2 . (merge s1 s2) = (merge s2 s1))
+assert merge-commutative := (forall ?s1 ?s2 . ...)
+
+# Specialize to specific states
+define instance := (!uspec merge-commutative s1 s2)
+# Now instance is: (merge s1 s2) = (merge s2 s1)
+\end{lstlisting}
+
+Athena offers both \lstinline{!chain} and \lstinline{!uspec} as formal methods. The following are equivalent:
+
+\begin{lstlisting}[language=Athena,style=athena,caption={Automatic vs manual instantiation}]
+# Manual
+define step1 := (!uspec merge-commutative s1 s2)
+define result := (!chain [(merge s1 s2) = (merge s2 s1) [step1]])
+
+# Automatic
+define result := (!chain [(merge s1 s2) = (merge s2 s1) [merge-commutative]])
+\end{lstlisting}
+
+\subsection{Case Analysis with \texttt{!cases}}
+
+For datatype definitions, \lstinline{!cases} performs structural induction or case splits:
+
+\begin{lstlisting}[language=Athena,style=athena,caption={Proof by cases over a datatype}]
+datatype Update := (increment) | (decrement)
+
+conclude update-total := 
+  (forall ?u:Update . (u = increment) | (u = decrement))
+  pick-any u:Update
+    (!cases u {
+      (increment) => (!left (!reflex increment))
+      (decrement) => (!right (!reflex decrement)) })
+\end{lstlisting}
+
+\section{Theories and Adapters}
+
+Athena's \emph{theory mechanism} enables modular proofs. A theory packages axioms and derived theorems, which can then be instantiated for multiple concrete types.
+
+\subsection{Defining a Theory}
+
+A theory is created with \lstinline{make-theory}, specifying axioms and theorems:
+
+\begin{lstlisting}[language=Athena,style=athena,caption={Abstract semilattice theory}]
+module SemilatticeTheory {
+  declare join: (T) [T T] -> T
+  assert commutative := (forall ?x ?y . (x join y) = (y join x))
+  assert associative := (forall ?x ?y ?z . 
+    ((x join y) join z) = (x join (y join z)))
+  assert idempotent := (forall ?x . (x join x) = x)
+  
+  # Package into a theory
+  define theory := (make-theory [] [commutative associative idempotent])
+}
+\end{lstlisting}
+
+\subsection{Instantiating via Adapters}
+
+To apply the theory to a concrete CRDT, we create an \emph{adapter} that maps the abstract operations to concrete ones:
+
+\begin{lstlisting}[language=Athena,style=athena,caption={CRDT adapter inheriting semilattice properties}]
+module GCounterAdapter {
+  # Map abstract 'join' to concrete 'gc-merge'
+  define merge := gc-merge
+  
+  # Prove adapter satisfies theory axioms
+  conclude commutative := 
+    (forall ?s1:N ?s2:N . (gc-merge s1 s2) = (gc-merge s2 s1))
+    pick-any s1:N s2:N
+      (!chain [(gc-merge s1 s2)
+             = (N.max s1 s2)          [gc-merge-definition]
+             = (N.max s2 s1)          [N.Max.commutative]
+             = (gc-merge s2 s1)       [gc-merge-definition]])
+  
+  # Similar for associative, idempotent...
+  # Now all theorems from SemilatticeTheory hold for gc-merge
+}
+\end{lstlisting}
+
+This pattern eliminates redundant proofs: once we've proven that \lstinline{N.max} is a semilattice, any CRDT using max-based merge inherits those properties.
+
+\section{Reading Athena Code}
+
+When encountering Athena code in later chapters, readers should:
+
+\begin{enumerate}
+  \item \textbf{Identify the module structure}: What operations are declared? What sorts are involved?
+  \item \textbf{Locate the axioms}: Which properties are asserted vs. proven?
+  \item \textbf{Follow the proof chains}: Equational steps mirror standard algebraic reasoning
+  \item \textbf{Check the justifications}: Each step cites an axiom, theorem, or inference rule
+\end{enumerate}
+
+The formal specifications serve two purposes:
+\begin{itemize}
+  \item \textbf{Documentation}: Precise semantics for CRDT operations
+  \item \textbf{Verification}: Machine-checked proofs of convergence properties
+\end{itemize}
+
+\section{Tools and Workflow}
+
+Athena proofs are developed interactively. A typical workflow:
+
+\begin{enumerate}
+  \item Write the specification (sorts, declarations, axioms)
+  \item State the theorem to prove with \lstinline{conclude}
+  \item Build the proof incrementally, checking each step
+  \item Refactor common patterns into reusable methods
+\end{enumerate}
+
+The Athena interpreter provides immediate feedback on type errors, failed deductions, and missing justifications, enabling rapid iteration.
+
+\bigskip
+
+With these fundamentals in hand, readers are prepared to understand the formal CRDT specifications in Chapter~\ref{chap:theory} and the framework implementations in Chapter~\ref{chap:framework}. The subsequent chapters assume familiarity with the definitions presented here, focusing on the algebraic structures and convergence properties rather than Athena syntax.
+
+\endinput

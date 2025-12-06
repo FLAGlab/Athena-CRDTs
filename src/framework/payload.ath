@@ -1,0 +1,89 @@
+load "utils/fmaps"
+load "utils/pair"
+load "utils/msets-simple"
+module Payload {
+  # Payload: Generic framework for state-based CRDTs
+  #
+  # SCOPE: Simple CRDTs with eventual consistency (no causal ordering)
+  #   - GCounter, GSet, PN-Counter, 2P-Set
+  #   - Messages have no metadata (unit)
+  #   - Delivery is immediate (no vector clocks)
+  #   - Operations: init, reduce, reduce*, enqueue, broadcast, merge-states
+  #
+  # DESIGN: Parametric over CRDT operations
+  #   Each CRDT specification provides:
+  #   - merge-fn: procedure that merges two states (commutative, associative, idempotent)
+  #   - initial: the initial state value
+  #   - apply-fn: procedure that applies an update to a state
+  
+  datatype (Message Value Meta) := (msg Ide Value Meta)
+  datatype Unit := unit
+  datatype (Configuration State Value Meta) :=
+    (kfg am:(FMap.Map Ide State)
+         net:(MSet.MSet (Message Value Meta)))
+  
+  define (am cfg) :=
+    match cfg {
+      (kfg actors _) => actors
+    }
+  
+  define (net cfg) :=
+    match cfg {
+      (kfg _ pending) => pending
+    }
+  
+  define (map-lookup map target) :=
+    match map {
+      FMap.empty-map => NONE
+    | (FMap.update (pair key value) rest) =>
+        match (equal? key target) {
+          true => (SOME value)
+        | false => (map-lookup rest target)
+        }
+    }
+  
+  # Generic reduce: takes apply-fn as parameter
+  define (reduce apply-fn cfg) :=
+    match cfg {
+      (kfg actors MSet.null) => cfg
+    | (kfg actors (MSet.insert (msg id payload meta) rest)) =>
+        match (map-lookup actors id) {
+          NONE => (kfg actors rest)
+        | (SOME current) =>
+            (kfg (FMap.update (pair id (apply-fn current payload)) actors)
+                 rest)
+        }
+    }
+  
+  # Generic reduce*: applies reduce until network is empty
+  define (reduce* apply-fn cfg) :=
+    match (net cfg) {
+      MSet.null => cfg
+    | (MSet.insert _ _) => (reduce* apply-fn (reduce apply-fn cfg))
+    }
+  
+  define (enqueue cfg id payload) :=
+    (kfg (am cfg) (MSet.insert (msg id payload unit) (net cfg)))
+  
+
+  define (broadcast cfg to-actors operation) :=
+    match to-actors {
+      nil => cfg
+    | (to :: rest) =>
+        let {cfg' := (broadcast cfg rest operation)}
+          (kfg (am cfg') (MSet.insert (msg to operation unit) (net cfg')))
+    }
+  
+  define (init-map initial ids) :=
+    match ids {
+      nil => FMap.empty-map
+    | (id :: rest) =>
+        (FMap.update (pair id initial) (init-map initial rest))
+    }
+
+  define (init initial ids) :=
+    (kfg (init-map initial ids) MSet.null)
+  
+  define (merge-states merge-fn left right) :=
+    (merge-fn left right)
+} 

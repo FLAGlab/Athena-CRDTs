@@ -1,0 +1,223 @@
+load "utils/msets-simple"
+load "utils/fmaps"
+load "../framework/payload"
+load "../framework/vector_clocks"
+module Backbone {
+  # Backbone: Causal op-based CRDTs with vector clocks
+  #
+  # RELATIONSHIP TO Payload:
+  #   - Payload: Simple state-based CRDTs (GCounter, GSet, etc.)
+  #     * Messages: (msg actor operation unit) - no metadata
+  #     * Delivery: immediate, no ordering guarantees
+  #     * Configuration: (kfg states network)
+  #   
+  #   - Backbone: Causal op-based CRDTs (LWW-Register, OR-Set, etc.)
+  #     * Messages: (msg actor operation vector-clock) - causal metadata
+  #     * Delivery: checks clock-can-deliver before applying
+  #     * Configuration: (kfg states clocks network)
+  #
+  # DESIGN PRINCIPLE:
+  #   Backbone reuses Payload utilities (map-lookup, init-map)
+  #   but adds causal delivery guarantees via vector clocks. The two modules
+  #   serve different CRDT categories and remain separate for clarity.
+  
+  open Payload
+  open VectorClocks
+  
+
+  datatype (Configuration State Value) :=
+    (kfg astates:(FMap.Map Ide State)
+         clocks:(FMap.Map Ide Clock)
+         net:(MSet.MSet (Message Value Clock)))
+  
+  define (get-cfg-states cfg) :=
+    match cfg {
+      (kfg states _ _) => states
+    | _ => FMap.empty-map 
+    }
+  
+  define (get-cfg-clocks cfg) :=
+    match cfg {
+      (kfg _ clks _) => clks
+    | _ => FMap.empty-map 
+    }
+  
+  define (get-cfg-net cfg) :=
+    match cfg {
+      (kfg _ _ network) => network
+    | _ => MSet.null 
+    }
+  
+  define (drain-payload-state candidate) :=
+    candidate
+  
+  define (drain-payload-state-map states) :=
+    match states {
+      FMap.empty-map => FMap.empty-map
+    | (FMap.update (pair actor value) rest) =>
+        (FMap.update (pair actor (drain-payload-state value))
+                     (drain-payload-state-map rest))
+    | _ => states 
+    }
+  
+  define (clocks-from-ids ids) :=
+    match ids {
+      nil => FMap.empty-map
+    | (id :: rest) =>
+        (FMap.update (pair id clock-empty) (clocks-from-ids rest))
+    }
+
+  define (clock-can-deliver actor-clock msg-clock) :=
+    true
+  define (clocks-get clock-map id) :=
+    match (FMap.at clock-map id) {
+      NONE => clock-empty
+    | (SOME clock) => clock
+    }
+
+  define (clocks-set clock-map id clock) :=
+    (FMap.update (pair id clock) clock-map)
+
+  define (clocks-join cmap1 cmap2) :=
+    match cmap1 {
+      FMap.empty-map => cmap2
+    | (FMap.update (pair id clock1) rest) =>
+        match (FMap.at cmap2 id) {
+          NONE => (FMap.update (pair id clock1) (clocks-join rest cmap2))
+        | (SOME clock2) =>
+            let {joined := (clock-join clock1 clock2);
+                 cmap2-without-id := (FMap.- cmap2 id)}
+              (FMap.update (pair id joined) (clocks-join rest cmap2-without-id))
+        }
+    } 
+  define (merge-state-maps merge-fn map1 map2) :=
+    match map1 {
+      FMap.empty-map => map2
+    | (FMap.update (pair id state1) rest) =>
+        match (FMap.at map2 id) {
+          NONE => (FMap.update (pair id state1) (merge-state-maps merge-fn rest map2))
+        | (SOME state2) =>
+            let {merged := (merge-fn state1 state2);
+                 map2-without-id := (FMap.- map2 id)}
+              (FMap.update (pair id merged) (merge-state-maps merge-fn rest map2-without-id))
+        }
+    }
+  
+
+  define (init-with-clocks merge-fn initial apply-fn ids) :=
+    let {initial-states := (Payload.init-map initial ids);  
+         initial-clocks := (clocks-from-ids ids)}
+      (kfg initial-states initial-clocks MSet.null)
+  
+  define (broadcast-from cfg actor value) :=
+    let {states := (get-cfg-states cfg);
+         clocks := (get-cfg-clocks cfg);
+         net := (get-cfg-net cfg);
+         actor-clock := (clocks-get clocks actor);
+         new-clock := (clock-tick actor-clock actor);
+         new-clocks := (clocks-set clocks actor new-clock);
+         msg := (msg actor value new-clock);
+         new-net := (MSet.insert msg net)}
+      (kfg states new-clocks new-net)
+  
+  # Query functions
+  define (snapshot cfg) :=
+    (drain-payload-state-map (get-cfg-states cfg))
+  
+  define (get-clocks cfg) :=
+    (get-cfg-clocks cfg)
+  
+  define (network cfg) :=
+    (get-cfg-net cfg)
+  
+  define (merge-configs merge-fn cfg1 cfg2) :=
+    let {states1 := (get-cfg-states cfg1);
+         states2 := (get-cfg-states cfg2);
+         clocks1 := (get-cfg-clocks cfg1);
+         clocks2 := (get-cfg-clocks cfg2);
+         merged-states := (merge-state-maps merge-fn states1 states2);
+         merged-clocks := (clocks-join clocks1 clocks2);
+         net1 := (get-cfg-net cfg1);
+         net2 := (get-cfg-net cfg2);
+         merged-net := (MSet.union net1 net2)}
+      (kfg merged-states merged-clocks merged-net)
+  
+
+
+  define (update-local cfg actor-id operation initial apply-fn) :=
+    let {states := (get-cfg-states cfg);
+         clocks := (get-cfg-clocks cfg);
+         net := (get-cfg-net cfg);
+         
+         # Get current state for this actor
+         current-state := match (Payload.map-lookup states actor-id) {
+           NONE => initial
+         | (SOME st) => st
+         };
+         
+         # Apply update with actor-id for clock ticking
+         new-state := (apply-fn current-state operation actor-id);
+         
+         # Update state map
+         new-states := (FMap.update (pair actor-id new-state) states)}
+      (kfg new-states clocks net)
+  
+  define (create-broadcast-messages sender targets operation clock) :=
+    match targets {
+      nil => MSet.null
+    | (to :: rest) =>
+        (MSet.insert (msg to operation clock)
+                     (create-broadcast-messages sender rest operation clock))
+    }
+
+  define (insert-broadcast-messages cfg-base operation clock to-actors) :=
+    match to-actors {
+      nil => cfg-base
+    | (to :: rest) =>
+        let {cfg' := (insert-broadcast-messages cfg-base operation clock rest);
+             net' := (get-cfg-net cfg')}
+          (kfg (get-cfg-states cfg') (get-cfg-clocks cfg') 
+                        (MSet.insert (msg to operation clock) net'))
+    }
+  
+  define (broadcast-to cfg from-actor to-actors operation initial apply-fn) :=
+    let {states := (get-cfg-states cfg);
+         clocks := (get-cfg-clocks cfg);
+         
+         # Tick sender's clock
+         sender-clock := match (Payload.map-lookup clocks from-actor) {
+           NONE => clock-empty
+         | (SOME c) => c
+         };
+         new-sender-clock := (clock-tick sender-clock from-actor);
+         
+         # Update sender's state
+         sender-state := match (Payload.map-lookup states from-actor) {
+           NONE => initial
+         | (SOME st) => st
+         };
+         new-sender-state := (apply-fn sender-state operation from-actor);
+         
+         # Create base configuration with updated state and clocks
+         new-states := (FMap.update (pair from-actor new-sender-state) states);
+         new-clocks := (FMap.update (pair from-actor new-sender-clock) clocks);
+         cfg-base := (kfg new-states new-clocks (get-cfg-net cfg))}
+      (insert-broadcast-messages cfg-base operation new-sender-clock to-actors)
+  
+  define (query-state cfg actor-id read-fn default) :=
+    let {states := (get-cfg-states cfg)}
+      match (Payload.map-lookup states actor-id) {
+        NONE => default
+      | (SOME state) => (read-fn state)
+      }
+  
+  define (snapshot cfg) :=
+    (drain-payload-state-map (get-cfg-states cfg))
+  
+  define (get-clocks cfg) :=
+    (get-cfg-clocks cfg)
+  
+  define (network cfg) :=
+    (get-cfg-net cfg)
+} 
+

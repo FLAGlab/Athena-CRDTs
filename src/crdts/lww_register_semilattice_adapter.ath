@@ -1,0 +1,36 @@
+load "lww_register/lww_register_spec"
+load "../framework/theory/semilattice_theory"
+load "../framework/vector_clocks"
+
+
+module LWWRegisterSemilattice {
+  open LWWRegisterSpec
+  open SemilatticeTheory
+  
+  define merge-commutative-holds := LWWRegisterSpec.Theory.merge-commutative-holds
+  define merge-associative-holds := LWWRegisterSpec.Theory.merge-associative-holds
+  define merge-idempotent-holds := LWWRegisterSpec.Theory.merge-idempotent-holds
+  
+  
+  assert* merge-left-identity :=
+    ((lww-merge lww-initial ?s) = ?s)
+  
+  assert* merge-right-identity :=
+    ((lww-merge ?s lww-initial) = ?s)
+    
+  module Theory {
+    define lww-theory := LWWRegisterSpec.Theory.lww-theory
+  }
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+}

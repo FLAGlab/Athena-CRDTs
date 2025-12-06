@@ -1,0 +1,263 @@
+load "lww_register_spec"
+
+
+module LWWMergeProofs {
+  open LWWRegister
+  open VectorClocks
+  open Pr
+  
+  
+  # Commutativity
+  
+  # Lemma 1: When c1 < c2, selection gives v2 from both directions
+  conclude select-commutes-when-ordered :=
+    (forall ?v1 ?c1 ?v2 ?c2 .
+      (clock-less ?c1 ?c2) ==>
+      (lww-select-value ?v1 ?c1 ?v2 ?c2) = (lww-select-value ?v2 ?c2 ?v1 ?c1))
+  pick-any v1:Value c1:Clock v2:Value c2:Clock
+    assume c1-less-c2 := (clock-less c1 c2)
+      let {left-is-v2 := (!chain-> [c1-less-c2 ==> ((lww-select-value v1 c1 v2 c2) = v2) [select-axiom-1]]);
+           right-is-v2 := (!chain-> [c1-less-c2 ==> ((lww-select-value v2 c2 v1 c1) = v2) [select-axiom-2]])}
+        (!combine-equations left-is-v2 right-is-v2)
+  
+  # Lemma 2: When concurrent and v1 < v2, both selections give v2
+  conclude select-commutes-concurrent-ordered-values :=
+    (forall ?v1 ?c1 ?v2 ?c2 .
+      ((~ (clock-less ?c1 ?c2) & ~ (clock-less ?c2 ?c1)) & (value-less ?v1 ?v2)) ==>
+      (lww-select-value ?v1 ?c1 ?v2 ?c2) = (lww-select-value ?v2 ?c2 ?v1 ?c1))
+  pick-any v1:Value c1:Clock v2:Value c2:Clock
+    assume hyp := ((~ (clock-less c1 c2) & ~ (clock-less c2 c1)) & (value-less v1 v2))
+      let {left-is-v2 := (!chain-> [hyp ==> ((lww-select-value v1 c1 v2 c2) = v2) [select-axiom-3]]);
+           v1-less := (!right-and hyp);
+           not-v2-less := (!chain-> [v1-less ==> (~ (value-less v2 v1)) [value-asymmetric]]);
+           concurrent := (!left-and hyp);
+           concurrent-rev := (!both (!right-and concurrent) (!left-and concurrent));
+           cond-right := (!both concurrent-rev not-v2-less);
+           right-is-v2 := (!chain-> [cond-right ==> ((lww-select-value v2 c2 v1 c1) = v2) [select-axiom-4]])}
+        (!combine-equations left-is-v2 right-is-v2)
+  
+  # Lemma 3: When concurrent and ~(v1 < v2) and v2 < v1, both give v1
+  conclude select-commutes-concurrent-reverse-ordered :=
+    (forall ?v1 ?c1 ?v2 ?c2 .
+      ((~ (clock-less ?c1 ?c2) & ~ (clock-less ?c2 ?c1)) & 
+       ~ (value-less ?v1 ?v2) & (value-less ?v2 ?v1)) ==>
+      (lww-select-value ?v1 ?c1 ?v2 ?c2) = (lww-select-value ?v2 ?c2 ?v1 ?c1))
+  pick-any v1:Value c1:Clock v2:Value c2:Clock
+    assume hyp := ((~ (clock-less c1 c2) & ~ (clock-less c2 c1)) & 
+                   ~ (value-less v1 v2) & (value-less v2 v1))
+      let {concurrent := (!chain-> [hyp ==> (~ (clock-less c1 c2) & ~ (clock-less c2 c1))]);
+           not-v1-less := (!chain-> [hyp ==> (~ (value-less v1 v2))]);
+           cond-left := (!both concurrent not-v1-less);
+           left-is-v1 := (!chain-> [cond-left ==> ((lww-select-value v1 c1 v2 c2) = v1) [select-axiom-4]]);
+           v2-less := (!chain-> [hyp ==> (value-less v2 v1)]);
+           concurrent-rev := (!both (!right-and concurrent) (!left-and concurrent));
+           cond-right := (!both concurrent-rev v2-less);
+           right-is-v1 := (!chain-> [cond-right ==> ((lww-select-value v2 c2 v1 c1) = v1) [select-axiom-3]])}
+        (!combine-equations left-is-v1 right-is-v1)
+  
+  # Lemma 4: When concurrent and values equal, both give that value
+  conclude select-commutes-when-values-equal :=
+    (forall ?v ?c1 ?c2 .
+      (~ (clock-less ?c1 ?c2) & ~ (clock-less ?c2 ?c1)) ==>
+      (lww-select-value ?v ?c1 ?v ?c2) = (lww-select-value ?v ?c2 ?v ?c1))
+  pick-any v:Value c1:Clock c2:Clock
+    assume concurrent := (~ (clock-less c1 c2) & ~ (clock-less c2 c1))
+      let {not-v-less := (!chain-> [true ==> (~ (value-less v v)) [value-irreflexive]]);
+           cond-left := (!both concurrent not-v-less);
+           left-is-v := (!chain-> [cond-left ==> ((lww-select-value v c1 v c2) = v) [select-axiom-4]]);
+           concurrent-rev := (!both (!right-and concurrent) (!left-and concurrent));
+           cond-right := (!both concurrent-rev not-v-less);
+           right-is-v := (!chain-> [cond-right ==> ((lww-select-value v c2 v c1) = v) [select-axiom-4]])}
+        (!combine-equations left-is-v right-is-v)
+  
+  # Helper lemma: From totality, if neither value is less, they're equal  
+  conclude values-equal-when-incomparable :=
+    (forall ?v1 ?v2 .
+      (~ (value-less ?v1 ?v2) & ~ (value-less ?v2 ?v1)) ==> (?v1 = ?v2))
+  pick-any v1:Value v2:Value
+    assume both-not-less := (~ (value-less v1 v2) & ~ (value-less v2 v1))
+      let {not-v1-less := (!left-and both-not-less);
+           not-v2-less := (!right-and both-not-less)}
+        (!two-cases
+          assume v1-less-v2 := (value-less v1 v2)
+            (!from-complements (v1 = v2) v1-less-v2 not-v1-less)
+          assume not-v1-less-v2 := (~ (value-less v1 v2))
+            (!two-cases
+              assume v2-less-v1 := (value-less v2 v1)
+                (!from-complements (v1 = v2) v2-less-v1 not-v2-less)
+              assume not-v2-less-v1 := (~ (value-less v2 v1))
+                let {both-neg := (!both not-v1-less-v2 not-v2-less-v1)}
+                  (!chain-> [(!both value-total both-neg) 
+                          ==> (v1 = v2) 
+                          [prop-taut]])))
+  
+  # Lemma 6: When concurrent, selection commutes (handles all value orderings)
+  conclude select-commutes-when-concurrent :=
+    (forall ?v1 ?c1 ?v2 ?c2 .
+      (~ (clock-less ?c1 ?c2) & ~ (clock-less ?c2 ?c1)) ==>
+      (lww-select-value ?v1 ?c1 ?v2 ?c2) = (lww-select-value ?v2 ?c2 ?v1 ?c1))
+  pick-any v1:Value c1:Clock v2:Value c2:Clock
+    assume concurrent := (~ (clock-less c1 c2) & ~ (clock-less c2 c1))
+      (!two-cases
+        assume (value-less v1 v2)
+          (!chain-> [(!both concurrent (value-less v1 v2))
+                  ==> ((lww-select-value v1 c1 v2 c2) = (lww-select-value v2 c2 v1 c1))
+                  [select-commutes-concurrent-ordered-values]])
+        assume not-v1-less := (~ (value-less v1 v2))
+          (!two-cases
+            assume v2-less := (value-less v2 v1)
+              let {cond := (!both concurrent (!both not-v1-less v2-less))}
+                (!chain-> [cond ==> ((lww-select-value v1 c1 v2 c2) = (lww-select-value v2 c2 v1 c1))
+                        [select-commutes-concurrent-reverse-ordered]])
+            assume not-v2-less := (~ (value-less v2 v1))
+              let {both-not-less := (!both not-v1-less not-v2-less);
+                   v-eq := (!chain-> [both-not-less ==> (v1 = v2) [values-equal-when-incomparable]]);
+                   cond-left := (!both concurrent not-v1-less);
+                   left-is-v1 := (!chain-> [cond-left ==> ((lww-select-value v1 c1 v2 c2) = v1) [select-axiom-4]]);
+                   concurrent-rev := (!both (!right-and concurrent) (!left-and concurrent));
+                   cond-right := (!both concurrent-rev not-v2-less);
+                   right-is-v2 := (!chain-> [cond-right ==> ((lww-select-value v2 c2 v1 c1) = v2) [select-axiom-4]])}
+                (!chain [(lww-select-value v1 c1 v2 c2)
+                       = v1 [left-is-v1]
+                       = v2 [v-eq]
+                       = (lww-select-value v2 c2 v1 c1) [right-is-v2]])))
+  
+  # Main theorem: selection is commutative
+  define lww-select-commutative :=
+    (forall ?v1 ?c1 ?v2 ?c2 . 
+      (lww-select-value ?v1 ?c1 ?v2 ?c2) = (lww-select-value ?v2 ?c2 ?v1 ?c1))
+  
+  conclude lww-select-commutative := lww-select-commutative
+  pick-any v1:Value c1:Clock v2:Value c2:Clock
+    (!three-cases
+      assume (clock-less c1 c2)
+        (!chain-> [(clock-less c1 c2) ==> ((lww-select-value v1 c1 v2 c2) = (lww-select-value v2 c2 v1 c1))
+                [select-commutes-when-ordered]])
+      assume (clock-less c2 c1)
+        (!sym (!chain-> [(clock-less c2 c1) ==> ((lww-select-value v2 c2 v1 c1) = (lww-select-value v1 c1 v2 c2))
+                      [select-commutes-when-ordered]]))
+      assume (~ (clock-less c1 c2) & ~ (clock-less c2 c1))
+        (!chain-> [(~ (clock-less c1 c2) & ~ (clock-less c2 c1)) 
+                ==> ((lww-select-value v1 c1 v2 c2) = (lww-select-value v2 c2 v1 c1))
+                [select-commutes-when-concurrent]]))
+
+
+  conclude lww-select-commutative-clean :=
+    (forall ?v1 ?c1 ?v2 ?c2 . 
+      (lww-select-value ?v1 ?c1 ?v2 ?c2) = (lww-select-value ?v2 ?c2 ?v1 ?c1))
+  pick-any v1:Value c1:Clock v2:Value c2:Clock
+    (!three-cases
+      assume c1-less := (clock-less c1 c2)
+        (!chain-> [c1-less 
+                ==> ((lww-select-value v1 c1 v2 c2) = (lww-select-value v2 c2 v1 c1))
+                [select-commutes-when-ordered]])
+      assume c2-less := (clock-less c2 c1)
+        (!sym (!chain-> [c2-less 
+                      ==> ((lww-select-value v2 c2 v1 c1) = (lww-select-value v1 c1 v2 c2))
+                      [select-commutes-when-ordered]]))
+      assume concurrent := (~ (clock-less c1 c2) & ~ (clock-less c2 c1))
+        (!chain-> [concurrent 
+                ==> ((lww-select-value v1 c1 v2 c2) = (lww-select-value v2 c2 v1 c1))
+                [select-commutes-when-concurrent]]))
+  
+  define merge-commutative :=
+    (forall ?s1 ?s2 . (lww-merge ?s1 ?s2) = (lww-merge ?s2 ?s1))
+  
+  conclude merge-commutative := merge-commutative
+    pick-any s1:LWWState s2:LWWState
+      let {v1 := (first s1);
+           c1 := (second s1);
+           v2 := (first s2);
+           c2 := (second s2)}
+        (!chain [(lww-merge s1 s2)
+               = (pr (lww-select-value v1 c1 v2 c2) (clock-join c1 c2))  [lww-merge-def]
+               = (pr (lww-select-value v2 c2 v1 c1) (clock-join c2 c1))
+                 [lww-select-commutative VectorClocks.Properties.clock-join-commutative]
+               = (lww-merge s2 s1)  [lww-merge-def]])
+  
+
+  #Idempotence
+  
+  # Prove idempotence: selecting same value with same clock gives that value
+  # Strategy: Use irreflexivity of clock-less and value-less to show concurrent case applies
+  
+  define lww-select-idempotent :=
+    (forall ?v ?c . (lww-select-value ?v ?c ?v ?c) = ?v)
+  
+  conclude lww-select-idempotent := lww-select-idempotent
+    pick-any v:Value c:Clock
+      let {not-c-less-c := (!chain-> [true ==> (~ (clock-less c c)) [VectorClocks.Properties.clock-less-irreflexive]]);
+           not-v-less-v := (!chain-> [true ==> (~ (value-less v v)) [value-irreflexive]]);
+           both-not-less := (!both not-c-less-c not-c-less-c);
+           cond := (!both both-not-less not-v-less-v)}
+        (!chain-> [cond ==> ((lww-select-value v c v c) = v) [select-axiom-4]])
+  
+  define merge-idempotent :=
+    (forall ?s . (lww-merge ?s ?s) = ?s)
+  
+  conclude merge-idempotent := merge-idempotent
+    pick-any s:LWWState
+      let {v := (first s);
+           c := (second s)}
+        (!chain [(lww-merge s s)
+               = (pr (lww-select-value v c v c) (clock-join c c))  [lww-merge-def]
+               = (pr v c)  [lww-select-idempotent VectorClocks.Properties.clock-join-idempotent]
+               = s  [Pr.correctness']])
+  # associativity
+  
+  assert* merge-associative :=
+    ((lww-merge (lww-merge ?s1 ?s2) ?s3) = (lww-merge ?s1 (lww-merge ?s2 ?s3)))
+  
+  # Left identity
+  
+  conclude lww-select-with-nonempty :=
+    (forall ?v ?c . (?c =/= clock-empty) ==>
+      (lww-select-value (val 'nil) clock-empty ?v ?c) = ?v)
+  pick-any v:Value c:Clock
+    assume c-not-empty := (c =/= clock-empty)
+      let {join-is-c := (!chain-> [true ==> ((clock-join clock-empty c) = c) 
+                                   [Properties.clock-empty-is-bottom]]);
+           empty-not-c := (!sym c-not-empty);
+           both-cond := (!both join-is-c empty-not-c);
+           empty-less-c := (!chain-> [both-cond ==> (clock-less clock-empty c) [clock-less-from-join]])}
+        (!chain-> [empty-less-c ==> ((lww-select-value (val 'nil) clock-empty v c) = v) [select-axiom-1]])
+  
+
+  assert* lww-select-with-empty :=
+    ((lww-select-value (val 'nil) clock-empty ?v ?c) = ?v)
+  
+  define merge-left-identity :=
+    (forall ?s . (lww-merge lww-initial ?s) = ?s)
+  
+  conclude merge-left-identity := merge-left-identity
+    pick-any s:LWWState
+      let {v := (first s);
+           c := (second s)}
+        (!chain [(lww-merge lww-initial s)
+               = (pr (lww-select-value (first lww-initial) (second lww-initial) v c)
+                     (clock-join (second lww-initial) c))
+                 [lww-merge-def]
+               = (pr (lww-select-value (val 'nil) (second lww-initial) v c)
+                     (clock-join (second lww-initial) c))
+                 [Pr.pr-first]
+               = (pr (lww-select-value (val 'nil) clock-empty v c)
+                     (clock-join clock-empty c))
+                 [Pr.pr-second]
+               = (pr v c)
+                 [lww-select-with-empty VectorClocks.Properties.clock-empty-is-bottom]
+               = s
+                 [Pr.correctness']])
+  
+  # Right identity
+    
+  define merge-right-identity :=
+    (forall ?s . (lww-merge ?s lww-initial) = ?s)
+  
+  conclude merge-right-identity := merge-right-identity
+    pick-any s:LWWState
+      (!chain [(lww-merge s lww-initial)
+             = (lww-merge lww-initial s)  [merge-commutative]
+             = s  [merge-left-identity]])
+
+=
+}

@@ -1,0 +1,203 @@
+load "../crdts/lww_register/lww_register_payload_adapter"
+
+# Demo: LWW-Register with Vector Clocks
+#
+# Demonstrates:
+# 1. Last-write-wins semantics using vector clocks
+# 2. Concurrent writes with deterministic tie-breaking
+# 3. Causal consistency via happens-before relation
+# 4. Strong eventual consistency (convergence)
+
+open LWWRegisterAdapter
+open LWWRegisterSpec
+open VectorClocks
+open Backbone
+
+(print "\n===================================================================")
+(print "  LWW-Register Demo: Vector Clock Causality")
+(print "===================================================================\n")
+
+# ------------------------------------------------------------------
+# Setup: Three replicas (r1, r2, r3)
+# ------------------------------------------------------------------
+
+define demo-actor-base := (string->id "replica")
+define demo-actor-ids := ((string->id "r1") :: 
+                          (string->id "r2") :: 
+                          (string->id "r3") :: nil)
+
+define r1 := (string->id "r1")
+define r2 := (string->id "r2")
+define r3 := (string->id "r3")
+
+(print "Replicas: r1, r2, r3\n")
+
+# Initialize configuration
+define cfg0 := (lww-init demo-actor-ids)
+
+(print "Initial configuration:")
+(print "  r1 = ") (eval (lww-read-config cfg0 r1))
+(print "  r2 = ") (eval (lww-read-config cfg0 r2))
+(print "  r3 = ") (eval (lww-read-config cfg0 r3))
+
+# ------------------------------------------------------------------
+# Scenario 1: Single write from R1
+# ------------------------------------------------------------------
+
+(print "\n--- Scenario 1: R1 writes 'hello' ---\n")
+
+define val-hello := (LWWRegisterSpec.val (string->id "hello"))
+
+# R1 writes locally
+define cfg1 := (lww-update cfg0 r1 val-hello)
+
+(print "After r1 writes 'hello':")
+(print "  r1   = ") (eval (lww-read-config cfg1 r1))
+(print "  r2     = ") (eval (lww-read-config cfg1 r2))
+(print "  r3 = ") (eval (lww-read-config cfg1 r3))
+
+# Broadcast to others
+define cfg2 := (lww-broadcast cfg1 r1 (r2 :: r3 :: nil) val-hello)
+
+(print "\nAfter broadcast (all actors receive):")
+(print "  r1   = ") (eval (lww-read-config cfg2 r1))
+(print "  r2     = ") (eval (lww-read-config cfg2 r2))
+(print "  r3 = ") (eval (lww-read-config cfg2 r3))
+
+# Check convergence
+define scenario1-converged := 
+  ((lww-read-config cfg2 r1) = (lww-read-config cfg2 r2) &
+   (lww-read-config cfg2 r2) = (lww-read-config cfg2 r3))
+
+(print "\nConvergence check: ") (eval scenario1-converged)
+
+# ------------------------------------------------------------------
+# Scenario 2: Sequential writes (R1 then R2)
+# ------------------------------------------------------------------
+
+(print "\n--- Scenario 2: R1 writes 'first', then R2 writes 'second' ---\n")
+
+define val-first := (LWWRegisterSpec.val (string->id "first"))
+define val-second := (LWWRegisterSpec.val (string->id "second"))
+
+# R1 writes 'first'
+define cfg3 := (lww-update cfg0 r1 val-first)
+define cfg4 := (lww-broadcast cfg3 r1 (r2 :: r3 :: nil) val-first)
+
+(print "After r1 writes 'first' and broadcasts:")
+(print "  r1   = ") (eval (lww-read-config cfg4 r1))
+(print "  r2     = ") (eval (lww-read-config cfg4 r2))
+(print "  r3 = ") (eval (lww-read-config cfg4 r3))
+
+# R2 writes 'second' (his clock now shows r1's write happened before)
+define cfg5 := (lww-update cfg4 r2 val-second)
+define cfg6 := (lww-broadcast cfg5 r2 (r1 :: r3 :: nil) val-second)
+
+(print "\nAfter r2 writes 'second' and broadcasts:")
+(print "  r1   = ") (eval (lww-read-config cfg6 r1))
+(print "  r2     = ") (eval (lww-read-config cfg6 r2))
+(print "  r3 = ") (eval (lww-read-config cfg6 r3))
+
+# Check convergence - all should have 'second' (r2's write came after)
+define scenario2-converged :=
+  ((lww-read-config cfg6 r1) = (lww-read-config cfg6 r2) &
+   (lww-read-config cfg6 r2) = (lww-read-config cfg6 r3) &
+   (lww-read-config cfg6 r1) = val-second)
+
+(print "\nConvergence check (all have 'second'): ") (eval scenario2-converged)
+
+# --- NEW: Drain all pending messages for full delivery ---
+define cfg6_drained := (Backbone.drain-payload-state cfg6)
+
+(print "\nAfter draining all pending messages (full delivery):")
+(print "  r1   = ") (eval (lww-read-config cfg6_drained r1))
+(print "  r2     = ") (eval (lww-read-config cfg6_drained r2))
+(print "  r3 = ") (eval (lww-read-config cfg6_drained r3))
+
+define scenario2-final-converged :=
+  ((lww-read-config cfg6_drained r1) = (lww-read-config cfg6_drained r2) &
+   (lww-read-config cfg6_drained r2) = (lww-read-config cfg6_drained r3) &
+   (lww-read-config cfg6_drained r1) = val-second)
+
+(print "\nFinal convergence check after full delivery (all have 'second'): ") (eval scenario2-final-converged)
+
+# ------------------------------------------------------------------
+# Scenario 3: Concurrent writes with tie-breaking
+# ------------------------------------------------------------------
+
+(print "\n--- Scenario 3: Concurrent writes from R1 and R2 ---\n")
+
+define val-from-r1 := (LWWRegisterSpec.val (string->id "r1-value"))
+define val-from-r2 := (LWWRegisterSpec.val (string->id "r2-value"))
+
+# Both write concurrently from initial state
+define cfg7a := (lww-update cfg0 r1 val-from-r1)
+define cfg7b := (lww-update cfg0 r2 val-from-r2)
+
+(print "R1 writes 'r1-value' (clock: r1=1)")
+(print "R2 writes 'r2-value' (clock: r2=1)")
+(print "These writes are CONCURRENT (no causal relationship)\n")
+
+# Now they exchange updates
+# R1 receives R2's write
+define r1-state := match (Payload.map-lookup (Backbone.get-cfg-states cfg7a) r1) {
+  NONE => lww-initial
+| (SOME s) => s
+}
+
+define r2-state := match (Payload.map-lookup (Backbone.get-cfg-states cfg7b) r2) {
+  NONE => lww-initial
+| (SOME s) => s
+}
+
+# Merge: both states have concurrent clocks
+# Tie-breaking uses lexicographic order on values
+define merged := (lww-merge r1-state r2-state)
+
+(print "After merge (deterministic tie-breaking):")
+(print "  Merged value = ") (eval (first merged))
+
+# Verify commutativity: merge(a,b) = merge(b,a)
+define merged-reverse := (lww-merge r2-state r1-state)
+define concurrent-commutative := ((first merged) = (first merged-reverse))
+
+(print "\nCommutativity check: ") (eval concurrent-commutative)
+
+# ------------------------------------------------------------------
+# Scenario 4: Happens-before relation
+# ------------------------------------------------------------------
+
+(print "\n--- Scenario 4: Vector clock happens-before ---\n")
+
+# R1 writes, then R3 writes based on R1's state
+define cfg8 := (lww-update cfg0 r1 val-first)
+define cfg9 := (lww-broadcast cfg8 r1 (r3 :: nil) val-first)
+
+(print "R1 writes 'first' and sends to R3")
+
+# R3's clock now shows: r1=1, r3=0
+# R3 writes based on this state
+define cfg10 := (lww-update cfg9 r3 val-second)
+
+(print "R3 writes 'second' with knowledge of R1's write")
+(print "R3's clock: r1=1, r3=1\n")
+
+# R1's original state: r1=1, r2=0, r3=0
+# R3's new state: r1=1, r2=0, r3=1
+# R3's write happened AFTER R1's (r3's clock > r1's)
+
+define r1-final-state := match (Payload.map-lookup (Backbone.get-cfg-states cfg8) r1) {
+  NONE => lww-initial
+| (SOME s) => s
+}
+
+define r3-final-state := match (Payload.map-lookup (Backbone.get-cfg-states cfg10) r3) {
+  NONE => lww-initial
+| (SOME s) => s
+}
+
+# When merged, R3's write wins (happened after)
+define happens-before-merge := (lww-merge r1-final-state r3-final-state)
+
+(print "After merge (r3's write wins):")
+(print "  Final value = ") (eval (first happens-before-merge))

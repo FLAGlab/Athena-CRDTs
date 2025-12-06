@@ -1,0 +1,305 @@
+# Vector Clocks - Proper Athena Datatype Definition
+# Following the pattern from Sets (Chapter 10) and N.Max
+#
+# KEY INSIGHT: Define vector clocks as INDUCTIVE STRUCTURE with CONSTRUCTORS
+# Properties like commutativity are PROVEN from constructor axioms, not asserted!
+# IMPROVEMENT: Uses N.Max (proven semilattice) instead of asserting Int properties
+
+load "utils/pair"
+load "utils/nat/nat-max"  # Our self-contained N.Max with PROVEN properties
+
+module VectorClocks {
+
+open N  # Provides N.Max with PROVEN properties (from nat-max.ath):
+        # - N.Max.commutative (PROVEN)
+        # - N.Max.associative (PROVEN)  
+        # - N.Max.idempotent (PROVEN)
+        # - N.Max.zero-left, N.Max.zero-right (PROVEN)
+
+define-sort ActorId := Ide
+define-sort Timestamp := N  # Using natural numbers - timestamps are always >= 0
+
+# Like Sets are defined as: null | (insert element rest)
+# We define Clocks as:     clock-empty | (clock-update actor count rest)
+#
+# This gives us:
+# 1. Structural induction principle (automatic from datatype)
+# 2. Constructor axioms (automatic from datatype)
+# 3. Provable properties (from constructor axioms via case analysis)
+
+datatype Clock := clock-empty 
+                | (clock-update ActorId Timestamp Clock)
+
+# Pattern variables for cleaner axioms (following crdt.ath style)
+define [clock clock1 clock2 rest actor actor1 actor2 count count1 count2] :=
+  [?clock:Clock ?clock1:Clock ?clock2:Clock ?rest:Clock
+   ?actor:ActorId ?actor1:ActorId ?actor2:ActorId
+   ?count:Timestamp ?count1:Timestamp ?count2:Timestamp]
+
+# ==================================================================
+# OPERATION: clock-get (lookup actor's count)
+# ==================================================================
+# Pattern from Sets: membership test uses structural recursion
+# Our version: lookup actor's timestamp
+
+declare clock-get: [Clock ActorId] -> Timestamp
+
+# Constructor axioms for clock-get (no forall, implicit universal quantification)
+assert* clock-get-axioms :=
+  [(# Empty clock: all actors have count zero
+    (clock-get clock-empty actor) = zero)
+   
+   (# Hit: actor matches
+    (clock-get (clock-update actor count rest) actor) = count)
+   
+   (# Miss: different actor, recurse
+    (actor1 =/= actor2) ==>
+    (clock-get (clock-update actor1 count rest) actor2) = 
+    (clock-get rest actor2))]
+
+# ==================================================================
+# OPERATION: clock-tick (increment actor's count)
+# ==================================================================
+
+declare clock-tick: [Clock ActorId] -> Clock
+
+# Definitional axiom - uses N.+ for natural number addition
+assert* clock-tick-axiom :=
+  [((clock-tick clock actor) = 
+   (clock-update actor ((clock-get clock actor) N.+ (S zero)) clock))]
+
+# ==================================================================
+# OPERATION: clock-join (pointwise max, like Set.union)
+# ==================================================================
+# Pattern from Sets: union defined by structural recursion
+#   [] \/ s = s
+#   (h ++ t) \/ s = h ++ (t \/ s)
+#
+# Our version: join defined by structural recursion on first argument
+# Uses N.Max (proven commutative, associative, idempotent)
+
+declare clock-join: [Clock Clock] -> Clock
+
+# Constructor axioms for clock-join (following Set.union pattern)
+# Uses N.Max for timestamp merging
+assert* clock-join-axioms :=
+  [(# Base case: joining empty clock with clock2 gives clock2
+    (clock-join clock-empty clock2) = clock2)
+   
+   (# Recursive case: update with max, then continue joining rest
+    (clock-join (clock-update actor count1 rest) clock2) =
+    (clock-update actor (N.Max count1 (clock-get clock2 actor))
+                  (clock-join rest clock2)))]
+
+# ==================================================================
+# OPERATION: clock-less (happens-before relation)
+# ==================================================================
+# Pattern from N.Less: defined via implicational axioms for each case
+#
+# c1 < c2 means: (join c1 c2 = c2) AND (c1 =/= c2)
+
+declare clock-less: [Clock Clock] -> Boolean
+
+# Definitional axioms (implicational, like N.Max)
+assert* clock-less-axioms :=
+  [(# If join equals second and they differ, then less holds
+    ((clock-join clock1 clock2) = clock2 & clock1 =/= clock2) ==> 
+    (clock-less clock1 clock2))
+   
+   (# If less holds, then join equals second  
+    (clock-less clock1 clock2) ==> (clock-join clock1 clock2) = clock2)
+   
+   (# Less implies not equal
+    (clock-less clock1 clock2) ==> clock1 =/= clock2)]
+
+# Extract individual axioms for use in proofs
+define [clock-less-from-join clock-less-implies-join clock-less-implies-neq] := 
+  clock-less-axioms
+
+# ==================================================================
+# CLOCK IDENTITY
+# ==================================================================
+# Pattern from Sets: two clocks equal iff pointwise equal on all actors
+# We need extensionality axiom (like set-identity)
+
+assert* clock-identity :=
+  [(clock1 = clock2 <==> 
+    forall actor . (clock-get clock1 actor) = (clock-get clock2 actor))]
+
+# Method to use clock-identity (like set-identity-intro-direct from Sets)
+define clock-identity-intro-direct :=
+  method (premise)
+    match premise {
+      (forall x (= (clock-get ?c1 x) (clock-get ?c2 x))) =>
+        (!chain-> [premise ==> (?c1 = ?c2) [clock-identity]])
+    }
+
+# ==================================================================
+# DERIVED DEFINITIONS (not operations, just abbreviations)
+# ==================================================================
+
+define (clock-concurrent c1 c2) :=
+  (~ (clock-less c1 c2) & ~ (clock-less c2 c1))
+
+# ==================================================================
+# NOW WE CAN PROVE PROPERTIES! (Like Sets module does)
+# ==================================================================
+
+module Properties {
+
+  # Variable abbreviations (like Sets module)
+  define [c c1 c2 c3 a a1 a2 n n1 n2 n3] := 
+    [?c:Clock ?c1:Clock ?c2:Clock ?c3:Clock 
+     ?a:ActorId ?a1:ActorId ?a2:ActorId 
+     ?n:Timestamp ?n1:Timestamp ?n2:Timestamp ?n3:Timestamp]
+
+  # ==================================================================
+  # PROVEN THEOREM: clock-join-lookup-is-max
+  # ==================================================================
+  # This is the key theorem that connects clock-join to N.Max
+  # Proven by structural induction on the clock structure
+  
+  conclude clock-join-lookup-is-max :=
+    (forall c1 c2 a .
+      (clock-get (clock-join c1 c2) a) =
+      (N.Max (clock-get c1 a) (clock-get c2 a)))
+  by-induction clock-join-lookup-is-max {
+    clock-empty =>
+      pick-any c2:Clock a:ActorId
+        (!chain [(clock-get (clock-join clock-empty c2) a)
+               = (clock-get c2 a) [clock-join-axioms]
+               = (N.Max zero (clock-get c2 a)) [N.Max.zero-left]
+               = (N.Max (clock-get clock-empty a) (clock-get c2 a)) [clock-get-axioms]])
+    
+    | (C1 as (clock-update a1 n1 rest)) =>
+        pick-any c2:Clock a:ActorId
+          let{IH := (forall c2 a . (clock-get (clock-join rest c2) a) =
+                                   (N.Max (clock-get rest a) (clock-get c2 a)))}
+            (!two-cases
+              assume hyp1 := (a = a1)
+                (!chain [(clock-get (clock-join C1 c2) a)
+                       = (clock-get (clock-update a1 (N.Max n1 (clock-get c2 a1))
+                                     (clock-join rest c2)) a)
+                           [clock-join-axioms]
+                       = (N.Max n1 (clock-get c2 a1)) [clock-get-axioms hyp1]
+                       = (N.Max n1 (clock-get c2 a)) [hyp1]
+                       = (N.Max (clock-get C1 a1) (clock-get c2 a)) [clock-get-axioms]
+                       = (N.Max (clock-get C1 a) (clock-get c2 a)) [hyp1]])
+              assume hyp2 := (a =/= a1)
+                (!chain [(clock-get (clock-join C1 c2) a)
+                       = (clock-get (clock-update a1 (N.Max n1 (clock-get c2 a1))
+                                     (clock-join rest c2)) a)
+                           [clock-join-axioms]
+                       = (clock-get (clock-join rest c2) a) [clock-get-axioms hyp2]
+                       = (N.Max (clock-get rest a) (clock-get c2 a)) [IH]
+                       = (N.Max (clock-get C1 a) (clock-get c2 a)) [clock-get-axioms hyp2]]))
+  }
+
+  # ==================================================================
+  # THEOREM: clock-join is commutative
+  # ==================================================================
+
+  conclude clock-join-commutative :=
+    (forall c1 c2 . (clock-join c1 c2) = (clock-join c2 c1))
+  pick-any c1:Clock c2:Clock
+    # Use extensionality: clocks equal if they have same values for all actors
+    # Follows from: clock-join-lookup-is-max + N.Max.commutative
+    let {pointwise-equal :=
+      conclude (forall a . (clock-get (clock-join c1 c2) a) = (clock-get (clock-join c2 c1) a))
+        pick-any a:ActorId
+          (!chain [(clock-get (clock-join c1 c2) a)
+                  = (N.Max (clock-get c1 a) (clock-get c2 a)) [clock-join-lookup-is-max]
+                  = (N.Max (clock-get c2 a) (clock-get c1 a)) [N.Max.commutative]
+                  = (clock-get (clock-join c2 c1) a) [clock-join-lookup-is-max]])}
+      (!chain-> [pointwise-equal 
+                ==> ((clock-join c1 c2) = (clock-join c2 c1)) [clock-identity]])
+
+  # ==================================================================
+  # THEOREM: clock-join is idempotent
+  # ==================================================================
+
+  conclude clock-join-idempotent :=
+    (forall c . (clock-join c c) = c)
+  pick-any c:Clock
+    let {pointwise-equal :=
+      conclude (forall a . (clock-get (clock-join c c) a) = (clock-get c a))
+        pick-any a:ActorId
+          (!chain [(clock-get (clock-join c c) a)
+                  = (N.Max (clock-get c a) (clock-get c a)) [clock-join-lookup-is-max]
+                  = (clock-get c a) [N.Max.idempotent]])}
+      (!chain-> [pointwise-equal ==> ((clock-join c c) = c) [clock-identity]])
+
+  # ==================================================================
+  # THEOREM: clock-join is associative
+  # ==================================================================
+
+  conclude clock-join-associative :=
+    (forall c1 c2 c3 . (clock-join (clock-join c1 c2) c3) =
+                       (clock-join c1 (clock-join c2 c3)))
+  pick-any c1:Clock c2:Clock c3:Clock
+    # Prove via: clock-join-lookup-is-max + N.Max.associative + extensionality
+    let {pointwise-equal :=
+      conclude (forall a . (clock-get (clock-join (clock-join c1 c2) c3) a) = 
+                           (clock-get (clock-join c1 (clock-join c2 c3)) a))
+        pick-any a:ActorId
+          (!chain [(clock-get (clock-join (clock-join c1 c2) c3) a)
+                  = (N.Max (clock-get (clock-join c1 c2) a) (clock-get c3 a)) [clock-join-lookup-is-max]
+                  = (N.Max (N.Max (clock-get c1 a) (clock-get c2 a))
+                              (clock-get c3 a)) [clock-join-lookup-is-max]
+                  = (N.Max (clock-get c1 a)
+                              (N.Max (clock-get c2 a) (clock-get c3 a))) [N.Max.associative]
+                  = (N.Max (clock-get c1 a) (clock-get (clock-join c2 c3) a)) [clock-join-lookup-is-max]
+                  = (clock-get (clock-join c1 (clock-join c2 c3)) a) [clock-join-lookup-is-max]])}
+      (!chain-> [pointwise-equal 
+                ==> ((clock-join (clock-join c1 c2) c3) = (clock-join c1 (clock-join c2 c3))) 
+                [clock-identity]])
+
+  # ==================================================================
+  # THEOREM: clock-less is irreflexive
+  # ==================================================================
+
+  conclude clock-less-irreflexive :=
+    (forall c . ~ (clock-less c c))
+  pick-any c:Clock
+    (!by-contradiction (~ (clock-less c c))
+      assume hyp := (clock-less c c)
+        # From clock-less axioms: (clock-join c c = c & c =/= c)
+        # But c = c, contradiction
+        let {join-eq := (!chain-> [hyp ==> ((clock-join c c) = c) [clock-less-axioms]])}
+          let {neq := (!chain-> [hyp ==> (c =/= c) [clock-less-axioms]])}
+            (!absurd neq (!reflex c)))
+
+  # ==================================================================
+  # THEOREM: clock-less is asymmetric
+  # ==================================================================
+
+  conclude clock-less-asymmetric :=
+    (forall c1 c2 . (clock-less c1 c2) ==> ~ (clock-less c2 c1))
+  pick-any c1:Clock c2:Clock
+    assume less-c1-c2 := (clock-less c1 c2)
+      (!by-contradiction (~ (clock-less c2 c1))
+        assume less-c2-c1 := (clock-less c2 c1)
+          # From clock-less axioms:
+          # (clock-join c1 c2 = c2) and (clock-join c2 c1 = c1)
+          # But clock-join is commutative, so c1 = c2
+          # Also c1 =/= c2 from the axioms, contradiction
+          let {join1 := (!chain-> [less-c1-c2 ==> ((clock-join c1 c2) = c2) [clock-less-axioms]])}
+            let {join2 := (!chain-> [less-c2-c1 ==> ((clock-join c2 c1) = c1) [clock-less-axioms]])}
+              let {eq := (!chain-> [join1 
+                                 ==> ((clock-join c2 c1) = c2) [clock-join-commutative]
+                                 ==> (c1 = c2) [join2]])}
+                let {neq := (!chain-> [less-c1-c2 ==> (c1 =/= c2) [clock-less-axioms]])}
+                  (!absurd eq neq))
+
+  # ==================================================================
+  # THEOREM: clock-empty is bottom element
+  # ==================================================================
+
+  conclude clock-empty-is-bottom :=
+    (forall c . (clock-join clock-empty c) = c)
+  pick-any c:Clock
+    (!chain-> [true ==> ((clock-join clock-empty c) = c) [clock-join-axioms]])
+
+}
+
+} # end VectorClocks module

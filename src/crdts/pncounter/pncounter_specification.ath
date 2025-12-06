@@ -1,0 +1,358 @@
+load "../../framework/utils/nat/nat-max"  # Load from our working nat utilities
+load "../../framework/utils/pair"
+load "../../framework/theory/semilattice_theory"
+load "../../framework/utils/nat/nat-minus"  # For natural number subtraction (-)
+
+module PNCounterSpec {
+  open N
+  open SemilatticeTheory
+  
+  define-sort PNCState := (Pr N N)
+  datatype PNCValue := (inc-pos N) | (inc-neg N)
+  
+
+  define [s s1 s2 s3 a b c d] :=
+    [?s:PNCState ?s1:PNCState ?s2:PNCState ?s3:PNCState
+     ?a:N ?b:N ?c:N ?d:N]
+  
+  define (pnc-merge left:PNCState right:PNCState) :=
+    (pr (N.Max (first left) (first right))
+        (N.Max (second left) (second right)))
+  
+  define pnc-initial := (pr zero zero)
+  
+
+  define (pnc-apply-update state:PNCState value:PNCValue) :=
+    match value {
+      (inc-pos delta) => (pr (N.+ (first state) delta) (second state))
+    | (inc-neg delta) => (pr (first state) (N.+ (second state) delta))
+    }
+  
+
+  assert* pnc-value-axioms :=
+    [((first s) N.<= (second s) ==> (pnc-value s) = zero)
+     ((second s) N.< (first ?s) ==> (pnc-value s) = ((first s) - (second s)))]
+  
+  define [pnc-value-clamped pnc-value-difference] := pnc-value-axioms
+  
+
+  conclude pnc-merge-is-pointwise-max :=
+    (forall x y . 
+      (pnc-merge ?x ?y) = (pr (N.Max (first ?x) (first ?y))
+                              (N.Max (second ?x) (second ?y))))
+    pick-any x:PNCState y:PNCState
+      (!reflex (pnc-merge x y))
+  
+  #Specific ===
+
+  conclude positive-component-monotonic :=
+    (forall s1 s2 . (N.<= (first s1) (first (pnc-merge s1 s2))))
+    pick-any s1:PNCState s2:PNCState
+      (!two-cases
+        assume case1 := ((first s2) < (first s1))
+          conclude ((first s1) N.<= (first (pnc-merge s1 s2)))
+            let {eq1 := (!chain [(first (pnc-merge s1 s2))
+                               = (first (pr (N.Max (first s1) (first s2)) (N.Max (second s1) (second s2))))  [pnc-merge-is-pointwise-max]
+                               = (N.Max (first s1) (first s2))                                                [Pr.pr-first]
+                               = (first s1)                                                                   [N.Max.less2]]);
+                 refl := (!uspec N.Less=.reflexive (first s1))}
+              (!rcong refl ((first s1) N.<= (first (pnc-merge s1 s2))))
+        assume case2 := (~ ((first s2) < (first s1)))
+          conclude ((first s1) N.<= (first (pnc-merge s1 s2)))
+            (!chain-> [case2
+                     ==> ((first s1) N.<= (first s2))                                            [N.Less=.trichotomy2]
+                     ==> ((first s1) N.<= (N.Max (first s1) (first s2)))                         [N.Max.not-less2]
+                     ==> ((first s1) N.<= (first (pr (N.Max (first s1) (first s2)) (N.Max (second s1) (second s2)))))  [Pr.pr-first]
+                     ==> ((first s1) N.<= (first (pnc-merge s1 s2)))                             [pnc-merge-is-pointwise-max]]))
+
+  
+  conclude negative-component-monotonic :=
+    (forall s1 s2 . (N.<= (second s1) (second (pnc-merge s1 s2))))
+    pick-any s1:PNCState s2:PNCState
+      (!two-cases
+        assume case1 := ((second s2) < (second s1))
+          conclude ((second s1) N.<= (second (pnc-merge s1 s2)))
+            let {eq1 := (!chain [(second (pnc-merge s1 s2))
+                               = (second (pr (N.Max (first s1) (first s2)) (N.Max (second s1) (second s2))))  [pnc-merge-is-pointwise-max]
+                               = (N.Max (second s1) (second s2))                                               [Pr.pr-second]
+                               = (second s1)                                                                   [N.Max.less2]]);
+                 refl := (!uspec N.Less=.reflexive (second s1))}
+              (!rcong refl ((second s1) N.<= (second (pnc-merge s1 s2))))
+        assume case2 := (~ ((second s2) < (second s1)))
+          conclude ((second s1) N.<= (second (pnc-merge s1 s2)))
+            (!chain-> [case2
+                     ==> ((second s1) N.<= (second s2))                                          [N.Less=.trichotomy2]
+                     ==> ((second s1) N.<= (N.Max (second s1) (second s2)))                      [N.Max.not-less2]
+                     ==> ((second s1) N.<= (second (pr (N.Max (first s1) (first s2)) (N.Max (second s1) (second s2)))))  [Pr.pr-second]
+                     ==> ((second s1) N.<= (second (pnc-merge s1 s2)))                           [pnc-merge-is-pointwise-max]]))
+
+  
+
+  conclude state-grows-value-may-decrease :=
+    (forall s1 s2 . 
+      ((N.<= (first s1) (first s2)) ==> 
+       (N.<= (second s1) (second s2)) ==>
+       (pnc-merge s1 s2) = s2))
+    pick-any s1:PNCState s2:PNCState
+      assume h1 := ((first s1) N.<= (first s2))
+        assume h2 := ((second s1) N.<= (second s2))
+          let {max-f := (!two-cases
+                         assume hyp-f := ((first s2) < (first s1))
+                           (!from-complements
+                             ((N.Max (first s1) (first s2)) = (first s2))
+                             (!chain-> [hyp-f
+                                      ==> (~ ((first s1) N.<= (first s2))) [N.Less=.trichotomy4]])
+                             h1)
+                         assume (~ ((first s2) < (first s1)))
+                           (!chain [(N.Max (first s1) (first s2)) 
+                                  = (first s2) [N.Max.not-less2]]));
+               max-s := (!two-cases
+                         assume hyp-s := ((second s2) < (second s1))
+                           (!from-complements
+                             ((N.Max (second s1) (second s2)) = (second s2))
+                             (!chain-> [hyp-s
+                                      ==> (~ ((second s1) N.<= (second s2))) [N.Less=.trichotomy4]])
+                             h2)
+                         assume (~ ((second s2) < (second s1)))
+                           (!chain [(N.Max (second s1) (second s2)) 
+                                  = (second s2) [N.Max.not-less2]]))}
+            (!chain [(pnc-merge s1 s2)
+                   = (pr (N.Max (first s1) (first s2))
+                         (N.Max (second s1) (second s2)))  [pnc-merge-is-pointwise-max]
+                   = (pr (first s2) (second s2))           [max-f max-s]
+                   = s2                                    [Pr.correctness']])
+  
+
+  conclude increment-increases-P :=
+    (forall s d . (first (pnc-apply-update s (inc-pos d))) = (N.+ (first s) d))
+    pick-any s:PNCState d:N
+      (!chain [(first (pnc-apply-update s (inc-pos d)))
+             = (N.+ (first s) d)                          [Pr.pr-first]])
+  
+  conclude decrement-increases-N :=
+    (forall s d . (second (pnc-apply-update s (inc-neg d))) = (N.+ (second s) d))
+    pick-any s:PNCState d:N
+      (!chain [(second (pnc-apply-update s (inc-neg d)))
+             = (N.+ (second s) d)                          [Pr.pr-second]])
+  
+  # === Progress Properties ===
+  
+  conclude increment-pos-monotonic :=
+    (forall s d . (first s) N.<= (first (pnc-apply-update s (inc-pos d))))
+    pick-any s:PNCState d:N
+      let {A := (!chain [(first (pnc-apply-update s (inc-pos d)))
+                       = ((first s) N.+ d)   [increment-increases-P]])}
+        (!chain-> [A ==> ((first s) N.<= (first (pnc-apply-update s (inc-pos d)))) [N.Less=.k-Less=]])
+  
+  conclude increment-neg-monotonic :=
+    (forall s d . (second s) N.<= (second (pnc-apply-update s (inc-neg d))))
+    pick-any s:PNCState d:N
+      let {A := (!chain [(second (pnc-apply-update s (inc-neg d)))
+                       = ((second s) N.+ d)   [decrement-increases-N]])}
+        (!chain-> [A ==> ((second s) N.<= (second (pnc-apply-update s (inc-neg d)))) [N.Less=.k-Less=]])
+  
+
+
+  conclude merge-preserves-pos-update :=
+    (forall s s2 d .
+      (first (pnc-apply-update s (inc-pos d))) N.<= 
+      (first (pnc-merge (pnc-apply-update s (inc-pos d)) s2)))
+    pick-any s:PNCState s2:PNCState d:N
+      let {s-updated := (pnc-apply-update s (inc-pos d))}
+        (!uspec (!uspec positive-component-monotonic s-updated) s2)
+  
+  conclude merge-preserves-neg-update :=
+    (forall s s2 d .
+      (second (pnc-apply-update s (inc-neg d))) N.<= 
+      (second (pnc-merge (pnc-apply-update s (inc-neg d)) s2)))
+    pick-any s:PNCState s2:PNCState d:N
+      let {s-updated := (pnc-apply-update s (inc-neg d))}
+        (!uspec (!uspec negative-component-monotonic s-updated) s2)
+  
+
+  
+  conclude nat-minus-nonnegative :=
+    (forall x y . zero N.<= (x - y))
+    pick-any x:N y:N
+      # For ANY natural number, zero <= that number (by construction of N)
+      # Since (x - y) is a natural number, zero <= (x - y)
+      (!uspec N.Less=.zero<= (x - y))
+
+
+  conclude value-always-nonnegative :=
+    (forall s . zero N.<= (pnc-value s))
+    pick-any s:PNCState
+      let {lem := (!excluded-middle ((first s) N.<= (second s)))}
+        (!cases lem
+          assume case1 := ((first s) N.<= (second s))
+            (!chain-> [case1
+                     ==> ((pnc-value s) = zero)          [pnc-value-clamped]
+                     ==> (zero = (pnc-value s))          [sym]
+                     ==> (zero N.<= (pnc-value s))       [N.Less=.Implied-by-equal]])
+          assume case2 := (~ ((first s) N.<= (second s)))
+            let {snd-lt-fst := (!chain-> [case2 ==> ((second s) N.< (first s)) [N.Less=.trichotomy1]]);
+                 val-eq-diff := (!chain-> [snd-lt-fst ==> ((pnc-value s) = ((first s) - (second s))) [pnc-value-difference]]);
+                 minus-nn := (!uspec (!uspec nat-minus-nonnegative (first s)) (second s))}
+              (!chain-> [val-eq-diff
+                       ==> (zero N.<= ((first s) - (second s)))  [minus-nn]
+                       ==> (zero N.<= (pnc-value s))             [val-eq-diff]]))
+  
+
+  conclude initial-value-is-zero :=
+    ((pnc-value pnc-initial) = zero)
+    let {init-expanded := (!chain [pnc-initial = (pr zero zero)]);
+         zero-leq-zero := (!uspec N.Less=.reflexive zero)}
+      (!chain-> [zero-leq-zero
+               ==> ((first pnc-initial) N.<= (second pnc-initial)) [Pr.pr-first Pr.pr-second]
+               ==> ((pnc-value pnc-initial) = zero)                [pnc-value-clamped]])
+  
+
+  conclude value-convergence :=
+    (forall s1 s2 .
+      (((first s1) = (first s2)) & ((second s1) = (second s2))) ==>
+      (pnc-value s1) = (pnc-value s2))
+  pick-any s1:PNCState s2:PNCState
+    assume hyp := (((first s1) = (first s2)) & ((second s1) = (second s2)))
+      let {f-eq := (!left-and hyp);
+           s-eq := (!right-and hyp)}
+        (!chain [(pnc-value s1)
+               = (pnc-value (pr (first s1) (second s1)))  [Pr.correctness']
+               = (pnc-value (pr (first s2) (second s1)))  [f-eq]
+               = (pnc-value (pr (first s2) (second s2)))  [s-eq]
+               = (pnc-value s2)                            [Pr.correctness']])
+
+  module Theory {
+    conclude first-helper := 
+      (forall s1 s2 .
+        (first (pnc-merge s1 s2)) = (N.Max (first s1) (first s2)))
+      pick-any s1:PNCState s2:PNCState
+        (!chain [(first (pnc-merge s1 s2))
+               = (first (pr (N.Max (first s1) (first s2))
+                            (N.Max (second s1) (second s2))))  [pnc-merge-is-pointwise-max]
+               = (N.Max (first s1) (first s2))                [Pr.pr-first]])
+    
+    conclude second-helper :=
+      (forall s1 s2 .
+        (second (pnc-merge s1 s2)) = (N.Max (second s1) (second s2)))
+      pick-any s1:PNCState s2:PNCState
+        (!chain [(second (pnc-merge s1 s2))
+               = (second (pr (N.Max (first s1) (first s2))
+                             (N.Max (second s1) (second s2)))) [pnc-merge-is-pointwise-max]
+               = (N.Max (second s1) (second s2))               [Pr.pr-second]])
+    
+    conclude merge-commutative :=
+      (forall s1 s2 . 
+        (pnc-merge s1 s2) = (pnc-merge s2 s1))
+      pick-any s1:PNCState s2:PNCState
+        (!chain [(pnc-merge s1 s2)
+               = (pr (N.Max (first s1) (first s2))
+                     (N.Max (second s1) (second s2)))       [pnc-merge-is-pointwise-max]
+               = (pr (N.Max (first s2) (first s1))
+                     (N.Max (second s2) (second s1)))       [N.Max.commutative]
+               = (pnc-merge s2 s1)                          [pnc-merge-is-pointwise-max]])
+    
+    conclude merge-associative :=
+      (forall s1 s2 s3 .
+        (pnc-merge (pnc-merge s1 s2) s3) = (pnc-merge s1 (pnc-merge s2 s3)))
+      pick-any s1:PNCState s2:PNCState s3:PNCState
+        (!chain [(pnc-merge (pnc-merge s1 s2) s3)
+               = (pr (N.Max (first (pnc-merge s1 s2)) (first s3))
+                     (N.Max (second (pnc-merge s1 s2)) (second s3)))
+                 [pnc-merge-is-pointwise-max]
+               = (pr (N.Max (N.Max (first s1) (first s2)) (first s3))
+                     (N.Max (N.Max (second s1) (second s2)) (second s3)))
+                 [first-helper second-helper]
+               = (pr (N.Max (first s1) (N.Max (first s2) (first s3)))
+                     (N.Max (second s1) (N.Max (second s2) (second s3))))
+                 [N.Max.associative]
+               = (pr (N.Max (first s1) (first (pnc-merge s2 s3)))
+                     (N.Max (second s1) (second (pnc-merge s2 s3))))
+                 [first-helper second-helper]
+               = (pnc-merge s1 (pnc-merge s2 s3))
+                 [pnc-merge-is-pointwise-max]])
+    conclude merge-idempotent :=
+      (forall s . (pnc-merge s s) = s)
+      pick-any s:PNCState
+        (!chain [(pnc-merge s s)
+               = (pr (N.Max (first s) (first s))
+                     (N.Max (second s) (second s)))   [pnc-merge-is-pointwise-max]
+               = (pr (first s) (second s))            [N.Max.idempotent]
+               = s                                    [Pr.correctness']])
+    
+    conclude merge-left-identity :=
+      (forall s . (pnc-merge pnc-initial s) = s)
+      pick-any s:PNCState
+        (!chain [(pnc-merge pnc-initial s)
+               = (pr (N.Max (first pnc-initial) (first s))
+                     (N.Max (second pnc-initial) (second s))) [pnc-merge-is-pointwise-max]
+               = (pr (N.Max (first (pr zero zero)) (first s))
+                     (N.Max (second (pr zero zero)) (second s))) [pnc-initial]
+               = (pr (N.Max zero (first s))
+                     (N.Max zero (second s)))                [Pr.pr-first Pr.pr-second]
+               = (pr (first s) (second s))                   [N.Max.zero-left]
+               = s                                           [Pr.correctness']])
+    
+    conclude merge-right-identity :=
+      (forall s . (pnc-merge s pnc-initial) = s)
+      pick-any s:PNCState
+        (!chain [(pnc-merge s pnc-initial)
+               = (pnc-merge pnc-initial s)   [merge-commutative-holds]
+               = s                           [merge-left-identity-holds]])
+    
+    define pnc-theory :=
+      (make-theory [] [merge-commutative merge-associative 
+                       merge-idempotent merge-left-identity
+                       merge-right-identity])
+    
+    # Note: For product semilattices, we prove derived theorems directly
+    # (get-property has sort compatibility issues with product types)
+    
+    conclude pnc-absorption :=
+      (forall s1 s2 .
+        (pnc-merge s1 s2) = s2 ==> (pnc-merge s2 s1) = s2)
+      pick-any s1:PNCState s2:PNCState
+        assume hyp := ((pnc-merge s1 s2) = s2)
+          (!chain [(pnc-merge s2 s1)
+                 = (pnc-merge s1 s2)  [merge-commutative]
+                 = s2                 [hyp]])
+    
+    conclude pnc-monotone-left :=
+      (forall s1 s2 .
+        (pnc-merge s1 (pnc-merge s1 s2)) = (pnc-merge s1 s2))
+      pick-any s1:PNCState s2:PNCState
+        (!chain [(pnc-merge s1 (pnc-merge s1 s2))
+               = (pnc-merge (pnc-merge s1 s1) s2)   [merge-associative]
+               = (pnc-merge s1 s2)                  [merge-idempotent]])
+    
+    conclude pnc-monotone-right :=
+      (forall s1 s2 .
+        (pnc-merge s2 (pnc-merge s1 s2)) = (pnc-merge s1 s2))
+      pick-any s1:PNCState s2:PNCState
+        (!chain [(pnc-merge s2 (pnc-merge s1 s2))
+               = (pnc-merge s2 (pnc-merge s2 s1))   [merge-commutative-holds]
+               = (pnc-merge (pnc-merge s2 s2) s1)   [merge-associative-holds]
+               = (pnc-merge s2 s1)                  [merge-idempotent-holds]
+               = (pnc-merge s1 s2)                  [merge-commutative-holds]])
+    
+
+    
+    conclude pnc-identity-right :=
+      (forall s . (pnc-merge s pnc-initial) = s)
+      pick-any s:PNCState
+        (!chain [(pnc-merge s pnc-initial)
+               = (pnc-merge s (pr zero zero))                            [pnc-initial]
+               = (pr (N.Max (first s) (first (pr zero zero)))
+                     (N.Max (second s) (second (pr zero zero))))         [pnc-merge-is-pointwise-max]
+               = (pr (N.Max (first s) zero)
+                     (N.Max (second s) zero))                            [Pr.pr-first Pr.pr-second]
+               = (pr (first s) (second s))                               [N.Max.zero-right]
+               = s                                                       [Pr.correctness']])
+    
+    conclude pnc-identity-left :=
+      (forall s . (pnc-merge pnc-initial s) = s)
+      pick-any s:PNCState
+        (!chain [(pnc-merge pnc-initial s)
+               = (pnc-merge s pnc-initial)   [merge-commutative-holds]
+               = s                           [pnc-identity-right]])
+  }
+} 

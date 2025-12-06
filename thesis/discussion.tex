@@ -1,0 +1,29 @@
+% $Id: discussion.tex 1784 2012-04-27 23:29:31Z  $
+% !TEX root = main.tex
+
+\chapter{Discussion}\label{chap:discussion}
+
+\section{Framework Evaluation}\label{sec:discussion-eval}
+
+This section discusses the framework along three angles: what the architecture makes easy, what remains hard, and how it compares with established proof-assistant workflows.
+
+\subsection*{Strengths}
+- \textbf{Modularity}: Clear separation of concerns ($Theory \to Payload \to Backbone$) enables independent reasoning.
+- \textbf{Proof reuse}: The theory/adapter pattern facilitates ACI and SEC proofs across instances; adapters are typically short and mechanical.
+- \textbf{Clarity}: Lattice laws are explicit; update monotonicity is stated once and reused.
+- \textbf{Executability}: Demos witness behaviour using the same definitions as the proofs.
+
+\subsection*{Limitations}
+- \textbf{Manual adapters}: Adapters still require human-guided reductions to base theories (e.g., Max, Union).
+- \textbf{CRDT coverage}: Focused on core set/counter/register families; maps, sequences, and graphs are future work.
+- \textbf{Automation}: Tactic support is limited; structural equational proofs are concise but not fully automated.
+
+\section{Future Directions}\label{sec:discussion-future}
+
+- \textbf{Delta-CRDTs}: Add delta-join and anti-entropy schemas; reuse semilattice laws with payload-level deltas.
+- \textbf{Causal delivery guards}: The Backbone framework includes causal broadcast with vector clocks, but delivery precondition checking (ensuring messages are only applied when causal dependencies are satisfied) is currently simplified. Implementing full causal delivery would strengthen operation-based CRDT guarantees.
+- \textbf{Automated adapter synthesis}: Derive adapter skeletons from type signatures and target base theories (Max/Union/Product).
+
+\paragraph{Closing remark.} The modular lattice-based approach scaled across six CRDTs with functional adapters and runnable demos. The next step is to broaden coverage while increasing automation to preserve this framework's style.    
+
+\endinput

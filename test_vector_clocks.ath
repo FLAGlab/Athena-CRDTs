@@ -1,0 +1,32 @@
+# Test Vector Clocks - Proving Properties Work
+
+load "src/framework/vector_clocks"
+
+module TestVC {
+
+open VectorClocks
+open VectorClocks.Properties
+
+# Test actors
+define replica1 := (string->id "replica1")
+define replica2 := (string->id "replica2")
+
+# Test that we can use the proven theorems
+
+# Reference the proven theorems (no need to re-prove)
+define test-commutative := clock-join-commutative
+define test-associative := clock-join-associative
+define test-idempotent := clock-join-idempotent
+define test-irreflexive := clock-less-irreflexive
+define test-asymmetric := clock-less-asymmetric
+define test-bottom := clock-empty-is-bottom
+
+# All vector clock properties verified:
+# - Commutativity
+# - Associativity
+# - Idempotence
+# - Irreflexivity
+# - Asymmetry
+# - Bottom element
+
+} # end TestVC

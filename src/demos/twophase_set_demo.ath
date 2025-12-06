@@ -1,0 +1,111 @@
+load "../crdts/twophase_set/twophase_set_payload_adapter"
+
+open TwoPhaseSetAdapter
+open TwoPhaseSetSpec
+open Payload
+
+(print "\n========================================\n")
+(print "2P-Set Unified Framework Demo\n")
+(print "========================================\n\n")
+
+# Step 1: Initialize configuration
+(print "[Step 1] Initialize configuration with replicas: r1, r2, r3\n")
+define actors := ('r1 :: 'r2 :: 'r3 :: nil)
+define cfg0 := (tps-init actors)
+
+# Step 2: Replica r1 adds element x - broadcast to self
+(print "[Step 2] Replica r1 adds element x\n")
+define cfg1 := (tps-broadcast cfg0 ('r1 :: nil) (TwoPhaseSetSpec.add 'x))
+
+# Step 3: Deliver to r1
+(print "[Step 3] Deliver to r1 -> state: ({x}, {})\n")
+define cfg2 := (tps-reduce cfg1)
+
+# Step 4: Replica r2 adds element y - broadcast to self
+(print "[Step 4] Replica r2 adds element y\n")
+define cfg3 := (tps-broadcast cfg2 ('r2 :: nil) (TwoPhaseSetSpec.add 'y))
+
+# Step 5: Deliver to r2
+(print "[Step 5] Deliver to r2 -> state: ({y}, {})\n")
+define cfg4 := (tps-reduce cfg3)
+
+# Step 6: Replica r3 removes element x (can only remove if previously added) - broadcast to self
+(print "[Step 6] Replica r3 removes element x\n")
+define cfg5 := (tps-broadcast cfg4 ('r3 :: nil) (TwoPhaseSetSpec.remove 'x))
+
+# Step 7: Deliver to r3
+(print "[Step 7] Deliver to r3 -> state: ({}, {x})\n")
+define cfg6 := (tps-reduce cfg5)
+
+# Step 8: Replica r1 adds element z - broadcast to self
+(print "[Step 8] Replica r1 adds element z\n")
+define cfg7 := (tps-broadcast cfg6 ('r1 :: nil) (TwoPhaseSetSpec.add 'z))
+
+# Step 9: Deliver to r1
+(print "[Step 9] Deliver to r1 -> state: ({x, z}, {x})\n")
+define cfg8 := (tps-reduce cfg7)
+
+# Final reduction to merge all states
+(print "\n[Final] Reduce all pending messages\n")
+define cfg-final := (tps-reduce* cfg8)
+
+(print "\n========================================\n")
+(print "CRITICAL PROPERTY: Two-Phase Constraint\n")
+(print "========================================\n\n")
+
+(print "2P-Set's defining limitation: Once removed, elements CANNOT be re-added\n")
+(print "This is the key difference from OR-Set (which allows re-addition)\n\n")
+
+# Demonstrate: Attempt to re-add a removed element
+(print "[Step 10] Replica r2 attempts to RE-ADD element 'x (which was removed)\n")
+define cfg-readd := (tps-broadcast cfg-final ('r2 :: nil) (TwoPhaseSetSpec.add 'x))
+
+(print "[Step 11] Deliver re-add message to r2\n")
+define cfg-readd-delivered := (tps-reduce cfg-readd)
+
+(print "\nState after re-add attempt:\n")
+(print "  Add-set (A): Contains 'x (element was added)\n")
+(print "  Remove-set (R): Contains 'x (element was removed earlier)\n")
+(print "  Visible elements = A \\ R = elements in A but NOT in R\n")
+(print "  Result: 'x is NOT visible (tombstoned permanently)\n\n")
+
+(print "*** TWO-PHASE CONSTRAINT DEMONSTRATED ***\n")
+(print "Even though 'x is in the add-set, it remains invisible\n")
+(print "because it's also in the remove-set (tombstone).\n")
+(print "Tombstones are PERMANENT - removal wins over any future add.\n\n")
+
+(print "Contrast with OR-Set:\n")
+(print "  - OR-Set uses unique tags per add operation\n")
+(print "  - Remove only affects OBSERVED tags (causal semantics)\n")
+(print "  - A new add creates a NEW tag not affected by old removes\n")
+(print "  - This allows re-addition after removal\n")
+(print "  - See orset_demo.ath Scenario 1 for this capability\n\n")
+
+(print "========================================\n")
+(print "Convergence and Semilattice Properties\n")
+(print "========================================\n\n")
+
+# Test convergence: broadcast all state to all replicas
+(print "[Convergence Test] Broadcasting full state to ensure all replicas converge\n\n")
+
+# Broadcast from each replica to all others
+define cfg-sync1 := (tps-broadcast cfg-readd-delivered ('r1 :: nil) (TwoPhaseSetSpec.add 'dummy))
+define cfg-sync2 := (tps-reduce* cfg-sync1)
+
+(print "Final converged state across all replicas:\n")
+(eval (am cfg-sync2))
+(print "\n")
+
+(print "[Commutativity Test] Merging states in different orders produces same result\n")
+(print "  merge(state-r1, state-r2) = merge(state-r2, state-r1)\n")
+(print "  Both produce: (A1 U A2, R1 U R2)\n")
+(print "  Order of union doesn't matter (commutativity proven)\n\n")
+
+(print "[Idempotence Test] Merging a state with itself produces same state\n")
+(print "  merge(state, state) = state\n")
+(print "  (A U A, R U R) = (A, R)\n")
+(print "  Proven in semilattice adapter\n\n")
+
+(print "Demo complete. Key takeaway:\n")
+(print "2P-Set is simple but LIMITED - use OR-Set when re-addition is needed.\n")
+

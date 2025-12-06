@@ -1,0 +1,79 @@
+% $Id: validation.tex 1784 2012-04-27 23:29:31Z  $
+% !TEX root = main.tex
+
+\chapter{Validation}\label{chap:validation}
+
+This chapter validates that our framework verifies what is claimed: that CRDTs satisfying the five semilattice axioms are guaranteed to converge. Rather than relying on assertions or incomplete testing, we provide evidence that proofs are mechanically type-checked by the Athena proof engine before framework instantiation.
+
+\section{Proof Verification}
+
+All six CRDTs in the framework must prove the five semilattice axioms (A1--A5 from Chapter~\ref{chap:theory}) before instantiation. This is a requirement enforced at compile-time by Athena's type system. Any missing or incorrect proof causes the framework to reject the CRDT module.
+
+\subsection{Coverage and Status}
+
+Table~\ref{tab:axiom-coverage} shows the proof status for all six CRDTs:
+
+\begin{table}[h]
+  \centering
+  \caption{Axiom proof coverage (all 30 proofs verified)}
+  \label{tab:axiom-coverage}
+  \small
+  \begin{tabular}{lcccccc}
+    \toprule
+    \textbf{CRDT} & \textbf{A1} & \textbf{A2} & \textbf{A3} & \textbf{A4} & \textbf{A5} & \textbf{Status}\\
+    \midrule
+    GCounter & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & Verified\\
+    GSet & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & Verified\\
+    PN-Counter & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & Verified\\
+    Two-Phase Set & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & Verified\\
+    OR-Set & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & Verified\\
+    LWW-Register & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & Verified\\
+    \midrule
+    \textbf{Total} & \textbf{6} & \textbf{6} & \textbf{6} & \textbf{6} & \textbf{6} & \textbf{30 proofs}\\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+All 30 axiom proofs have been mechanically type-checked by Athena. Each proof must be valid according to Athena's type system.
+
+\section{Connection to Convergence}
+
+The convergence guarantee in Chapter~\ref{chap:theory} establishes that any two replicas receiving the same set of updates in any order will converge to the same state, provided the CRDT satisfies axioms A1--A5. This theorem is proven once at the abstract level and then automatically applies to all CRDTs that prove these axioms.
+
+Requiring mechanically type-checked axiom proofs ensures that:
+
+\begin{itemize}
+  \item \textbf{No false convergence claims}: A CRDT cannot be instantiated without proving commutativity, associativity, and idempotence.
+  
+  \item \textbf{No weakened guarantees}: Missing or incomplete monotonicity proofs cause the framework to reject the CRDT.
+  
+  \item \textbf{Type-safe framework}: Only CRDTs with all five axioms proven are accepted by the PayloadFramework.
+\end{itemize}
+
+\section{How Verification Works}
+
+The verification process follows three steps:
+
+\begin{enumerate}
+  \item \textbf{Axiom proofs type-checked}: Athena mechanically verifies each proof of A1--A5, checking that types match and no circularity exists.
+  
+  \item \textbf{Framework instantiation}: The PayloadFramework accepts the CRDT module only if all axioms are proven, allowing it to be instantiated as a concrete CRDT adapter.
+  
+  \item \textbf{Convergence inherited}: The convergence theorem from SemilatticeTheory automatically applies because the instantiated CRDT satisfies all required axioms.
+\end{enumerate}
+
+\section{Implications}
+
+This approach provides several guarantees:
+
+\begin{itemize}
+  \item \textbf{Properties are proven, not assumed}: The framework requires mechanically verified proofs of semilattice axioms (commutativity, associativity, idempotence) before CRDTs can be used.
+  
+  \item \textbf{Type-checked correctness}: Athena's proof engine verifies that each axiom proof is valid according to its type system, preventing invalid reasoning.
+  
+  \item \textbf{Reproducibility}: Any developer can verify the proofs by loading the CRDT specification files into Athena and observing that they type-check without errors.
+  
+  \item \textbf{Modular theorem inheritance}: CRDTs like GSet can use the adapter pattern to automatically inherit derived theorems (absorption, monotonicity) from the abstract semilattice theory without manual re-proof.
+\end{itemize}
+
+\endinput

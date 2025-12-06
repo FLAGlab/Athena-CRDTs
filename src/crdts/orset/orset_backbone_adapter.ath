@@ -1,0 +1,67 @@
+load "orset_specification"
+load "../../framework/backbone"
+
+module ORSetAdapter {
+  open ORSetSpec
+  open Backbone
+  
+  define (orset-init ids) := 
+    (init-with-clocks orset-merge orset-initial orset-apply-update ids)
+  
+  define (orset-update cfg actor-id operation) :=
+    (update-local cfg actor-id operation orset-initial orset-apply-update)
+  
+  # Broadcast
+  define (orset-broadcast cfg from-actor to-actors operation) :=
+    (broadcast-to cfg from-actor to-actors operation orset-initial orset-apply-update)
+  
+  define (orset-contains-at cfg actor-id element) :=
+    (query-state cfg actor-id 
+                 (lambda (state) (orset-contains state element))
+                 false)
+  
+  define (orset-state-at cfg actor-id) :=
+    (query-state cfg actor-id 
+                 (lambda (state) state)
+                 orset-initial)
+  
+  define (orset-merge-states s1:ORSetState s2:ORSetState) :=
+    (orset-merge s1 s2)
+    
+
+  # Porperties 
+  
+  module SemilatticeProofs {
+    
+    define commutative-for-orset :=
+      (forall ?s1:ORSetState ?s2:ORSetState . 
+        (orset-merge ?s1 ?s2) = (orset-merge ?s2 ?s1))
+    
+    define associative-for-orset :=
+      (forall ?s1:ORSetState ?s2:ORSetState ?s3:ORSetState . 
+        (orset-merge (orset-merge ?s1 ?s2) ?s3) = 
+        (orset-merge ?s1 (orset-merge ?s2 ?s3)))
+    
+    define idempotent-for-orset :=
+      (forall ?s:ORSetState . (orset-merge ?s ?s) = ?s)
+    
+    conclude commutative := commutative-for-orset
+      pick-any s1:ORSetState s2:ORSetState
+        (!chain [(orset-merge s1 s2)
+               = (orset-merge s2 s1)  
+                   [ORSetSpec.Theory.merge-commutative]])
+    
+    conclude associative := associative-for-orset
+      pick-any s1:ORSetState s2:ORSetState s3:ORSetState
+        (!chain [(orset-merge (orset-merge s1 s2) s3)
+               = (orset-merge s1 (orset-merge s2 s3))  
+                   [ORSetSpec.Theory.merge-associative]])
+    
+    conclude idempotent := idempotent-for-orset
+      pick-any s:ORSetState
+        (!chain [(orset-merge s s)
+               = s  
+                   [ORSetSpec.Theory.merge-idempotent]])
+  }
+}
+

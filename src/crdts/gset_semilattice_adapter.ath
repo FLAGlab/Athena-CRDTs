@@ -1,0 +1,41 @@
+load "gset/gset_specification"
+load "../framework/theory/semilattice_theory"
+
+module GSetSemilattice {
+  open GSetSpec
+  open SemilatticeTheory
+  open Set
+    
+  define merge-commutative-holds := GSetSpec.Theory.merge-commutative-holds
+  define merge-associative-holds := GSetSpec.Theory.merge-associative-holds
+  define merge-idempotent-holds := GSetSpec.Theory.merge-idempotent-holds
+  define merge-left-identity-holds := GSetSpec.Theory.merge-left-identity-holds
+  define merge-right-identity-holds := GSetSpec.Theory.merge-right-identity-holds
+  
+  
+  module Theory {
+    
+    define gs-theory := GSetSpec.Theory.gs-theory
+    define GSet-To-Semilattice := GSetSpec.Theory.GSet-To-Semilattice
+    
+    
+    define gs-absorption := GSetSpec.Theory.gs-absorption
+    define gs-monotone-left := GSetSpec.Theory.gs-monotone-left
+    define gs-monotone-right := GSetSpec.Theory.gs-monotone-right
+  }
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+}

@@ -1,0 +1,21 @@
+% $Id: conclusion.tex 1784 2012-04-27 23:29:31Z  $
+% !TEX root = main.tex
+
+\chapter{Conclusions and Future Work}\label{cha:conclusion}
+
+
+This thesis developed a modular framework that allows to verify CRDTs in distributed systems. The central challenge is ensuring strong eventual consistency (SEC) in the presence of concurrency and asynchronous message delivery. By combining algebraic models with causal metadata, the system guarantees convergence without central coordination.
+
+We began from first principles, formalising the semilattice model that underpins CRDT convergence. This abstraction provides the minimal requirements—commutativity, associativity, idempotence, and monotonicity—under which concurrent state updates can be merged deterministically. Chapter~\ref{chap:theory} captured these axioms as reusable Athena theories, which are later instantiated by specific CRDT designs.
+
+
+Six CRDTs were implemented using this framework (Chapter~\ref{chap:implementations}). Each instantiates the abstract semantics, providing concrete merge and update operations, and discharging the required axioms. Formal proofs were constructed in Athena, demonstrating correctness by construction: once a CRDT conforms to the theory interface, convergence theorems follow automatically.
+
+The framework was validated through both theoretical proofs and executable demonstrations (Chapter~\ref{chap:validation}). Each layer was shown to satisfy its intended properties: Payload implements the semilattice model; Backbone preserves causal consistency; and together they yield SEC. All artifacts are open-source and publicly available on \href{https://github.com/FLAGlab/Athena-CRDTs}{GitHub}.
+
+\section*{Limitations}
+
+This work focuses exclusively on \emph{eventual convergence}. While this covers a large class of state-based CRDTs, other correctness dimensions—such as safety invariants, tombstone management, and performance optimizations are not addressed. The framework also assumes a reliable communication layer; handling message loss or Byzantine faults is out of scope.
+
+\endinput
+
