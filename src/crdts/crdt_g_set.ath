@@ -1,0 +1,108 @@
+load "../utils/set-util"
+load "../utils/msets-notp"
+load "../utils/fmaps"
+load "../utils/pair"
+load "../utils/list-util"
+load "../framework/payload_examples"
+load "../framework/backbone"
+load "../framework/backbone.ath"
+
+#-----------------------------------------------------------------------------
+# Grow-only set payload: single monotone add-set with union-based merge.
+#-----------------------------------------------------------------------------
+
+open GSetPayload
+
+module GSetCRDT {
+
+open Payload
+open BackbonePayloadAdapter
+
+define PAYLOAD := GSET_PAYLOAD
+
+define-sort Configuration :=
+  (Backbone.Configuration State Value)
+
+define (reduce cfg) :=
+  (Backbone.reduce PAYLOAD cfg)
+
+define (reduce* cfg) :=
+  (Backbone.reduce* PAYLOAD cfg)
+
+define broadcast := Backbone.broadcast
+
+define broadcast-from := Backbone.broadcast-from
+
+define (init-state-map ids) :=
+  (Backbone.init-state-map PAYLOAD ids)
+
+define init-clock-map := Backbone.init-clock-map
+
+define (init ids) :=
+  (Backbone.init PAYLOAD ids)
+
+# Lookup utilities lifted over configurations.
+
+define (lookup-state cfg actor) :=
+  (Backbone.cfg-state-or-drained cfg actor Set.null)
+
+define (lookup cfg actor element) :=
+  (Set.in element (lookup-state cfg actor))
+
+define (snapshot cfg) :=
+  (Backbone.cfg-states-drained cfg)
+
+define (pending-net cfg) :=
+  (Backbone.get-cfg-net cfg)
+
+define (actor-clock cfg actor) :=
+  (Backbone.cfg-actor-clock cfg actor)
+
+define (prepare-add _ element) :=
+  (gs-build-add element)
+
+define (issue-add cfg actor element) :=
+  (broadcast-from cfg actor (prepare-add cfg element))
+
+define (issue-add-all cfg element) :=
+  (broadcast cfg (prepare-add cfg element))
+
+define (deliver-one cfg) :=
+  (Backbone.reduce PAYLOAD cfg)
+
+define (deliver-all cfg) :=
+  (Backbone.reduce* PAYLOAD cfg)
+
+define (drop-next cfg) :=
+  (Backbone.cfg-drop-next-message cfg)
+
+# Configuration equivalence predicates specialized for grow-only sets.
+
+define (gset-states-all-equal-to states reference) :=
+  match states {
+    FMap.empty-map => true
+  | (FMap.update (pair _ value) rest) =>
+      ((value = reference) & (gset-states-all-equal-to rest reference))
+  }
+
+define (gset-equal-state cfg) :=
+  match (snapshot cfg) {
+    FMap.empty-map => true
+  | (FMap.update (pair _ value) rest) =>
+      (gset-states-all-equal-to rest value)
+  }
+
+define (gset-equal-state-v-c cfg reference) :=
+  (gset-states-all-equal-to (snapshot cfg) reference)
+
+define (gset-equal-state-c cfg) :=
+  match (snapshot cfg) {
+    FMap.empty-map => true
+  | (FMap.update (pair _ value) rest) =>
+      ((gset-states-all-equal-to rest value)
+       & (gset-equal-state (Backbone.kfg rest (Backbone.get-cfg-clocks cfg) (Backbone.get-cfg-net cfg))))
+  }
+
+}
+
+open GSetCRDT

@@ -1,0 +1,2 @@
+load "../../crdts/crdt_g_set"
+(print "GSet loaded")

@@ -1,0 +1,20 @@
+load "../../framework/vc_core.ath"
+
+open VCCore
+
+# Test the new CRDT-optimized helpers
+
+define A := (string->id "a")
+define B := (string->id "b")
+
+# Create clocks
+define C1 := (clock-tick clock-empty A)           # a:1
+define C2 := (clock-tick C1 A)                    # a:2
+define C3 := (clock-tick clock-empty B)           # b:1
+
+# Test clock-dominates
+define C2_dominates_C1 := (clock-dominates C2 C1)
+
+(print "\n=== VCCore Optimized Helpers Test ===")
+(print "C2 dominates C1: " (eval C2_dominates_C1))
+(print "\n=== Test Complete ===\n")

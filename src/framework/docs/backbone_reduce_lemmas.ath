@@ -1,0 +1,139 @@
+# Backbone Reduction Lemmas
+# Foundation lemmas for CRDT convergence proofs
+
+load "backbone"
+load "payload"
+
+module BackboneReduceLemmas {
+
+open Backbone
+open Payload
+
+#-----------------------------------------------------------------------------
+# Network Drainage Properties
+#-----------------------------------------------------------------------------
+
+# Key insight: reduce* terminates when network becomes empty.
+# This is the foundation for all convergence proofs.
+
+# Lemma 1: reduce on empty network is identity
+# Polymorphic - works for any State and Value types
+# Proof: reduce pattern-matches on empty-mset and returns cfg unchanged
+
+define reduce-empty-is-id-statement :=
+  "For any ops, states, clocks: reduce ops (kfg states clocks empty-mset) = (kfg states clocks empty-mset)"
+
+# Lemma 2: reduce* on empty network is identity
+# Proof: reduce* base case matches empty-mset and returns cfg unchanged
+
+define reduce*-empty-is-id-statement :=
+  "For any ops, states, clocks: reduce* ops (kfg states clocks empty-mset) = (kfg states clocks empty-mset)"
+
+# Lemma 3: reduce decreases network size (by 1 message)
+# This is critical for termination arguments.
+# Note: We express this constructively via pattern matching rather than 
+# a size function, since MSet doesn't expose cardinal in current framework.
+
+# Observation: For non-empty net, reduce processes exactly one message.
+# Pattern: (reduce ops (kfg s c (msg m ++ n))) => (kfg s' c' n)
+# The processed message is removed from the net.
+
+define reduce-removes-one-message :=
+  "For any cfg with non-empty net (insert msg rest), reduce ops cfg yields a cfg with net = rest (after processing msg)."
+
+# Lemma 4: reduce* is idempotent after stabilization
+# Once network is empty, further reduce* has no effect.
+
+# For concrete configurations (non-polymorphic proof)
+define reduce*-stabilizes-statement :=
+  "For any cfg with cfg-empty-net cfg, reduce* ops cfg = cfg"
+
+# Lemma 5: reduce* eventually empties the network
+# For finite networks, reduce* processes all messages.
+# This requires induction on multiset structure, which we scaffold here.
+
+# Proof sketch:
+# - Base case: empty net => reduce* = id (proven above)
+# - Inductive step: (insert msg rest)
+#   - reduce processes msg, yielding cfg' with net = rest
+#   - IH: reduce* eventually empties rest
+#   - Therefore: reduce* empties (insert msg rest)
+
+# Note: Full proof requires MSet induction principle, currently not 
+# exposed in msets-notp.ath. We define as statement for now.
+
+define reduce*-drains-network-statement :=
+  "For any finite cfg, reduce* eventually empties the network"
+
+#-----------------------------------------------------------------------------
+# Payload Application Properties
+#-----------------------------------------------------------------------------
+
+# Lemma 6: payload-apply preserves payload invariants
+# This is a scaffold for CRDT-specific monotonicity proofs.
+
+# For GCounter: payload-apply ops inc n >= n (monotonicity)
+# For GSet: payload-apply ops add s ⊇ s (subset monotonicity)
+# etc.
+
+# These will be proven per-CRDT in their respective convergence files.
+
+#-----------------------------------------------------------------------------
+# Broadcast Properties
+#-----------------------------------------------------------------------------
+
+# Lemma 7: broadcast creates exactly |actors| messages
+
+# Proof sketch: By induction on actor ID list.
+# - Base: empty list => 0 actors => 0 messages
+# - Inductive: (id :: rest)
+#   - enqueue creates 1 message for id
+#   - IH: enqueue-over-states on rest creates |rest| messages
+#   - Total: 1 + |rest| = |id :: rest|
+
+# Scaffold for now; full proof requires List.length and MSet.size
+
+define broadcast-creates-n-messages-statement :=
+  "broadcast cfg payload creates |actors| messages"
+
+#-----------------------------------------------------------------------------
+# Reduce Sequence Properties
+#-----------------------------------------------------------------------------
+
+# Lemma 8: reduce* is deterministic modulo message delivery order
+# For CRDTs with commutative join, different reduce* schedules
+# (different message orderings) converge to the same final state.
+
+# This is the key insight for eventual consistency:
+# Even though message delivery order varies, commutativity ensures
+# all replicas reach the same state.
+
+# Proof strategy:
+# - Show that swapping adjacent message deliveries yields same result
+# - Extend to arbitrary permutations via transitivity
+# - Requires: payload-join commutativity
+
+# Scaffold theorem:
+define reduce*-deterministic-modulo-order-statement :=
+  "Different message orderings converge to same state via commutativity"
+
+#-----------------------------------------------------------------------------
+# Helper Predicates for Convergence
+#-----------------------------------------------------------------------------
+
+# equal-state-c is defined in crdt_spec.ath
+# We reference it here for clarity in convergence proofs
+
+# converged? cfg := (equal-state-c (reduce* cfg))
+# Meaning: After draining network, all replicas have identical state
+
+} # end module BackboneReduceLemmas
+
+open BackboneReduceLemmas
+
+(print "\n=== Backbone Reduce Lemmas Loaded ===\n")
+(print "Defined: reduce-empty-is-id (statement)\n")
+(print "Defined: reduce*-empty-is-id (statement)\n")
+(print "Defined: reduce*-stabilizes (statement)\n")
+(print "Defined: reduce*-drains-network (statement)\n")
+(print "Scaffold: broadcast and determinism lemmas for future proofs\n")

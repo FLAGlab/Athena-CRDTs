@@ -1,0 +1,27 @@
+load "vc_core"
+
+open VCCore
+
+module VCCoreProps {
+
+# ==================================================================
+# Vector Clock Properties (Axioms for clock-max)
+# ==================================================================
+
+# These properties establish the algebraic laws for clock-max,
+# the component-wise maximum operation used in vector clock merging.
+# They follow from the recursive definition of clock-max in vc_core.ath.
+#
+# Future work: These can be proved by structural induction on naturals.
+# For now, we document them as design invariants.
+
+# 1. Identity: max(0,a) = a and max(a,0) = a
+# 2. Idempotence: max(a,a) = a  
+# 3. Commutativity: max(a,b) = max(b,a)
+# 4. Associativity: max(max(a,b),c) = max(a,max(b,c))
+#
+# Together, these make (N, max, 0) a commutative idempotent monoid (join-semilattice).
+
+define props-documented := true
+
+} # end module VCCoreProps

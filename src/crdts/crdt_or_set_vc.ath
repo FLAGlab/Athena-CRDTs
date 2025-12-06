@@ -1,0 +1,139 @@
+load "../framework/vc_backbone"
+# load "../framework/vc_payload"  # Not used
+
+# FIX: Unique parameter names required across all constructors
+module ORSetVC {
+
+open VCBackbone
+# open VCPayload  # Not used
+
+define-sort Entry := (Pair (Pair Ide Ide) Clock)
+define-sort State := (Set.Set Entry)
+
+datatype Value := (op-add Ide Ide Clock)     # (element, tag, clock)
+                | (op-remove Ide (Set.Set Entry))  # (element, observed-entries)
+
+define state-empty := Set.null
+
+define (make-entry element tag clock) :=
+  (pair (pair element tag) clock)
+
+define (entry-element e) :=
+  match e {
+    (pair (pair elem _) _) => elem
+  }
+
+define (entry-tag e) :=
+  match e {
+    (pair (pair _ tag) _) => tag
+  }
+
+define (entry-clock e) :=
+  match e {
+    (pair _ clk) => clk
+  }
+
+define (orset-add element tag clock state) :=
+  (let ((new-entry (make-entry element tag clock)))
+    (Set.insert new-entry state))
+
+define (orset-remove element observed state) :=
+  (letrec ((remove-matching (lambda (s)
+             match s {
+               Set.null => Set.null
+             | (Set.insert entry rest) =>
+                 (let ((filtered-rest (remove-matching rest)))
+                   match (Set.in entry observed) {
+                     true => filtered-rest
+                   | false => (Set.insert entry filtered-rest)
+                   })
+             | _ => s
+             })))
+    (remove-matching state))
+
+define (orset-join state1 state2) :=
+  (Set.union state1 state2)
+
+define (orset-lookup element state) :=
+  (letrec ((find-entries (lambda (s)
+             match s {
+               Set.null => Set.null
+             | (Set.insert entry rest) =>
+                 (let ((filtered-rest (find-entries rest)))
+                   match (equal? (entry-element entry) element) {
+                     true => (Set.insert entry filtered-rest)
+                   | false => filtered-rest
+                   })
+             | _ => Set.null
+             })))
+    (find-entries state))
+
+define (orset-contains? element state) :=
+  match (orset-lookup element state) {
+    Set.null => false
+  | (Set.insert _ _) => true
+  }
+
+define (apply-operation value state) :=
+  match value {
+    (op-add element tag clock) =>
+      (orset-add element tag clock state)
+  | (op-remove element observed) =>
+      (orset-remove element observed state)
+  }
+
+define (op-clock value) :=
+  match value {
+    (op-add _ _ clock) => clock
+  | (op-remove _ _) => VCCore.clock-empty
+  }
+
+define (init ids) :=
+  (VCBackbone.init state-empty ids)
+
+define (lookup-state cfg actor) :=
+  (VCBackbone.state-or cfg actor state-empty)
+
+define (issue-add cfg actor element) :=
+  (let ((tag (string->id (id->string element)))
+        (ticked (VCBackbone.cfg-tick cfg actor))
+        (clock (VCBackbone.cfg-actor-clock ticked actor)))
+  (VCBackbone.broadcast-from ticked actor (op-add element tag clock)))
+
+define (issue-remove cfg actor element) :=
+  (let ((current-state (lookup-state cfg actor))
+        (observed (orset-lookup element current-state)))
+  (VCBackbone.broadcast-from cfg actor (op-remove element observed)))
+
+define (lookup cfg actor element) :=
+  (orset-lookup element (lookup-state cfg actor))
+
+define (contains? cfg actor element) :=
+  (orset-contains? element (lookup-state cfg actor))
+
+define (reduce cfg) :=
+  match (VCBackbone.get-pending cfg) {
+    Set.null => cfg
+  | (Set.insert msg rest) =>
+      match msg {
+        (pair actor value) =>
+              (let ((current (VCBackbone.state-or cfg actor state-empty))
+                (next    (apply-operation value current))
+                (cfg1    (VCBackbone.update-state cfg actor next))
+                (clk     (op-clock value))
+                (cfg2    (VCBackbone.merge-clock cfg1 actor clk))
+                (cfg3    (VCBackbone.with-pending cfg2 rest)))
+            cfg3)
+      | _ => cfg
+      }
+  }
+
+define (reduce* cfg) :=
+  match (VCBackbone.has-pending cfg) {
+    false => cfg
+  | true  => (reduce* (reduce cfg))
+  }
+
+} # end module ORSetVC
+
+open ORSetVC

@@ -1,0 +1,80 @@
+load "../../framework/payload.ath"
+load "../../framework/payload_examples.ath"
+
+open Payload
+open GCounterPayload
+
+define Ids := ((string->id "a") :: ((string->id "b") :: nil))
+
+declare C0: (Payload.Configuration GCounterPayload.State GCounterPayload.Value Payload.Unit)
+define C0 := (Payload.init GCOUNTER_PAYLOAD Ids)
+
+(eval C0)
+
+define C0Matches :=
+	(match C0 {
+		(Payload.kfg _ _) => true
+	| _ => false
+	})
+
+(eval C0Matches)
+
+declare EmptyGCounterNet: (MSet.MSet (Payload.Message GCounterPayload.Value Payload.Unit))
+define EmptyGCounterNet := MSet.null
+
+define C0TypedMatches :=
+	(= C0
+	   (Payload.kfg (Payload.actors C0)
+							  EmptyGCounterNet))
+
+(eval C0TypedMatches)
+
+define C1 := (Payload.enqueue-with C0 (string->id "a") (increment N.one) unit)
+
+(eval C1)
+
+define C1EqualsC0 := (= C1 C0)
+
+(eval C1EqualsC0)
+
+define C1Net := (Payload.network C1)
+
+(eval C1Net)
+
+define Inserted := (MSet.insert (Payload.msg (string->id "a") (increment N.one) unit) MSet.null)
+
+(eval Inserted)
+
+define ManualActors := (Payload.actors C0)
+
+(eval ManualActors)
+
+define ManualActorsAtA := (FMap.apply ManualActors (string->id "a"))
+
+(eval ManualActorsAtA)
+
+define ExpectedActors := (Payload.init-map GCOUNTER_PAYLOAD Ids)
+
+(eval ExpectedActors)
+
+declare ManualPending: (MSet.MSet (Payload.Message GCounterPayload.Value Payload.Unit))
+define ManualPending := (Payload.network C0)
+
+(eval ManualPending)
+
+define ManualEnqueue :=
+	(Payload.kfg ManualActors
+		(MSet.insert (Payload.msg (string->id "a") (increment N.one) unit) ManualPending))
+
+(eval ManualEnqueue)
+
+define ManualNet := (Payload.network ManualEnqueue)
+
+(eval ManualNet)
+
+define C1NetEqualsManual := (= C1Net ManualNet)
+
+(eval C1NetEqualsManual)
+
+
+

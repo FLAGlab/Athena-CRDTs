@@ -1,0 +1,49 @@
+load "../../framework/backbone.ath"
+load "../../framework/payload.ath"
+load "../../crdts/crdt_lww_register.ath"
+
+open Backbone
+open Payload
+open LWWRegisterPayload
+
+# Test map-lookup with actual IDs
+
+define base := (string->id "rep")
+define ids := (gen-fresh base 3)
+
+define rep0 := match ids { (a :: _) => a | _ => base }
+define rep1 := match ids { (_ :: (b :: _)) => b | _ => base }
+define rep2 := match ids { (_ :: (_ :: (c :: _))) => c | _ => base }
+
+(print "\nGenerated IDs:")
+(print "rep0:")
+(eval rep0)
+(print "rep1:")
+(eval rep1)
+(print "rep2:")
+(eval rep2)
+
+# Create a state map
+define state-map := 
+  (FMap.update (pair rep0 reg-empty)
+    (FMap.update (pair rep1 reg-empty)
+      (FMap.update (pair rep2 reg-empty) FMap.empty-map)))
+
+(print "\nState map:")
+(eval state-map)
+
+# Try lookup
+define lookup0 := (map-lookup state-map rep0)
+define lookup1 := (map-lookup state-map rep1)
+define lookup2 := (map-lookup state-map rep2)
+
+(print "\nLookup rep0:")
+(eval lookup0)
+
+(print "\nLookup rep1:")
+(eval lookup1)
+
+(print "\nLookup rep2:")
+(eval lookup2)
+
+(print "\n=== Test complete ===")

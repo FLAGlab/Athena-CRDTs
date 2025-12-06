@@ -1,0 +1,29 @@
+# Ultra-minimal: just load and check basic definitions
+
+load "../../crdts/crdt_lww_register"
+
+(print "\n=== Module loaded successfully ===")
+
+# Just check if the datatype works
+define test-empty := reg-empty
+(print "Empty register:")
+(eval test-empty)
+
+define test-entry := (reg-entry (string->id "val") (string->id "writer") FMap.empty-map zero)
+(print "Register entry:")
+(eval test-entry)
+
+# Check pattern matching on datatype
+define (test-pattern state) :=
+  match state {
+    reg-empty => (string->id "empty")
+  | (reg-entry _ _ _ _) => (string->id "entry")
+  }
+
+(print "Pattern match on empty:")
+(eval (test-pattern test-empty))
+
+(print "Pattern match on entry:")
+(eval (test-pattern test-entry))
+
+(print "\n=== All basic tests passed ===")

@@ -1,0 +1,141 @@
+load "../framework/payload"
+load "gcounter_max_props.ath"
+load "../utils/pair.ath"
+
+# Define PNCounterPayload module
+module PNCounterPayload {
+  open Payload
+  open GCounterPayload
+  open Pr
+
+  define-sort State := (Pr N N)
+
+  datatype Value := (inc N) | (dec N)
+
+  define state-empty := (pr zero zero)
+
+  define (pn-step value state) :=
+    match value {
+      (inc d) => (pr (N.+ (first state) d) (second state))
+    | (dec d) => (pr (first state) (N.+ (second state) d))
+    | _ => state
+    }
+
+  # Axiomatic join: component-wise max over N using GCounter max
+  declare pn-join: [State State] -> State
+  assert pn-join-def :=
+    (forall ?p1:N ?n1:N ?p2:N ?n2:N
+      (= (pn-join (pr ?p1 ?n1) (pr ?p2 ?n2))
+         (pr (gcounter-max ?p1 ?p2)
+             (gcounter-max ?n1 ?n2))))
+
+  declare PNC_PAYLOAD: [] -> (Payload.PayloadOps State Value)
+  define PNC_PAYLOAD := (payload-ops state-empty)
+
+  define (payload-step ops value state) :=
+    match ops {
+      (payload-ops _) => (pn-step value state)
+    }
+
+  define (payload-join ops left right) :=
+    match ops {
+      (payload-ops _) => (pn-join left right)
+    }
+
+  define (payload-normalize-hook _) := PNC_PAYLOAD
+  
+  define (payload-canonical-from-init-hook ops init) :=
+    match ops {
+      (payload-ops _) =>
+        match init {
+          state-empty => PNC_PAYLOAD
+        | _ => (payload-ops init)
+        }
+    }
+}
+
+# Extend with algebraic property proofs
+extend-module PNCounterPayload {
+  open GCounterPayload
+  open Pr
+  open N
+
+  # ------------------------------------------------------------------
+  # Algebraic Properties of pn-join (proven once, reused everywhere)
+  # ------------------------------------------------------------------
+  # 
+  # These proofs leverage the gcounter-max properties from gcounter_max_props.ath
+  # PNCounter join is component-wise max, so properties reduce to gcounter-max properties
+
+  # Commutativity
+  conclude pn-join-commutative :=
+    (forall ?p1 ?n1 ?p2 ?n2
+      (= (pn-join (pr ?p1 ?n1) (pr ?p2 ?n2))
+         (pn-join (pr ?p2 ?n2) (pr ?p1 ?n1))))
+    pick-any p1:N n1:N p2:N n2:N
+      (!chain [ (pn-join (pr p1 n1) (pr p2 n2))
+            = (pr (gcounter-max p1 p2) (gcounter-max n1 n2)) [pn-join-def]
+            = (pr (gcounter-max p2 p1) (gcounter-max n2 n1)) [gmax-commutative]
+                = (pn-join (pr p2 n2) (pr p1 n1)) [pn-join-def]])
+
+  # Associativity
+  conclude pn-join-associative :=
+    (forall ?a1 ?b1 ?a2 ?b2 ?a3 ?b3
+      (= (pn-join (pn-join (pr ?a1 ?b1) (pr ?a2 ?b2)) (pr ?a3 ?b3))
+         (pn-join (pr ?a1 ?b1) (pn-join (pr ?a2 ?b2) (pr ?a3 ?b3)))))
+    pick-any a1:N b1:N a2:N b2:N a3:N b3:N
+      (!chain [ (pn-join (pn-join (pr a1 b1) (pr a2 b2)) (pr a3 b3))
+                = (pn-join (pr (gcounter-max a1 a2) (gcounter-max b1 b2)) (pr a3 b3)) [pn-join-def]
+                    = (pr (gcounter-max (gcounter-max a1 a2) a3)
+                      (gcounter-max (gcounter-max b1 b2) b3)) [pn-join-def]
+                    = (pr (gcounter-max a1 (gcounter-max a2 a3))
+                      (gcounter-max b1 (gcounter-max b2 b3))) [gmax-associative]
+                = (pn-join (pr a1 b1) (pr (gcounter-max a2 a3) (gcounter-max b2 b3))) [pn-join-def]
+                = (pn-join (pr a1 b1) (pn-join (pr a2 b2) (pr a3 b3))) [pn-join-def] ])
+
+  # Idempotence
+  conclude pn-join-idempotent :=
+    (forall ?p ?n
+      (= (pn-join (pr ?p ?n) (pr ?p ?n)) (pr ?p ?n)))
+    pick-any p:N n:N
+      (!chain [ (pn-join (pr p n) (pr p n))
+            = (pr (gcounter-max p p) (gcounter-max n n)) [pn-join-def]
+            = (pr p n) [gmax-idempotent] ])
+
+  # Monotonicity: left component (positive counter)
+  conclude pn-join-left-pos-monotone :=
+    (forall ?p1 ?n1 ?p2 ?n2 . (<= ?p1 (first (pn-join (pr ?p1 ?n1) (pr ?p2 ?n2)))))
+    pick-any p1:N n1:N p2:N n2:N
+      (!chain-> [true
+                 ==> (<= p1 (gcounter-max p1 p2)) [gmax-left-monotone]
+                 ==> (<= p1 (first (pr (gcounter-max p1 p2) (gcounter-max n1 n2)))) [Pr.pr-first]
+                 ==> (<= p1 (first (pn-join (pr p1 n1) (pr p2 n2)))) [pn-join-def]])
+
+  # Monotonicity: right component (positive counter)
+  conclude pn-join-right-pos-monotone :=
+    (forall ?p1 ?n1 ?p2 ?n2 . (<= ?p2 (first (pn-join (pr ?p1 ?n1) (pr ?p2 ?n2)))))
+    pick-any p1:N n1:N p2:N n2:N
+      (!chain-> [true
+                 ==> (<= p2 (gcounter-max p1 p2)) [gmax-right-monotone]
+                 ==> (<= p2 (first (pr (gcounter-max p1 p2) (gcounter-max n1 n2)))) [Pr.pr-first]
+                 ==> (<= p2 (first (pn-join (pr p1 n1) (pr p2 n2)))) [pn-join-def]])
+
+  # Monotonicity: left component (negative counter)
+  conclude pn-join-left-neg-monotone :=
+    (forall ?p1 ?n1 ?p2 ?n2 . (<= ?n1 (second (pn-join (pr ?p1 ?n1) (pr ?p2 ?n2)))))
+    pick-any p1:N n1:N p2:N n2:N
+      (!chain-> [true
+                 ==> (<= n1 (gcounter-max n1 n2)) [gmax-left-monotone]
+                 ==> (<= n1 (second (pr (gcounter-max p1 p2) (gcounter-max n1 n2)))) [Pr.pr-second]
+                 ==> (<= n1 (second (pn-join (pr p1 n1) (pr p2 n2)))) [pn-join-def]])
+
+  # Monotonicity: right component (negative counter)
+  conclude pn-join-right-neg-monotone :=
+    (forall ?p1 ?n1 ?p2 ?n2 . (<= ?n2 (second (pn-join (pr ?p1 ?n1) (pr ?p2 ?n2)))))
+    pick-any p1:N n1:N p2:N n2:N
+      (!chain-> [true
+                 ==> (<= n2 (gcounter-max n1 n2)) [gmax-right-monotone]
+                 ==> (<= n2 (second (pr (gcounter-max p1 p2) (gcounter-max n1 n2)))) [Pr.pr-second]
+                 ==> (<= n2 (second (pn-join (pr p1 n1) (pr p2 n2)))) [pn-join-def]])
+
+} # end extend-module PNCounterPayload

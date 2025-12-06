@@ -1,0 +1,36 @@
+load "../../crdts/crdt_lww_register.ath"
+
+open LWWRegisterCRDT
+open LWWRegisterPayload
+open Backbone
+open VCCore
+
+# Test msg pattern matching
+
+define ids := (gen-fresh (string->id "rep") 2)
+
+define ActorA := match ids { (a :: _) => a | _ => (string->id "rep0") }
+
+define InitCfg := (LWWRegisterCRDT.init ids)
+
+define AfterIssue := (lww-register-issue InitCfg ActorA (string->id "test") ids)
+
+# Extract first message
+define first-msg := match (cfg-net AfterIssue) {
+  (MSet.insert m _) => m
+| _ => (Payload.msg ActorA (op-write ActorA ActorA zero FMap.empty-map) FMap.empty-map)
+}
+
+(print "\nFirst message:")
+(eval first-msg)
+
+# Try to pattern-match it
+define msg-recipient := match first-msg {
+  (Payload.msg id _ _) => (SOME id)
+| _ => NONE
+}
+
+(print "\nMessage recipient:")
+(eval msg-recipient)
+
+(print "\n=== Test complete ===")

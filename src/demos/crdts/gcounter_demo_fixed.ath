@@ -1,0 +1,292 @@
+load "../../crdts/crdt_gcounter.ath"
+
+open SimpleGCounter
+open BackboneGCounter
+open VCCore
+open Backbone
+
+# Limit the number of delivery steps each demo attempts. Six iterations are
+# enough to drain the tiny networks below while keeping the runtime bounded.
+define DemoDeliveryBudget := (S (S (S (S (S (S zero))))))
+
+define (simple-deliver-bounded cfg budget) :=
+  match budget {
+    zero => cfg
+  | (S rest) =>
+      match (SimpleGCounter.net cfg) {
+        MSet.null => cfg
+      | _ => (simple-deliver-bounded (SimpleGCounter.reduce cfg) rest)
+      }
+  }
+
+define (backbone-deliver-bounded cfg budget) :=
+  match budget {
+    zero => cfg
+  | (S rest) =>
+      match (BackboneGCounter.pending-net cfg) {
+        MSet.null => cfg
+      | _ => (backbone-deliver-bounded (BackboneGCounter.reduce cfg) rest)
+      }
+  }
+
+define (gcounter-value map actor) :=
+  match (Payload.map-lookup map actor) {
+    NONE => zero
+  | (SOME value) => value
+  }
+
+define (gcounter-map-sum ids map) :=
+  match ids {
+    nil => zero
+  | (id :: rest) =>
+      (N.+ (gcounter-value map id)
+           (gcounter-map-sum rest map))
+  }
+
+# ------------------------------------------------------------------
+# Simple payload-only GCounter bounded demo.
+# ------------------------------------------------------------------
+
+define SimpleDemoBase := (string->id "replica")
+
+define SimpleDemoIds := (Backbone.gen-fresh SimpleDemoBase 5)
+
+define SimpleDemoActorA :=
+  match SimpleDemoIds {
+    (actor :: rest) => actor
+  | nil => (string->id "replica0")
+  }
+
+define SimpleDemoActorB :=
+  match SimpleDemoIds {
+    (actorA :: (actorB :: rest)) => actorB
+  | _ => (string->id "replica1")
+  }
+
+define SimpleDemoActorC :=
+  match SimpleDemoIds {
+    (actorA :: (actorB :: (actorC :: rest))) => actorC
+  | _ => (string->id "replica2")
+  }
+
+define SimpleDemoActorD :=
+  match SimpleDemoIds {
+    (a :: (b :: (c :: (d :: rest)))) => d
+  | _ => (string->id "replica3")
+  }
+
+define SimpleDemoActorE :=
+  match SimpleDemoIds {
+    (a :: (b :: (c :: (d :: (e :: rest))))) => e
+  | _ => (string->id "replica4")
+  }
+
+define SimpleInit := (SimpleGCounter.init SimpleDemoIds)
+
+define SimpleAfterA :=
+  (SimpleGCounter.issue-increment SimpleInit SimpleDemoActorA N.one)
+
+define SimpleAfterB :=
+  (SimpleGCounter.issue-increment SimpleAfterA SimpleDemoActorB N.two)
+
+define SimpleAfterC :=
+  (SimpleGCounter.issue-increment SimpleAfterB SimpleDemoActorC N.one)
+
+define SimpleAfterD :=
+  (SimpleGCounter.issue-increment SimpleAfterC SimpleDemoActorD (S (S (S zero))))
+
+define SimpleAfterA2 :=
+  (SimpleGCounter.issue-increment SimpleAfterD SimpleDemoActorA N.two)
+
+define SimpleAfterE :=
+  (SimpleGCounter.issue-increment SimpleAfterA2 SimpleDemoActorE N.one)
+
+define SimpleAfterB2 :=
+  (SimpleGCounter.issue-increment SimpleAfterE SimpleDemoActorB N.one)
+
+define SimpleAfterC2 :=
+  (SimpleGCounter.issue-increment SimpleAfterB2 SimpleDemoActorC (S (S zero)))
+
+# Test Payload framework utilities
+define SimplePayloadCfg := SimpleAfterC2
+define SimplePayloadAM := (Payload.am SimplePayloadCfg)
+define SimplePayloadNet := (Payload.net SimplePayloadCfg)
+
+# Test canonical-map normalization from Payload framework
+define SimpleCanonicalMap := (Payload.canonical-map SimplePayloadAM)
+
+# Use Payload.reduce* for batch delivery
+define SimpleDelivered := (Payload.reduce* SimpleGCounter.PAYLOAD SimpleAfterC2)
+
+define SimpleSnapshot := (SimpleGCounter.snapshot SimpleDelivered)
+
+define SimpleTotal := (gcounter-map-sum SimpleDemoIds SimpleSnapshot)
+
+define SimpleActorAValue := (gcounter-value SimpleSnapshot SimpleDemoActorA)
+
+define SimpleActorBValue := (gcounter-value SimpleSnapshot SimpleDemoActorB)
+
+define SimpleActorCValue := (gcounter-value SimpleSnapshot SimpleDemoActorC)
+
+define SimpleActorDValue := (gcounter-value SimpleSnapshot SimpleDemoActorD)
+
+define SimpleActorEValue := (gcounter-value SimpleSnapshot SimpleDemoActorE)
+
+define SimpleNetworkState := (SimpleGCounter.net SimpleDelivered)
+
+# Use Payload framework for more evaluations
+define SimplePayloadSnapshot := (Payload.canonical-map (Payload.am SimpleDelivered))
+
+# Test map-lookup from Payload framework on individual actors
+define SimplePayloadA := (Payload.map-lookup SimplePayloadSnapshot SimpleDemoActorA)
+define SimplePayloadB := (Payload.map-lookup SimplePayloadSnapshot SimpleDemoActorB)
+define SimplePayloadC := (Payload.map-lookup SimplePayloadSnapshot SimpleDemoActorC)
+define SimplePayloadD := (Payload.map-lookup SimplePayloadSnapshot SimpleDemoActorD)
+define SimplePayloadE := (Payload.map-lookup SimplePayloadSnapshot SimpleDemoActorE)
+
+define SimpleInitSnapshot := (SimpleGCounter.snapshot SimpleInit)
+
+define SimpleInitTotal := (gcounter-map-sum SimpleDemoIds SimpleInitSnapshot)
+
+define SimpleAfterASnapshot := (SimpleGCounter.snapshot SimpleAfterA)
+
+define SimpleAfterBSnapshot := (SimpleGCounter.snapshot SimpleAfterB)
+
+define SimpleInitNet := (SimpleGCounter.net SimpleInit)
+
+define SimpleAfterCNet := (SimpleGCounter.net SimpleAfterC)
+
+define SimpleAfterCSnapshot := (SimpleGCounter.snapshot SimpleAfterC)
+
+define SimpleAfterANet := (SimpleGCounter.net SimpleAfterA)
+
+define SimpleAfterBNet := (SimpleGCounter.net SimpleAfterB)
+
+define SimpleAfterATotal := (gcounter-map-sum SimpleDemoIds SimpleAfterASnapshot)
+
+define SimpleAfterBTotal := (gcounter-map-sum SimpleDemoIds SimpleAfterBSnapshot)
+
+define SimpleAfterDSnapshot := (SimpleGCounter.snapshot SimpleAfterD)
+define SimpleAfterDTotal := (gcounter-map-sum SimpleDemoIds SimpleAfterDSnapshot)
+define SimpleAfterDNet := (SimpleGCounter.net SimpleAfterD)
+
+define SimpleAfterESnapshot := (SimpleGCounter.snapshot SimpleAfterE)
+define SimpleAfterETotal := (gcounter-map-sum SimpleDemoIds SimpleAfterESnapshot)
+
+define SimpleBeforeDeliverySnapshot := (SimpleGCounter.snapshot SimpleAfterC2)
+define SimpleBeforeDeliveryNet := (SimpleGCounter.net SimpleAfterC2)
+define SimpleBeforeDeliveryTotal := (gcounter-map-sum SimpleDemoIds SimpleBeforeDeliverySnapshot)
+
+# ======================================================================
+# Temporal Evolution
+# ======================================================================
+
+define T0 := SimpleAfterC2
+define T1 := (SimpleGCounter.reduce T0)
+define T2 := (SimpleGCounter.reduce T1)
+define T3 := (SimpleGCounter.reduce T2)
+define T4 := (SimpleGCounter.reduce T3)
+define T5 := (SimpleGCounter.reduce T4)
+define T6 := (SimpleGCounter.reduce T5)
+define T7 := (SimpleGCounter.reduce T6)
+
+define T0_Snapshot := (SimpleGCounter.snapshot T0)
+define T1_Snapshot := (SimpleGCounter.snapshot T1)
+define T2_Snapshot := (SimpleGCounter.snapshot T2)
+define T3_Snapshot := (SimpleGCounter.snapshot T3)
+define T4_Snapshot := (SimpleGCounter.snapshot T4)
+define T5_Snapshot := (SimpleGCounter.snapshot T5)
+define T6_Snapshot := (SimpleGCounter.snapshot T6)
+define T7_Snapshot := (SimpleGCounter.snapshot T7)
+
+define T0_Net := (SimpleGCounter.net T0)
+define T1_Net := (SimpleGCounter.net T1)
+define T2_Net := (SimpleGCounter.net T2)
+define T3_Net := (SimpleGCounter.net T3)
+define T4_Net := (SimpleGCounter.net T4)
+define T5_Net := (SimpleGCounter.net T5)
+define T6_Net := (SimpleGCounter.net T6)
+define T7_Net := (SimpleGCounter.net T7)
+
+define T0_Total := (gcounter-map-sum SimpleDemoIds T0_Snapshot)
+define T1_Total := (gcounter-map-sum SimpleDemoIds T1_Snapshot)
+define T2_Total := (gcounter-map-sum SimpleDemoIds T2_Snapshot)
+define T3_Total := (gcounter-map-sum SimpleDemoIds T3_Snapshot)
+define T4_Total := (gcounter-map-sum SimpleDemoIds T4_Snapshot)
+define T5_Total := (gcounter-map-sum SimpleDemoIds T5_Snapshot)
+define T6_Total := (gcounter-map-sum SimpleDemoIds T6_Snapshot)
+define T7_Total := (gcounter-map-sum SimpleDemoIds T7_Snapshot)
+
+# Fully delivered state using reduce*
+define Tfull := SimpleDelivered
+define Tfull_Snapshot := (SimpleGCounter.snapshot Tfull)
+define Tfull_Total := (gcounter-map-sum SimpleDemoIds Tfull_Snapshot)
+define Tfull_Net := (SimpleGCounter.net Tfull)
+
+# ======================================================================
+# Property Checks
+# ======================================================================
+
+define (nat-lt a b) := match a {
+  zero => match b { zero => false | (S _) => true | _ => false }
+| (S a') => match b { zero => false | (S b') => (nat-lt a' b') | _ => false }
+| _ => false }
+
+define (max-value v1 v2) := match (nat-lt v1 v2) { true => v2 | false => v1 }
+
+define (merge-gcounter-maps map1 map2 ids) :=
+  (letrec ((merge-helper (lambda (remaining result)
+             match remaining {
+               nil => result
+             | (actor :: rest) =>
+                 (merge-helper rest
+                               (FMap.update (pair actor (max-value (gcounter-value map1 actor)
+                                                                   (gcounter-value map2 actor)))
+                                            result))
+             })))
+    (merge-helper ids FMap.empty-map))
+
+# Commutativity
+define PropSnap1 := (SimpleGCounter.snapshot SimpleAfterC)
+define PropSnap2 := (SimpleGCounter.snapshot SimpleAfterE)
+define PropMerge12 := (merge-gcounter-maps PropSnap1 PropSnap2 SimpleDemoIds)
+define PropMerge21 := (merge-gcounter-maps PropSnap2 PropSnap1 SimpleDemoIds)
+define PropTotal12 := (gcounter-map-sum SimpleDemoIds PropMerge12)
+define PropTotal21 := (gcounter-map-sum SimpleDemoIds PropMerge21)
+
+# Associativity
+define PropSnap3 := (SimpleGCounter.snapshot SimpleAfterA2)
+define PropMerge12_3 := (merge-gcounter-maps PropMerge12 PropSnap3 SimpleDemoIds)
+define PropMerge23 := (merge-gcounter-maps PropSnap2 PropSnap3 SimpleDemoIds)
+define PropMerge1_23 := (merge-gcounter-maps PropSnap1 PropMerge23 SimpleDemoIds)
+define PropTotalLeft := (gcounter-map-sum SimpleDemoIds PropMerge12_3)
+define PropTotalRight := (gcounter-map-sum SimpleDemoIds PropMerge1_23)
+
+# Idempotence
+define PropSnapIdem := (SimpleGCounter.snapshot SimpleAfterD)
+define PropMergeIdem := (merge-gcounter-maps PropSnapIdem PropSnapIdem SimpleDemoIds)
+define PropTotalOrig := (gcounter-map-sum SimpleDemoIds PropSnapIdem)
+define PropTotalIdem := (gcounter-map-sum SimpleDemoIds PropMergeIdem)
+
+# Monotonicity
+define (nat-le a b) := match a {
+  zero => true
+| (S a') => match b { zero => false | (S b') => (nat-le a' b') | _ => false }
+| _ => false }
+
+define MonoCheck01 := (nat-le T0_Total T1_Total)
+define MonoCheck12 := (nat-le T1_Total T2_Total)
+define MonoCheck23 := (nat-le T2_Total T3_Total)
+define MonoCheck34 := (nat-le T3_Total T4_Total)
+define MonoCheck45 := (nat-le T4_Total T5_Total)
+define MonoCheck56 := (nat-le T5_Total T6_Total)
+define MonoCheck67 := (nat-le T6_Total T7_Total)
+
+# Prints
+(print "GCounter Demo: Basic Totals")
+(print "Initial total:" (eval SimpleInitTotal) " Final total:" (eval SimpleTotal))
+(print "Commutativity holds:" (eval (equal? PropTotal12 PropTotal21)))
+(print "Associativity holds:" (eval (equal? PropTotalLeft PropTotalRight)))
+(print "Idempotence holds:" (eval (equal? PropTotalOrig PropTotalIdem)))
+(print "Monotonicity (init->full):" (eval (nat-le T0_Total Tfull_Total)))
+(print "Network converged (empty):" (eval match Tfull_Net { MSet.null => true | _ => false }))

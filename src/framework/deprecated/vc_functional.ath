@@ -1,0 +1,87 @@
+# Unified Vector Clock Implementation
+# (Imported from fix/payload-join-procedural branch)
+# Provides procedural + axiomatic vector clock operations without altering existing VCCore users.
+
+load "../utils/fmaps"
+load "../utils/pair"
+load "../utils/list-util"
+load "../utils/set-util"
+
+module VCFunctional {
+
+open FMap
+open N
+open Set
+
+define-sort Clock := (FMap.Map Ide N)
+define-sort Registry := (FMap.Map Ide Clock)
+
+define clock-empty := (FMap.empty-map : Clock)
+
+define ++ := FMap.++
+define - := FMap.-
+define at := FMap.at
+
+declare clock-nat-max: [N N] -> N
+
+module NatMax {
+  assert zero-left := (forall ?n:N . (clock-nat-max zero ?n) = ?n)
+  assert zero-right := (forall ?n:N . (clock-nat-max ?n zero) = ?n)
+  assert succ := (forall ?n:N ?m:N . (clock-nat-max (S ?n) (S ?m)) = (S (clock-nat-max ?n ?m)))
+  assert idempotent := (forall ?n:N . (clock-nat-max ?n ?n) = ?n)
+  define commutative := (forall ?a:N ?b:N . (clock-nat-max ?a ?b) = (clock-nat-max ?b ?a))
+  define associative := (forall ?a:N ?b:N ?c:N . (clock-nat-max (clock-nat-max ?a ?b) ?c) = (clock-nat-max ?a (clock-nat-max ?b ?c)))
+  define lub-left := (forall ?a:N ?b:N . N.<= ?a (clock-nat-max ?a ?b))
+  define lub-right := (forall ?a:N ?b:N . N.<= ?b (clock-nat-max ?a ?b))
+}
+
+declare clock-get: [Clock Ide] -> N
+module ClockGet {
+  assert empty := (forall ?id:Ide . (clock-get FMap.empty-map ?id) = zero)
+  assert hit := (forall ?id:Ide ?val:N ?rest:Clock . (clock-get (FMap.update (pair ?id ?val) ?rest) ?id) = ?val)
+  assert miss := (forall ?id1:Ide ?id2:Ide ?val:N ?rest:Clock . (~ (?id1 = ?id2)) => (clock-get (FMap.update (pair ?id2 ?val) ?rest) ?id1) = (clock-get ?rest ?id1))
+}
+
+declare clock-set: [Clock Ide N] -> Clock
+module ClockSet {
+  assert def := (forall ?c:Clock ?id:Ide ?val:N . (clock-set ?c ?id ?val) = (FMap.update (pair ?id ?val) ?c))
+}
+assert clock-set-def := ClockSet.def
+
+declare clock-tick: [Clock Ide] -> Clock
+module ClockTick {
+  assert empty := (forall ?id:Ide . (clock-tick FMap.empty-map ?id) = (FMap.update (pair ?id (S zero)) FMap.empty-map))
+  assert hit := (forall ?id:Ide ?val:N ?rest:Clock . (clock-tick (FMap.update (pair ?id ?val) ?rest) ?id) = (FMap.update (pair ?id (S ?val)) ?rest))
+  assert miss := (forall ?id1:Ide ?id2:Ide ?val:N ?rest:Clock . (~ (?id1 = ?id2)) => (clock-tick (FMap.update (pair ?id2 ?val) ?rest) ?id1) = (FMap.update (pair ?id2 ?val) (clock-tick ?rest ?id1)))
+}
+
+declare clock-join: [Clock Clock] -> Clock
+module ClockJoin {
+  assert empty-left := (forall ?c:Clock . (clock-join FMap.empty-map ?c) = ?c)
+  assert empty-right := (forall ?c:Clock . (clock-join ?c FMap.empty-map) = ?c)
+  assert merge-hit-hit := (forall ?id:Ide ?v1:N ?v2:N ?rest1:Clock ?rest2:Clock .
+     (clock-join (FMap.update (pair ?id ?v1) ?rest1) (FMap.update (pair ?id ?v2) ?rest2)) =
+       (FMap.update (pair ?id (clock-nat-max ?v1 ?v2)) (clock-join ?rest1 ?rest2)))
+  assert merge-hit-miss-left := (forall ?id1:Ide ?id2:Ide ?v1:N ?rest1:Clock ?rest2:Clock .
+     (~ (?id1 = ?id2)) =>
+     (clock-join (FMap.update (pair ?id1 ?v1) ?rest1) (FMap.update (pair ?id2 zero) ?rest2)) =
+       (FMap.update (pair ?id1 ?v1) (clock-join ?rest1 (FMap.update (pair ?id2 zero) ?rest2))))
+}
+
+# Procedural helpers
+
+define (clock-get-proc c id) := (clock-get c id)
+
+define (clock-set-proc c id val) := (clock-set c id val)
+
+define (clock-tick-proc c id) := (clock-tick c id)
+
+define (clock-join-proc c1 c2) := (clock-join c1 c2)
+
+define (registry-empty) := (FMap.empty-map : Registry)
+
+define (registry-set reg actor clk) := (FMap.update (pair actor clk) reg)
+
+define (registry-get reg actor) := (match (FMap.at reg actor) { NONE => clock-empty | (SOME clk) => clk })
+
+} # end module VCFunctional

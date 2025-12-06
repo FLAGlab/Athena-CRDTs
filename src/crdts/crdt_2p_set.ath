@@ -1,0 +1,155 @@
+load "../utils/set-util"
+load "../utils/msets-notp"
+load "../utils/fmaps"
+load "../utils/pair"
+load "../utils/list-util"
+load "../framework/payload"
+load "../framework/backbone"
+
+open Payload
+
+#------------------------------------------------------------------------------
+# Two-Phase Set payload: tracks grow-only add/remove sets with monotone merges.
+#------------------------------------------------------------------------------
+
+module TwoPhasePayload {
+
+open Payload
+
+define-sort State := (Pair (Set.Set Ide) (Set.Set Ide))
+
+datatype Value := (op-add Ide)
+                | (op-remove Ide)
+
+define state-empty := (pr (Set.null:(Set.Set Ide)) (Set.null:(Set.Set Ide)))
+
+define (state-adds state) :=
+  match state {
+    (pr adds removes) => adds
+  }
+
+define (state-removes state) :=
+  match state {
+    (pr adds removes) => removes
+  }
+
+define (tp-lookup state element) :=
+  match state {
+    (pr adds removes) =>
+      ((element in adds) & ~(element in removes))
+  }
+
+define (tp-step value state) :=
+  match value {
+    (op-add element) =>
+      (pr (Set.insert element (state-adds state))
+           (state-removes state))
+  | (op-remove element) =>
+      (pr (state-adds state)
+           (match (tp-lookup state element) {
+             true => (Set.insert element (state-removes state))
+           | false => (state-removes state)
+           }))
+  }
+
+define (tp-join left right) :=
+  (pr (Set.union (state-adds left) (state-adds right))
+       (Set.union (state-removes left) (state-removes right)))
+
+define TP_PAYLOAD := (payload-ops state-empty)
+
+define (payload-step TP_PAYLOAD value state) :=
+  (tp-step value state)
+
+define (payload-join TP_PAYLOAD left right) :=
+  (tp-join left right)
+
+}
+
+open TwoPhasePayload
+
+module TwoPhaseCRDT {
+
+define PAYLOAD := TP_PAYLOAD
+
+define-sort Configuration :=
+  (Backbone.Configuration State Value)
+
+define (reduce cfg) :=
+  (Backbone.reduce PAYLOAD cfg)
+
+define (reduce* cfg) :=
+  (Backbone.reduce* PAYLOAD cfg)
+
+define broadcast := Backbone.broadcast
+
+define (init-state-map ids) :=
+  (Backbone.init-state-map PAYLOAD ids)
+
+define init-clock-map := Backbone.init-clock-map
+
+define (init ids) :=
+  (Backbone.init PAYLOAD ids)
+
+# Lookup utilities lifted over configurations.
+
+define (lookup-in cfg actor element) :=
+  (tp-lookup (Backbone.cfg-state-or-drained cfg actor state-empty) element)
+
+define (snapshot cfg) :=
+  (Backbone.cfg-states-drained cfg)
+
+define (state-at cfg actor) :=
+  (Backbone.cfg-state-or-drained cfg actor state-empty)
+
+define (prepare-add _ element) :=
+  (op-add element)
+
+define (prepare-remove _ element) :=
+  (op-remove element)
+
+define (issue-add cfg actor element) :=
+  (Backbone.broadcast-from cfg actor (prepare-add cfg element))
+
+define (issue-remove cfg actor element) :=
+  (Backbone.broadcast-from cfg actor (prepare-remove cfg element))
+
+define (issue-add-all cfg element) :=
+  (Backbone.broadcast cfg (prepare-add cfg element))
+
+define (issue-remove-all cfg element) :=
+  (Backbone.broadcast cfg (prepare-remove cfg element))
+
+define (deliver-one cfg) :=
+  (Backbone.cfg-with-drained-states (reduce cfg))
+
+define (deliver-all cfg) :=
+  (Backbone.cfg-with-drained-states (reduce* cfg))
+
+define (drop-next cfg) :=
+  (Backbone.cfg-drop-next-message cfg)
+
+define (present-at cfg actor element) :=
+  (tp-lookup (state-at cfg actor) element)
+
+define (pending-net cfg) :=
+  (Backbone.get-cfg-net cfg)
+
+define (actor-clock cfg actor) :=
+  (Backbone.cfg-actor-clock cfg actor)
+
+}
+
+open TwoPhaseCRDT
+
+define (tp-issue-add cfg element) :=
+  (issue-add-all cfg element)
+
+define (tp-issue-remove cfg element) :=
+  (issue-remove-all cfg element)
+
+define (tp-deliver cfg) :=
+  (deliver-all cfg)
+
+define (tp-element-present? cfg actor element) :=
+  (present-at cfg actor element)

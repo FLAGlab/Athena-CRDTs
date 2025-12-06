@@ -1,0 +1,2 @@
+load "../../crdts/crdt_lww_register"
+(print "Loaded successfully")

@@ -1,0 +1,363 @@
+load "../../crdts/crdt_gcounter.ath"
+
+open SimpleGCounter
+open BackboneGCounter
+open VCCore
+open Backbone
+
+# Limit the number of delivery steps each demo attempts.
+define DemoDeliveryBudget := (S (S (S (S (S (S zero))))))
+
+define (simple-deliver-bounded cfg budget) :=
+  match budget {
+    zero => cfg
+  | (S rest) =>
+      match (SimpleGCounter.net cfg) {
+        MSet.null => cfg
+      | _ => (simple-deliver-bounded (SimpleGCounter.reduce cfg) rest)
+      }
+  }
+
+define (backbone-deliver-bounded cfg budget) :=
+  match budget {
+    zero => cfg
+  | (S rest) =>
+      match (BackboneGCounter.pending-net cfg) {
+        MSet.null => cfg
+      | _ => (backbone-deliver-bounded (BackboneGCounter.reduce cfg) rest)
+      }
+  }
+
+define (gcounter-value map actor) :=
+  match (Payload.map-lookup map actor) {
+    NONE => zero
+  | (SOME value) => value
+  }
+
+define (gcounter-map-sum ids map) :=
+  match ids {
+    nil => zero
+  | (id :: rest) =>
+      (N.+ (gcounter-value map id)
+           (gcounter-map-sum rest map))
+  }
+
+# ------------------------------------------------------------------
+# GCounter demo
+# ------------------------------------------------------------------
+
+define SimpleDemoBase := (string->id "replica")
+
+define SimpleDemoIds := (Backbone.gen-fresh SimpleDemoBase 5)
+
+define SimpleDemoActorA :=
+  match SimpleDemoIds {
+    (actor :: rest) => actor
+  | nil => (string->id "replica0")
+  }
+
+define SimpleDemoActorB :=
+  match SimpleDemoIds {
+    (actorA :: (actorB :: rest)) => actorB
+  | _ => (string->id "replica1")
+  }
+
+define SimpleDemoActorC :=
+  match SimpleDemoIds {
+    (actorA :: (actorB :: (actorC :: rest))) => actorC
+  | _ => (string->id "replica2")
+  }
+
+define SimpleDemoActorD :=
+  match SimpleDemoIds {
+    (a :: (b :: (c :: (d :: rest)))) => d
+  | _ => (string->id "replica3")
+  }
+
+define SimpleDemoActorE :=
+  match SimpleDemoIds {
+    (a :: (b :: (c :: (d :: (e :: rest))))) => e
+  | _ => (string->id "replica4")
+  }
+
+define SimpleInit := (SimpleGCounter.init SimpleDemoIds)
+
+define SimpleAfterA :=
+  (SimpleGCounter.issue-increment SimpleInit SimpleDemoActorA N.one)
+
+define SimpleAfterB :=
+  (SimpleGCounter.issue-increment SimpleAfterA SimpleDemoActorB N.two)
+
+define SimpleAfterC :=
+  (SimpleGCounter.issue-increment SimpleAfterB SimpleDemoActorC N.one)
+
+define SimpleAfterD :=
+  (SimpleGCounter.issue-increment SimpleAfterC SimpleDemoActorD (S (S (S zero))))
+
+define SimpleAfterA2 :=
+  (SimpleGCounter.issue-increment SimpleAfterD SimpleDemoActorA N.two)
+
+define SimpleAfterE :=
+  (SimpleGCounter.issue-increment SimpleAfterA2 SimpleDemoActorE N.one)
+
+define SimpleAfterB2 :=
+  (SimpleGCounter.issue-increment SimpleAfterE SimpleDemoActorB N.one)
+
+define SimpleAfterC2 :=
+  (SimpleGCounter.issue-increment SimpleAfterB2 SimpleDemoActorC (S (S zero)))
+
+# Test Payload framework utilities
+define SimplePayloadCfg := SimpleAfterC2
+define SimplePayloadAM := (Payload.am SimplePayloadCfg)
+define SimplePayloadNet := (Payload.net SimplePayloadCfg)
+
+# Test canonical-map normalization from Payload framework
+define SimpleCanonicalMap := (Payload.canonical-map SimplePayloadAM)
+
+# Use Payload.reduce* for batch delivery
+define SimpleDelivered := (Payload.reduce* SimpleGCounter.PAYLOAD SimpleAfterC2)
+
+define SimpleSnapshot := (SimpleGCounter.snapshot SimpleDelivered)
+
+define SimpleTotal := (gcounter-map-sum SimpleDemoIds SimpleSnapshot)
+
+define SimpleActorAValue := (gcounter-value SimpleSnapshot SimpleDemoActorA)
+
+define SimpleActorBValue := (gcounter-value SimpleSnapshot SimpleDemoActorB)
+
+define SimpleActorCValue := (gcounter-value SimpleSnapshot SimpleDemoActorC)
+
+define SimpleActorDValue := (gcounter-value SimpleSnapshot SimpleDemoActorD)
+
+define SimpleActorEValue := (gcounter-value SimpleSnapshot SimpleDemoActorE)
+
+define SimpleNetworkState := (SimpleGCounter.net SimpleDelivered)
+
+# Use Payload framework for more evaluations
+define SimplePayloadSnapshot := (Payload.canonical-map (Payload.am SimpleDelivered))
+
+# Test map-lookup from Payload framework on individual actors
+define SimplePayloadA := (Payload.map-lookup SimplePayloadSnapshot SimpleDemoActorA)
+define SimplePayloadB := (Payload.map-lookup SimplePayloadSnapshot SimpleDemoActorB)
+define SimplePayloadC := (Payload.map-lookup SimplePayloadSnapshot SimpleDemoActorC)
+define SimplePayloadD := (Payload.map-lookup SimplePayloadSnapshot SimpleDemoActorD)
+define SimplePayloadE := (Payload.map-lookup SimplePayloadSnapshot SimpleDemoActorE)
+
+define SimpleInitSnapshot := (SimpleGCounter.snapshot SimpleInit)
+
+define SimpleInitTotal := (gcounter-map-sum SimpleDemoIds SimpleInitSnapshot)
+
+define SimpleAfterASnapshot := (SimpleGCounter.snapshot SimpleAfterA)
+
+define SimpleAfterBSnapshot := (SimpleGCounter.snapshot SimpleAfterB)
+
+define SimpleInitNet := (SimpleGCounter.net SimpleInit)
+
+define SimpleAfterCNet := (SimpleGCounter.net SimpleAfterC)
+
+define SimpleAfterCSnapshot := (SimpleGCounter.snapshot SimpleAfterC)
+
+define SimpleAfterANet := (SimpleGCounter.net SimpleAfterA)
+
+define SimpleAfterBNet := (SimpleGCounter.net SimpleAfterB)
+
+define SimpleAfterATotal := (gcounter-map-sum SimpleDemoIds SimpleAfterASnapshot)
+
+define SimpleAfterBTotal := (gcounter-map-sum SimpleDemoIds SimpleAfterBSnapshot)
+
+define SimpleAfterDSnapshot := (SimpleGCounter.snapshot SimpleAfterD)
+define SimpleAfterDTotal := (gcounter-map-sum SimpleDemoIds SimpleAfterDSnapshot)
+define SimpleAfterDNet := (SimpleGCounter.net SimpleAfterD)
+
+define SimpleAfterESnapshot := (SimpleGCounter.snapshot SimpleAfterE)
+define SimpleAfterETotal := (gcounter-map-sum SimpleDemoIds SimpleAfterESnapshot)
+
+define SimpleBeforeDeliverySnapshot := (SimpleGCounter.snapshot SimpleAfterC2)
+define SimpleBeforeDeliveryNet := (SimpleGCounter.net SimpleAfterC2)
+define SimpleBeforeDeliveryTotal := (gcounter-map-sum SimpleDemoIds SimpleBeforeDeliverySnapshot)
+
+(print "\n=== Simple GCounter (bounded reduces) ===")
+(print "=== PART 1: Payload Framework Operations ===\n")
+(print "Initial state map:" (eval SimpleInitSnapshot))
+(print "Initial total:" (eval SimpleInitTotal))
+(print "Initial network:" (eval SimpleInitNet))
+(print "After A increment:" (eval SimpleAfterASnapshot))
+(print "After A total:" (eval SimpleAfterATotal))
+(print "After A network:" (eval SimpleAfterANet))
+(print "After B increment:" (eval SimpleAfterBSnapshot))
+(print "After B total:" (eval SimpleAfterBTotal))
+(print "After B network:" (eval SimpleAfterBNet))
+(print "After C snapshot:" (eval SimpleAfterCSnapshot))
+(print "After D increment:" (eval SimpleAfterDSnapshot))
+(print "After D total:" (eval SimpleAfterDTotal))
+(print "After D network:" (eval SimpleAfterDNet))
+(print "After E increment:" (eval SimpleAfterESnapshot))
+(print "After E total:" (eval SimpleAfterETotal))
+
+(print "\n=== PART 2: Testing Payload Framework Functions ===\n")
+(print "Payload.am before delivery:" (eval SimplePayloadAM))
+(print "Payload.net before delivery:" (eval SimplePayloadNet))
+(print "Payload.canonical-map result:" (eval SimpleCanonicalMap))
+(print "Network size before delivery:" (eval SimpleBeforeDeliveryNet))
+(print "Total before delivery:" (eval SimpleBeforeDeliveryTotal))
+
+(print "\n=== PART 3: After Payload.reduce* Delivery ===\n")
+(print "Final state map:" (eval SimpleSnapshot))
+(print "Total increments:" (eval SimpleTotal))
+(print "Actor A value:" (eval SimpleActorAValue))
+(print "Actor B value:" (eval SimpleActorBValue))
+(print "Actor C value:" (eval SimpleActorCValue))
+(print "Actor D value:" (eval SimpleActorDValue))
+(print "Actor E value:" (eval SimpleActorEValue))
+(print "Network after delivery:" (eval SimpleNetworkState))
+
+(print "\n=== PART 4: Payload.map-lookup Results ===\n")
+(print "Payload lookup Actor A:" (eval SimplePayloadA))
+(print "Payload lookup Actor B:" (eval SimplePayloadB))
+(print "Payload lookup Actor C:" (eval SimplePayloadC))
+(print "Payload lookup Actor D:" (eval SimplePayloadD))
+(print "Payload lookup Actor E:" (eval SimplePayloadE))
+
+# ======================================================================
+# Temporal Evolution Demonstration
+# Showing step-by-step CRDT evolution through message delivery
+# Using both SimpleGCounter.reduce and Payload.reduce
+# ======================================================================
+
+(print "\n\n======================================================================")
+(print "=== TEMPORAL EVOLUTION: Step-by-step message delivery ===")
+(print "======================================================================\n")
+
+# Starting point: all increments issued, messages in network
+define T0 := SimpleAfterC2
+
+# Manual step-by-step delivery to show evolution
+# Using SimpleGCounter.reduce (which wraps Payload.reduce)
+define T1 := (SimpleGCounter.reduce T0)
+define T2 := (SimpleGCounter.reduce T1)
+define T3 := (SimpleGCounter.reduce T2)
+define T4 := (SimpleGCounter.reduce T3)
+define T5 := (SimpleGCounter.reduce T4)
+define T6 := (SimpleGCounter.reduce T5)
+define T7 := (SimpleGCounter.reduce T6)
+
+# Also test using Payload.reduce directly
+define TP0 := T0
+define TP1_AM := (Payload.am TP0)
+define TP1_Net := (Payload.net TP0)
+
+# Snapshots at each time step
+define T0_Snapshot := (SimpleGCounter.snapshot T0)
+define T1_Snapshot := (SimpleGCounter.snapshot T1)
+define T2_Snapshot := (SimpleGCounter.snapshot T2)
+define T3_Snapshot := (SimpleGCounter.snapshot T3)
+define T4_Snapshot := (SimpleGCounter.snapshot T4)
+define T5_Snapshot := (SimpleGCounter.snapshot T5)
+define T6_Snapshot := (SimpleGCounter.snapshot T6)
+define T7_Snapshot := (SimpleGCounter.snapshot T7)
+
+# Network state at each time step
+define T0_Net := (SimpleGCounter.net T0)
+define T1_Net := (SimpleGCounter.net T1)
+define T2_Net := (SimpleGCounter.net T2)
+define T3_Net := (SimpleGCounter.net T3)
+define T4_Net := (SimpleGCounter.net T4)
+define T5_Net := (SimpleGCounter.net T5)
+define T6_Net := (SimpleGCounter.net T6)
+define T7_Net := (SimpleGCounter.net T7)
+
+# Also use Payload.net to get network state
+define T0_PayloadNet := (Payload.net T0)
+define T4_PayloadNet := (Payload.net T4)
+define T7_PayloadNet := (Payload.net T7)
+
+# Totals at each time step
+define T0_Total := (gcounter-map-sum SimpleDemoIds T0_Snapshot)
+define T1_Total := (gcounter-map-sum SimpleDemoIds T1_Snapshot)
+define T2_Total := (gcounter-map-sum SimpleDemoIds T2_Snapshot)
+define T3_Total := (gcounter-map-sum SimpleDemoIds T3_Snapshot)
+define T4_Total := (gcounter-map-sum SimpleDemoIds T4_Snapshot)
+define T5_Total := (gcounter-map-sum SimpleDemoIds T5_Snapshot)
+define T6_Total := (gcounter-map-sum SimpleDemoIds T6_Snapshot)
+define T7_Total := (gcounter-map-sum SimpleDemoIds T7_Snapshot)
+
+# Individual actor values over time
+define T0_ActorA := (gcounter-value T0_Snapshot SimpleDemoActorA)
+define T1_ActorA := (gcounter-value T1_Snapshot SimpleDemoActorA)
+define T2_ActorA := (gcounter-value T2_Snapshot SimpleDemoActorA)
+define T3_ActorA := (gcounter-value T3_Snapshot SimpleDemoActorA)
+define T4_ActorA := (gcounter-value T4_Snapshot SimpleDemoActorA)
+define T5_ActorA := (gcounter-value T5_Snapshot SimpleDemoActorA)
+define T6_ActorA := (gcounter-value T6_Snapshot SimpleDemoActorA)
+define T7_ActorA := (gcounter-value T7_Snapshot SimpleDemoActorA)
+
+define T0_ActorB := (gcounter-value T0_Snapshot SimpleDemoActorB)
+define T1_ActorB := (gcounter-value T1_Snapshot SimpleDemoActorB)
+define T2_ActorB := (gcounter-value T2_Snapshot SimpleDemoActorB)
+define T3_ActorB := (gcounter-value T3_Snapshot SimpleDemoActorB)
+define T4_ActorB := (gcounter-value T4_Snapshot SimpleDemoActorB)
+define T5_ActorB := (gcounter-value T5_Snapshot SimpleDemoActorB)
+define T6_ActorB := (gcounter-value T6_Snapshot SimpleDemoActorB)
+define T7_ActorB := (gcounter-value T7_Snapshot SimpleDemoActorB)
+
+define T0_ActorC := (gcounter-value T0_Snapshot SimpleDemoActorC)
+define T1_ActorC := (gcounter-value T1_Snapshot SimpleDemoActorC)
+define T2_ActorC := (gcounter-value T2_Snapshot SimpleDemoActorC)
+define T3_ActorC := (gcounter-value T3_Snapshot SimpleDemoActorC)
+define T4_ActorC := (gcounter-value T4_Snapshot SimpleDemoActorC)
+define T5_ActorC := (gcounter-value T5_Snapshot SimpleDemoActorC)
+define T6_ActorC := (gcounter-value T6_Snapshot SimpleDemoActorC)
+define T7_ActorC := (gcounter-value T7_Snapshot SimpleDemoActorC)
+
+define T0_ActorD := (gcounter-value T0_Snapshot SimpleDemoActorD)
+define T4_ActorD := (gcounter-value T4_Snapshot SimpleDemoActorD)
+define T7_ActorD := (gcounter-value T7_Snapshot SimpleDemoActorD)
+
+define T0_ActorE := (gcounter-value T0_Snapshot SimpleDemoActorE)
+define T4_ActorE := (gcounter-value T4_Snapshot SimpleDemoActorE)
+define T7_ActorE := (gcounter-value T7_Snapshot SimpleDemoActorE)
+
+(print "--- TIME T0: Initial state (after local increments, before delivery) ---")
+(print "Network:" (eval T0_Net))
+(print "Payload.net:" (eval T0_PayloadNet))
+(print "Total:" (eval T0_Total))
+(print "Actor A:" (eval T0_ActorA) "| Actor B:" (eval T0_ActorB) "| Actor C:" (eval T0_ActorC) "| Actor D:" (eval T0_ActorD) "| Actor E:" (eval T0_ActorE))
+
+(print "\n--- TIME T1: After first message delivery ---")
+(print "Network:" (eval T1_Net))
+(print "State map:" (eval T1_Snapshot))
+(print "Total:" (eval T1_Total))
+(print "Actor A:" (eval T1_ActorA) "| Actor B:" (eval T1_ActorB) "| Actor C:" (eval T1_ActorC))
+
+(print "\n--- TIME T2: After second message delivery ---")
+(print "Network:" (eval T2_Net))
+(print "State map:" (eval T2_Snapshot))
+(print "Total:" (eval T2_Total))
+(print "Actor A:" (eval T2_ActorA) "| Actor B:" (eval T2_ActorB) "| Actor C:" (eval T2_ActorC))
+
+(print "\n--- TIME T3: After third message delivery ---")
+(print "Network:" (eval T3_Net))
+(print "Total:" (eval T3_Total))
+(print "Actor A:" (eval T3_ActorA) "| Actor B:" (eval T3_ActorB) "| Actor C:" (eval T3_ActorC))
+
+(print "\n--- TIME T4: After fourth message delivery ---")
+(print "Network:" (eval T4_Net))
+(print "Payload.net:" (eval T4_PayloadNet))
+(print "Total:" (eval T4_Total))
+(print "Actor A:" (eval T4_ActorA) "| Actor B:" (eval T4_ActorB) "| Actor C:" (eval T4_ActorC) "| Actor D:" (eval T4_ActorD) "| Actor E:" (eval T4_ActorE))
+
+(print "\n--- TIME T5: After fifth message delivery ---")
+(print "Network:" (eval T5_Net))
+(print "Total:" (eval T5_Total))
+(print "Actor A:" (eval T5_ActorA) "| Actor B:" (eval T5_ActorB) "| Actor C:" (eval T5_ActorC))
+
+(print "\n--- TIME T6: After sixth message delivery ---")
+(print "Network:" (eval T6_Net))
+(print "Total:" (eval T6_Total))
+(print "Actor A:" (eval T6_ActorA) "| Actor B:" (eval T6_ActorB) "| Actor C:" (eval T6_ActorC))
+
+(print "\n--- TIME T7: After seventh message delivery (converged) ---")
+(print "Network:" (eval T7_Net))
+(print "Payload.net:" (eval T7_PayloadNet))
+(print "Total:" (eval T7_Total))
+(print "Actor A:" (eval T7_ActorA) "| Actor B:" (eval T7_ActorB) "| Actor C:" (eval T7_ActorC) "| Actor D:" (eval T7_ActorD) "| Actor E:" (eval T7_ActorE))

@@ -1,0 +1,229 @@
+% $Id: vectors.tex 1784 2012-04-27 23:29:31Z  $
+% !TEX root = main.tex
+
+\definecolor{athBg}{HTML}{F7F7F7}
+\definecolor{athRule}{HTML}{B6BCC1}
+\definecolor{athMono}{HTML}{111111}
+
+\lstdefinelanguage{Athena}{
+  morekeywords={load,module,define,define-sort,match,let,if,then,else,forall,conclude},
+  sensitive=true,
+  morecomment=[l]{\#},
+  morestring=[b]"
+}
+\lstdefinestyle{athena}{
+  language=Athena,
+  basicstyle=\ttfamily\small\color{athMono},
+  keywordstyle=\color{athMono},
+  commentstyle=\color{athMono},
+  stringstyle=\color{athMono},
+  numberstyle=\scriptsize\color{athMono},
+  numbers=left, numbersep=8pt,
+  breaklines=true, showstringspaces=false,
+  frame=single, rulecolor=\color{athRule},
+  backgroundcolor=\color{athBg}, tabsize=2, captionpos=b
+}
+\newcommand{\AthenaCode}[2]{\lstset{style=athena, label={#1}, caption={#2}}}
+
+
+\chapter{CRDT Semantics and the Payload Framework}\label{chap:payload}
+
+\section{Introduction}
+
+Conflict-free Replicated Data Types (CRDTs) are data structures that allow multiple replicas to be updated concurrently while guaranteeing eventual convergence. The payload state of a CRDT forms a join-semilattice, and the update operations are monotonic with respect to its partial order.  Shapiro \emph{et~al.} formalized this model and showed that if the state merge operation is commutative, associative and idempotent (a join) and the update function monotonically increases the state, then replicas that process the same set of updates (probably in different orders) will reach an identical state \cite{shapiro2011conflict}.  In this chapter we introduce the \texttt{PayloadFramework}, our Athena module that captures these semantics in a reusable form.
+
+\section{Mathematical model}\label{sec:payload-math}
+
+Let $(S, \sqcup)$ be a join-semilattice: a set $S$ equipped with a binary operation $\sqcup : S \times S \to S$ that is commutative, associative and idempotent.  It induces a partial order $\leq$ on $S$ by the rule
+\[
+  x \leq y \iff x \sqcup y = y.
+\]
+This makes $(S,\leq)$ a partially ordered set with least upper bounds: for any $x,y\in S$, $x \sqcup y$ is the least element $z$ such that $x \leq z$ and $y \leq z$.  A CRDT’s \emph{state} lives in such a semilattice.  The \emph{merge} of two replica states corresponds to $\sqcup$; it must therefore be commutative ($x \sqcup y = y \sqcup x$), associative ($x \sqcup (y \sqcup z) = (x \sqcup y) \sqcup z$) and idempotent ($x \sqcup x = x$).  Updates are modelled by a function $\mathsf{apply} : S \times U \to S$, where $U$ is the set of update operations.  To guarantee convergence, updates must be monotonic: for all $s\in S$ and $u\in U$, we require $s \leq \mathsf{apply}(s,u)$ \cite{shapiro2011conflict}.  This ensures that applying the same update multiple times does not revert the state or break convergence.
+
+\section{The \texttt{PayloadFramework} module}\label{sec:payload-code}
+
+The \texttt{PayloadFramework} module declares two domains, \texttt{State} and \texttt{Update}, representing the type of the CRDT’s state and update respectively.  It then introduces the merge function \texttt{merge}, the order relation \texttt{leq}, and the update function \texttt{apply}, together with axioms capturing the semilattice and monotonicity requirements.
+
+\AthenaCode{lst:payloadframework-code}{Abstract specification in \texttt{PayloadFramework}}
+\begin{lstlisting}[language=Athena,style=athena]
+module PayloadFramework {
+declare merge: [State, State] -> State
+declare leq: [State, State] -> Bool
+
+assert [merge-comm] := (forall x y . merge(x,y) = merge(y,x))
+assert [merge-assoc] := (forall x y z . merge(x, merge(y,z)) = merge(merge(x,y), z))
+assert [merge-idem] := (forall x . merge(x,x) = x)
+assert [merge-order] := (forall x y . leq(x,y) <-> merge(x,y) = y)
+
+declare apply: [State, Update] -> State
+assert [update-monotone] := (forall s u . leq(s, apply(s,u)))
+}
+\end{lstlisting}
+
+\noindent\textbf{Semantics.}  These definitions state that \texttt{merge} is a commutative, associative, idempotent operation with \texttt{leq} as the induced order: \texttt{merge(x,y) = y} exactly when \texttt{leq(x,y)}.  The axiom \texttt{update-monotone} requires that applying an update never decreases the state.  Together, these conditions ensure that the state space $(\texttt{State},\texttt{leq},\texttt{merge})$ forms a join-semilattice and that \texttt{apply} is monotonic.  Shapiro \emph{et~al.} proved that any state-based CRDT satisfying these axioms is \emph{strongly eventually consistent}: replicas that see the same set of updates converge to the same state \cite{shapiro2011conflict}.
+
+\subsection{Instantiating the framework}
+
+The \texttt{Payload} module provides a thin wrapper for instantiating the abstract \texttt{PayloadFramework}.  A payload is represented by a structure \texttt{PayloadOps} that carries its state and update types, along with defining equations for the update and merge functions. More precisely, a payload instance \lstinline{(payload-ops init)} stores the initial state \lstinline{init}, and two abstract operations \lstinline{payload-step} and \lstinline{payload-join} must be defined for that payload.  The module’s interface can be summarised as follows:
+
+\AthenaCode{lst:payloadops-code}{Abbreviated interface of the \texttt{Payload} module}
+\begin{lstlisting}[language=Athena,style=athena]
+module Payload {
+  structure (PayloadOps State Value) := (payload-ops State)
+
+  declare payload-step: (State, Value)
+    [(PayloadOps State Value) Value State] -> State
+  declare payload-join: (State, Value)
+    [(PayloadOps State Value) State State] -> State
+
+  define (payload-apply ops value state) :=
+    (payload-step ops value state)
+}
+\end{lstlisting}
+
+\subsection{Payload initialisation}
+
+For ease of use the framework provides helper functions that normalise a payload descriptor and extract its initial state.  These definitions do not change the semantics of a payload. Instead, they provide a uniform way to pattern‑match on the descriptor and recover the initial state inside generic operations.  The following snippet illustrates how a payload descriptor is normalised and initialised:
+
+\AthenaCode{lst:payload-canonical}{Payload initialisation}
+\begin{lstlisting}[language=Athena,style=athena]
+define (payload-normalize ops) := ops
+
+define (payload-canonical-from-init ops init) := ops
+
+define (payload-canonical ops) :=
+  match (payload-normalize ops) {
+    (payload-ops init) => (payload-canonical-from-init ops init)
+  }
+
+define (payload-init ops) :=
+  match (payload-normalize ops) {
+    (payload-ops init) => init
+  }
+\end{lstlisting}
+
+\noindent Here \lstinline{payload-normalize} is currently the identity function, but it exists so that more complex payload descriptors could normalise structural variation in the future.  The function \lstinline{payload-canonical} uses pattern matching to expose the initial state from a \lstinline{PayloadOps} constant by delegating to \lstinline{payload-canonical-from-init}.  Finally, \lstinline{payload-init} simply returns this initial state.  Together, these helpers ensure that every payload descriptor carries the necessary information to initialise actors uniformly.
+
+\noindent In this interface, a CRDT is represented by a \lstinline{PayloadOps} constant encapsulating its initial state.  A concrete CRDT defines equations for \lstinline{payload-step} and \lstinline{payload-join} by matching that constant.  For example the grow-only set defines \lstinline{payload-step} as set insertion and \lstinline{payload-join} as set union. A grow-only counter defines \lstinline{payload-step} as increment and \lstinline{payload-join} as the maximum.  The wrapper \lstinline{payload-apply} is a convenience for applying updates during message reduction.
+
+\subsection{Actor configurations and message processing}
+
+The \texttt{Payload} module defines datatypes and functions to build actor configurations with payload states and message networks.  A configuration carries a map from actor identifiers to their local states and a multiset of pending messages.  By encapsulating these structures and utilities in a reusable module, we can reason about message passing while focusing on the algebraic properties of merge and update.
+
+\paragraph{Map and message abstractions.}  We first define convenience aliases for empty maps and multisets and overload some operations for finite maps and multisets.  We then introduce the \texttt{Message} datatype (a tagged triple consisting of a destination identifier, a payload and some metadata) and the \texttt{Configuration} datatype, which bundles an actor state map and a message network.  Two simple selectors extract the actors and the network from a configuration.  All of these definitions fit on a few lines:
+
+\AthenaCode{lst:payload-details-1}{Message and configuration utilities}
+\begin{lstlisting}[language=Athena,style=athena]
+datatype (Message Value Meta) := (msg Ide Value Meta)
+
+declare empty-message-net: (State, Value)
+  [(PayloadOps State Value)] -> (MSet.MSet (Payload.Message Value Payload.Unit))
+define (empty-message-net ops) := MSet.null
+
+datatype (Configuration State Value Meta) :=
+  (kfg am:(FMap.Map Ide State) net:(MSet.MSet (Message Value Meta)))
+
+define (actors cfg) :=
+  match cfg {
+    (Payload.kfg am _) => am
+  }
+
+define (network cfg) :=
+  match cfg {
+    (Payload.kfg _ net) => net
+  }
+\end{lstlisting}
+
+The type \lstinline{Message} encapsulates a destination identifier, a payload and optional metadata.  A \lstinline{Configuration} pairs an actor state map with a multiset of pending messages.  The selector functions \lstinline{actors} and \lstinline{network} simply return the state map and the message multiset, respectively. 
+
+\paragraph{Lookup and message enabling.}  We next define two helpers used internally by the message processing logic.  The first, \lstinline{map-lookup}, searches for a key in a finite map and returns \lstinline{SOME} of the associated value if found, or \lstinline{NONE} otherwise.  This function is analogous to the associative array lookup in standard data structures.  It is defined by structural recursion on the map:
+
+\AthenaCode{lst:payload-map-lookup}{Map lookup helper}
+\begin{lstlisting}[language=Athena,style=athena]
+define (map-lookup map target) :=
+  match map {
+    FMap.empty-map => NONE
+  | (FMap.update (pair key value) rest) =>
+      match (equal? key target) {
+        true => (SOME value)
+      | false => (map-lookup rest target)
+      }
+  }
+\end{lstlisting}
+
+The second helper, \lstinline{Enabled}, predicates whether there is at least one deliverable message in a configuration.  It returns \lstinline{false} if the message multiset is empty, and otherwise checks that the message’s destination actor exists in the actor map.  This avoids delivering messages to nonexistent actors:
+
+\AthenaCode{lst:payload-enabled}{Enabled predicate}
+\begin{lstlisting}[language=Athena,style=athena]
+define (Enabled cfg) :=
+  match cfg {
+    (Payload.kfg am empty-mset) => false
+  | (Payload.kfg am (MSet.insert (msg id _ _) rest)) =>
+      match (map-lookup am id) {
+        NONE => false
+      | (SOME _) => true
+      }
+  | _ => false
+  }
+\end{lstlisting}
+
+The predicate \lstinline{Enabled} therefore returns \lstinline{true} exactly when there is at least one pending message whose destination actor is known, signalling that the system can make progress by delivering a message.
+
+\paragraph{Message reduction.}  The core of the execution model is the \lstinline{reduce} function, which delivers a single message and updates the actor state accordingly.  If the message network is empty, the configuration is returned unchanged.  Otherwise we remove one message \lstinline{(msg id payload meta)} from the multiset, look up the current state of the target actor, and, if the actor exists, apply the payload and update the state map. Formally:
+
+\AthenaCode{lst:payload-reduce}{Reduction of a single message}
+\begin{lstlisting}[language=Athena,style=athena]
+define (reduce ops cfg) :=
+  match cfg {
+    (Payload.kfg am empty-mset) => cfg
+  | (Payload.kfg am (MSet.insert (msg id payload _) rest)) =>
+      match (map-lookup am id) {
+        NONE => (Payload.kfg am rest)
+      | (SOME current) =>
+          (Payload.kfg (FMap.update (pair id (payload-apply ops payload current)) (am - id))
+                                 rest)
+      }
+  | _ => cfg
+  }
+\end{lstlisting}
+
+\paragraph{Enqueueing new messages.}  To schedule updates for delivery, the helpers \lstinline{enqueue-with} and \lstinline{enqueue} add messages to the network.  The first allows attaching an arbitrary metadata tag, while the second simply uses the unit tag.  These are straightforward constructors:
+
+\AthenaCode{lst:payload-enqueue}{Enqueueing updates for delivery}
+\begin{lstlisting}[language=Athena,style=athena]
+define (enqueue-with cfg id payload meta) :=
+  (Payload.kfg (am cfg)
+                (MSet.insert (msg id payload meta)
+                             (net cfg)))
+
+define (enqueue cfg id payload) :=
+  (enqueue-with cfg id payload unit)
+\end{lstlisting}
+
+\paragraph{Initialising actor maps.}  Finally, the helper \lstinline{init-map} builds an initial state map given a list of actor identifiers by assigning each actor the payload’s initial state.  The \lstinline{init} function combines this map with an empty message set to produce a starting configuration.  We explicitly declare the type of \lstinline{init} to emphasise that it returns a configuration:
+
+\AthenaCode{lst:payload-init}{Initialising actor maps and configurations}
+\begin{lstlisting}[language=Athena,style=athena]
+define (init-map ops ids) :=
+  match ids {
+    nil => empty-map
+  | (id :: rest) =>
+    (FMap.update (pair id (payload-init ops)) (init-map ops rest))
+  | _ => empty-map
+  }
+
+declare init: (State, Value)
+  [(PayloadOps State Value) (List Ide)] -> (Configuration State Value Payload.Unit)
+
+define (init ops ids) :=
+  (Payload.kfg (init-map ops ids)
+                        (empty-message-net ops))
+\end{lstlisting}
+
+The helper \lstinline{init-map} traverses the list of actors and uses \lstinline{payload-init} to seed each actor with an initial state.  The resulting map is paired with an empty message network by \lstinline{init} to form a configuration ready for execution.
+
+\section{Properties and verification}
+
+The axioms embedded in \texttt{PayloadFramework} guarantee strong eventual consistency for any CRDT that instantiates the module.  In particular, one proves that the merge function is a join: it yields the least upper bound of its arguments with respect to \texttt{leq}.  By monotonicity, updates move the state upwards in the lattice.  These two facts are sufficient to show that if two replicas process the same multiset of updates (possibly in different orders), their final states are equal.
+
+\endinput

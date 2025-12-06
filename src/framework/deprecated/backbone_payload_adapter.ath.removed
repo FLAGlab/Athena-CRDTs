@@ -1,0 +1,47 @@
+load "backbone"
+
+module BackbonePayloadAdapter {
+  open Backbone
+
+  # Generic helpers that wrap Backbone operations so concrete payload CRDTs
+  # can share the same plumbing without repeating boilerplate.
+
+  define (bp-init ops ids) := (Backbone.init ops ids)
+
+  define (bp-init-state-map ops ids) := (Backbone.init-state-map ops ids)
+
+  define (bp-init-clock-map ids) := (Backbone.init-clock-map ids)
+
+  define (bp-reduce ops cfg) := (Backbone.reduce ops cfg)
+
+  define (bp-reduce* ops cfg) := (Backbone.reduce* ops cfg)
+
+  define (bp-deliver-one ops cfg) := (Backbone.reduce ops cfg)
+
+  define (bp-deliver-all ops cfg) := (Backbone.reduce* ops cfg)
+
+  define (bp-broadcast cfg payload) := (Backbone.broadcast cfg payload)
+
+  define (bp-broadcast-from cfg actor payload) := (Backbone.broadcast-from cfg actor payload)
+
+  define (bp-drop-next cfg) := (Backbone.cfg-drop-next-message cfg)
+
+  define (bp-pending-net cfg) := (Backbone.get-cfg-net cfg)
+
+  define (bp-actor-clock cfg actor) := (Backbone.cfg-actor-clock cfg actor)
+
+  define (bp-states cfg) := (Backbone.get-cfg-states cfg)
+
+  define (bp-snapshot cfg) := (Backbone.cfg-states-drained cfg)
+
+  define (bp-state-or cfg actor fallback) := (Backbone.cfg-state-or cfg actor fallback)
+
+  define (bp-state-or-drained cfg actor fallback) := (Backbone.cfg-state-or-drained cfg actor fallback)
+
+  define (bp-with-states cfg states) :=
+    (Backbone.kfg states (Backbone.get-cfg-clocks cfg) (Backbone.get-cfg-net cfg))
+
+  define (bp-normalize cfg) := (Backbone.cfg-with-drained-states cfg)
+}
+
+open BackbonePayloadAdapter

@@ -1,0 +1,224 @@
+load "../utils/fmaps"
+load "../utils/pair"
+load "../utils/list-util"
+load "vc_core"
+
+module VCBackbone {
+
+open VCCore
+
+define (alist->clist L) :=
+  match L {
+    [] => nil
+  | (list-of x rest) => (x :: (alist->clist rest))
+  }
+
+define gen-ide :=
+  lambda (i n) (string->id ((id->string i) join (val->string n)))
+
+define gen-fresh :=
+  lambda (i n)
+    (alist->clist
+     (map (lambda (k) (gen-ide i k)) (from-to 0 n)))
+
+define empty-map := FMap.empty-map
+
+define empty-set := Set.null
+
+define ++ := FMap.++
+overload ++ Set.++
+
+define at := FMap.at
+
+define - := FMap.-
+
+define in := Set.in
+overload in List.in
+
+datatype (VCConfiguration State Value) :=
+  (vc-cfg states:(FMap.Map Ide State)
+          clocks:Registry
+          pending:(Set.Set (Pair Ide Value))
+          recipients:(List Ide))
+
+define (get-states cfg) :=
+  match cfg {
+    (vc-cfg states _ _ _) => states
+  | _ => empty-map
+  }
+
+define (normalize-states states) :=
+  match states {
+    FMap.empty-map => FMap.empty-map
+  | (FMap.update (pair actor value) rest) =>
+      (FMap.update (pair actor value) (normalize-states rest))
+  | _ => states
+  }
+
+define (get-clocks cfg) :=
+  match cfg {
+    (vc-cfg _ clks _ _) => clks
+  | _ => registry-empty
+  }
+
+define (get-pending cfg) :=
+  match cfg {
+    (vc-cfg _ _ pend _) => pend
+  | _ => empty-set
+  }
+
+define (with-states cfg states0) :=
+  match cfg {
+    (vc-cfg _ clks pend recips) => (vc-cfg states0 clks pend recips)
+  | _ => (vc-cfg states0 registry-empty empty-set nil)
+  }
+
+define (with-clocks cfg clocks0) :=
+  match cfg {
+    (vc-cfg states _ pend recips) => (vc-cfg states clocks0 pend recips)
+  | _ => (vc-cfg empty-map clocks0 empty-set nil)
+  }
+
+define (with-pending cfg pend0) :=
+  match cfg {
+    (vc-cfg states clks _ recips) => (vc-cfg states clks pend0 recips)
+  | _ => (vc-cfg empty-map registry-empty pend0 nil)
+  }
+
+define (cfg-tick cfg actor) :=
+  match cfg {
+    (vc-cfg states clks pend recips) => (vc-cfg states (registry-tick clks actor) pend recips)
+  | _ => cfg
+  }
+
+define (cfg-actor-clock cfg actor) :=
+  match cfg {
+    (vc-cfg _ clks _ _) => (registry-get clks actor)
+  | _ => clock-empty
+  }
+
+define (lookup-state states actor fallback) :=
+  match states {
+    FMap.empty-map => fallback
+  | (FMap.update (pair key value) rest) =>
+      match (equal? key actor) {
+        true => value
+      | false => (lookup-state rest actor fallback)
+      }
+  | _ => fallback
+  }
+
+define (state-or cfg actor fallback) :=
+  match cfg {
+    (vc-cfg states _ _ _) => (lookup-state states actor fallback)
+  | _ => fallback
+  }
+
+define (update-state cfg actor state0) :=
+  match cfg {
+    (vc-cfg states clks pend recips) => (vc-cfg (FMap.update (pair actor state0) states) clks pend recips)
+  | _ => cfg
+  }
+
+define (merge-clock cfg actor clock0) :=
+  match cfg {
+    (vc-cfg states clks pend recips) => (vc-cfg states (registry-merge clks actor clock0) pend recips)
+  | _ => cfg
+  }
+
+define (enqueue cfg actor value) :=
+  match cfg {
+    (vc-cfg states clks pend recips) =>
+      (let ((msgset (Set.insert (pair actor value) Set.null)))
+        (vc-cfg states clks (Set.union pend msgset) recips))
+  | _ => cfg
+  }
+
+define (enqueue-over-recipients cfg recips value) :=
+  match recips {
+    nil => cfg
+  | (recipient :: rest) =>
+      match cfg {
+        (vc-cfg s clks pend rs) =>
+          (enqueue-over-recipients (vc-cfg s clks (Set.insert (pair recipient value) pend) rs) rest value)
+      | _ => cfg
+      }
+  | _ => cfg
+  }
+
+define (enqueue-bulk cfg value) :=
+  match cfg {
+    (vc-cfg _ _ _ recips) => (enqueue-over-recipients cfg recips value)
+  | _ => cfg
+  }
+
+define (broadcast-with cfg value) :=
+  (enqueue-bulk cfg value)
+
+define (broadcast cfg value) :=
+  (enqueue-bulk cfg value)
+
+define (broadcast-from cfg actor value) :=
+  (broadcast-with cfg value)
+
+define (init-state-map state-init ids) :=
+  match ids {
+    nil => empty-map
+  | (id :: rest) =>
+      (FMap.update (pair id state-init) (init-state-map state-init rest))
+  | _ => empty-map
+  }
+
+define (init-clock-map ids) :=
+  match ids {
+    nil => registry-empty
+  | (id :: rest) =>
+      (FMap.update (pair id clock-empty) (init-clock-map rest))
+  | _ => registry-empty
+  }
+
+define (init state-init ids) :=
+  (VCBackbone.vc-cfg (init-state-map state-init ids) (init-clock-map ids) empty-set ids)
+
+define (has-pending cfg) :=
+  match cfg {
+    (vc-cfg _ _ Set.null _) => false
+  | (vc-cfg _ _ (Set.insert _ _) _) => true
+  | _ => false
+  }
+
+define (is-empty cfg) :=
+  match cfg {
+    (vc-cfg _ _ Set.null _) => true
+  | (vc-cfg _ _ (Set.insert _ _) _) => false
+  | _ => true
+  }
+
+define (cfg-empty-net cfg) :=
+  (is-empty cfg)
+
+define (net-has-pending cfg) :=
+  (has-pending cfg)
+
+define (cfg-drop-next-message cfg) :=
+  match cfg {
+    (vc-cfg states clks Set.null recips) => cfg
+  | (vc-cfg states clks (Set.insert _ rest) recips) => (vc-cfg states clks rest recips)
+  | _ => cfg
+  }
+
+define (cfg-dom cfg) :=
+  match cfg {
+    (vc-cfg states _ _ _) => (FMap.dom states)
+  | _ => Set.null
+  }
+
+define (cfg-has-actor? cfg actor) :=
+  (Set.in actor (cfg-dom cfg))
+
+define (livelock reducer cfg) :=
+  ((has-pending cfg) & (reducer cfg = cfg))
+
+} # end module VCBackbone
+
+open VCBackbone

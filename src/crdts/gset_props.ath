@@ -1,0 +1,34 @@
+load "payload_examples"
+
+extend-module GSetPayload {
+  open Set
+
+  # ------------------------------------------------------------------
+  # Algebraic Properties of gs-join (set union)
+  # ------------------------------------------------------------------
+
+  # These properties are currently asserted rather than derived constructively.
+  assert gs-join-commutative :=
+    (forall ?A:(Set.Set Ide) ?B:(Set.Set Ide)
+      (= (gs-join ?A ?B)
+         (gs-join ?B ?A)))
+
+  assert gs-join-associative :=
+    (forall ?a:(Set.Set Ide) ?b:(Set.Set Ide) ?c:(Set.Set Ide)
+      (= (gs-join (gs-join ?a ?b) ?c)
+         (gs-join ?a (gs-join ?b ?c))))
+
+  assert gs-join-idempotent :=
+    (forall ?s:(Set.Set Ide)
+      (= (gs-join ?s ?s)
+         ?s))
+
+  assert gs-join-left-monotone :=
+    (forall ?A:(Set.Set Ide) ?B:(Set.Set Ide)
+      (Set.subset ?A (gs-join ?A ?B)))
+
+  assert gs-join-right-monotone :=
+    (forall ?A:(Set.Set Ide) ?B:(Set.Set Ide)
+      (Set.subset ?B (gs-join ?A ?B)))
+
+} # end extend-module GSetPayload

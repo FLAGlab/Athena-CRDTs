@@ -1,0 +1,151 @@
+load "payload"
+load "../utils/set-util"
+
+module TextPayload {
+
+  open Payload
+
+  define-sort State := (List Ide)
+
+  datatype Value := (insert Ide)
+       |  (delete Ide)
+
+  define state-empty := nil
+
+  define (text-step value state) :=
+    match value {
+      (insert text) => (text :: state)
+    | (delete _) => state
+    | _ => state
+    }
+
+  define (text-join _ right) := right
+
+  declare TEXT_PAYLOAD: [] -> (Payload.PayloadOps State Value)
+  define TEXT_PAYLOAD := (payload-ops state-empty)
+
+  define (payload-step TEXT_PAYLOAD value state) :=
+    (text-step value state)
+
+  define (payload-join TEXT_PAYLOAD left right) :=
+    (text-join left right)
+
+  define (payload-canonical-from-init-hook TEXT_PAYLOAD state-empty) :=
+    TEXT_PAYLOAD
+}
+
+module GCounterPayload {
+
+  open Payload
+  define-sort State := N
+
+  datatype Value := (increment N)
+
+  define state-empty := zero
+
+  define (gcounter-step value state) :=
+    match value {
+      (increment delta) => (N.+ state delta)
+    | _ => state
+    }
+
+  # Declare gcounter-max as an uninterpreted function for axiomatic reasoning
+  declare gcounter-max: [State State] -> State
+
+  # Axioms defining gcounter-max behavior (needed for proofs)
+  # Pattern matches natural number structure
+  assert gcounter-max-zero-left := (forall ?n . (gcounter-max zero ?n) = ?n)
+  assert gcounter-max-zero-right := (forall ?n . (gcounter-max ?n zero) = ?n)
+  assert gcounter-max-succ := (forall ?m ?k . (gcounter-max (S ?m) (S ?k)) = (S (gcounter-max ?m ?k)))
+
+  # Executable version for actual computation (renamed to avoid confusion)
+  define (gcounter-max-eval left right) :=
+    match left {
+      zero => right
+    | (S left') =>
+      match right {
+        zero => left
+      | (S right') => (S (gcounter-max-eval left' right'))
+      | _ => left
+      }
+    | _ => right
+    }
+
+  declare GCOUNTER_PAYLOAD: [] -> (Payload.PayloadOps State Value)
+  define GCOUNTER_PAYLOAD := (payload-ops state-empty)
+
+  define (payload-step ops value state) :=
+    match ops {
+      (payload-ops _) => (gcounter-step value state)
+    }
+
+  define (payload-join ops left right) :=
+    match ops {
+      (payload-ops _) => (gcounter-max left right)
+    }
+
+  define (payload-normalize-hook _) :=
+    GCOUNTER_PAYLOAD
+
+  define (payload-canonical-from-init-hook ops init) :=
+    match ops {
+      (payload-ops _) =>
+        match init {
+          state-empty => GCOUNTER_PAYLOAD
+        | _ => (payload-ops init)
+        }
+    }
+
+} # end module GCounterPayload
+
+module GSetPayload {
+
+  open Payload
+  open Set
+
+  define-sort State := (Set.Set Ide)
+
+  datatype Value := (op-add Ide)
+
+  define state-empty := Set.null:(Set.Set Ide)
+
+  define (gs-lookup state element) :=
+    (Set.in element state)
+
+  define (gs-step value state) :=
+    match value {
+      (op-add element) => (Set.insert element state)
+    }
+
+  define (gs-join left right) :=
+    (Set.union left right)
+
+  declare GSET_PAYLOAD: [] -> (Payload.PayloadOps State Value)
+  define GSET_PAYLOAD := (payload-ops state-empty)
+
+  define (payload-step ops value state) :=
+    match ops {
+      (payload-ops _) => (gs-step value state)
+    }
+
+  define (payload-join ops left right) :=
+    match ops {
+      (payload-ops _) => (gs-join left right)
+    }
+
+  define (payload-normalize-hook _) :=
+    GSET_PAYLOAD
+
+  define (payload-canonical-from-init-hook ops init) :=
+    match ops {
+      (payload-ops _) =>
+        match init {
+          state-empty => GSET_PAYLOAD
+        | _ => (payload-ops init)
+        }
+    }
+
+  define (gs-build-add element) :=
+    (op-add element)
+
+} # end module GSetPayload

@@ -1,0 +1,238 @@
+load "../../crdts/crdt_gcounter_base.ath"
+
+open SimplePNCounter
+open Backbone
+open Payload
+
+# ------------------------------------------------------------------
+# Simple PN-Counter demo (payload-only, bounded delivery):
+# - Three actors
+# - Mix of inc/dec operations
+# - Bounded delivery to show convergence
+# ------------------------------------------------------------------
+
+# Actors
+define DemoBase := (string->id "pn-replica")
+
+define DemoIds := (Backbone.gen-fresh DemoBase 3)
+
+define ActorA :=
+  match DemoIds {
+    (idA :: rest) => idA
+  | _ => (string->id "pn-replica0")
+  }
+
+define ActorB :=
+  match DemoIds {
+    (idA :: (idB :: rest)) => idB
+  | _ => (string->id "pn-replica1")
+  }
+
+define ActorC :=
+  match DemoIds {
+    (idA :: (idB :: (idC :: rest))) => idC
+  | _ => (string->id "pn-replica2")
+  }
+
+# Helper: compute net value from a tally pair (pos - neg)
+define (net-of-tally t) :=
+  match t {
+    (pair p n) => (N.- p n)
+  | _ => zero
+  }
+
+# Helper: sum all pos and neg across actors, return net
+define (global-net cfg actors) :=
+  match actors {
+    nil => zero
+  | (id :: rest) =>
+      (let ((tally (SimplePNCounter.tally-at cfg id)))
+        (N.+ (net-of-tally tally) (global-net cfg rest)))
+  }
+
+# Init
+define Init := (SimplePNCounter.init DemoIds)
+
+# Queue operations: A++ (3), B++ (2), C-- (1), A-- (2), B++ (1)
+define AfterA := (SimplePNCounter.issue-inc Init ActorA (S (S (S zero))))
+
+define AfterB := (SimplePNCounter.issue-inc AfterA ActorB N.two)
+
+define AfterC := (SimplePNCounter.issue-dec AfterB ActorC N.one)
+
+define AfterA2 := (SimplePNCounter.issue-dec AfterC ActorA N.two)
+
+define AfterB2 := (SimplePNCounter.issue-inc AfterA2 ActorB N.one)
+
+# Bounded delivery to process messages safely under timeout
+define DemoDeliveryBudget := (S (S (S (S (S (S zero))))))
+
+define (pn-deliver-bounded cfg budget) :=
+  match budget {
+    zero => cfg
+  | (S rest) =>
+      match (SimplePNCounter.net cfg) {
+        MSet.null => cfg
+      | _ => (pn-deliver-bounded (SimplePNCounter.reduce cfg) rest)
+      }
+  }
+
+# Snapshots at key points
+define InitSnapshot := (SimplePNCounter.snapshot Init)
+
+define InitNet := (SimplePNCounter.net Init)
+
+define AfterOpsSnapshot := (SimplePNCounter.snapshot AfterB2)
+
+define AfterOpsNet := (SimplePNCounter.net AfterB2)
+
+# After bounded delivery
+define Delivered := (pn-deliver-bounded AfterB2 DemoDeliveryBudget)
+
+define DeliveredSnapshot := (SimplePNCounter.snapshot Delivered)
+
+define DeliveredNet := (SimplePNCounter.net Delivered)
+
+# Tallies per actor after delivery
+define A_Tally := (SimplePNCounter.tally-at Delivered ActorA)
+
+define B_Tally := (SimplePNCounter.tally-at Delivered ActorB)
+
+define C_Tally := (SimplePNCounter.tally-at Delivered ActorC)
+
+# Net values per actor
+define A_Net := (net-of-tally A_Tally)
+
+define B_Net := (net-of-tally B_Tally)
+
+define C_Net := (net-of-tally C_Tally)
+
+# Global net value
+define GlobalNet := (global-net Delivered DemoIds)
+
+(print "\n=== Simple PN-Counter Demo (bounded delivery) ===")
+(print "Actors:" (eval DemoIds))
+(print "\n--- Initial state ---")
+(print "Initial snapshot:" (eval InitSnapshot))
+(print "Initial network:" (eval InitNet))
+
+(print "\n--- After enqueuing operations ---")
+(print "Operations: A++(3), B++(2), C--(1), A--(2), B++(1)")
+(print "Snapshot (pre-delivery):" (eval AfterOpsSnapshot))
+(print "Network (pre-delivery):" (eval AfterOpsNet))
+
+(print "\n--- After bounded delivery ---")
+(print "Final snapshot:" (eval DeliveredSnapshot))
+(print "Network after delivery:" (eval DeliveredNet))
+
+(print "\n--- Per-actor tallies ---")
+(print "Actor A tally:" (eval A_Tally) "| Net:" (eval A_Net))
+(print "Actor B tally:" (eval B_Tally) "| Net:" (eval B_Net))
+(print "Actor C tally:" (eval C_Tally) "| Net:" (eval C_Net))
+
+(print "\n--- Global summary ---")
+(print "Global net value (A+B+C):" (eval GlobalNet))
+(print "Expected: 3+3-1-2 = 3")
+
+# ======================================================================
+# Temporal Evolution Demonstration
+# Showing step-by-step CRDT evolution through message delivery
+# ======================================================================
+
+(print "\n\n======================================================================")
+(print "=== TEMPORAL EVOLUTION: Step-by-step message delivery ===")
+(print "======================================================================\n")
+
+# Starting point: all operations issued, messages in network
+define T0 := AfterB2
+
+# Manual step-by-step delivery to show evolution
+define T1 := (SimplePNCounter.reduce T0)
+define T2 := (SimplePNCounter.reduce T1)
+define T3 := (SimplePNCounter.reduce T2)
+define T4 := (SimplePNCounter.reduce T3)
+define T5 := (SimplePNCounter.reduce T4)
+
+# Snapshots at each time step
+define T0_Snapshot := (SimplePNCounter.snapshot T0)
+define T1_Snapshot := (SimplePNCounter.snapshot T1)
+define T2_Snapshot := (SimplePNCounter.snapshot T2)
+define T3_Snapshot := (SimplePNCounter.snapshot T3)
+define T4_Snapshot := (SimplePNCounter.snapshot T4)
+define T5_Snapshot := (SimplePNCounter.snapshot T5)
+
+# Network state at each time step
+define T0_Net := (SimplePNCounter.net T0)
+define T1_Net := (SimplePNCounter.net T1)
+define T2_Net := (SimplePNCounter.net T2)
+define T3_Net := (SimplePNCounter.net T3)
+define T4_Net := (SimplePNCounter.net T4)
+define T5_Net := (SimplePNCounter.net T5)
+
+# Tallies at each time step
+define T0_A := (SimplePNCounter.tally-at T0 ActorA)
+define T1_A := (SimplePNCounter.tally-at T1 ActorA)
+define T2_A := (SimplePNCounter.tally-at T2 ActorA)
+define T3_A := (SimplePNCounter.tally-at T3 ActorA)
+define T4_A := (SimplePNCounter.tally-at T4 ActorA)
+define T5_A := (SimplePNCounter.tally-at T5 ActorA)
+
+define T0_B := (SimplePNCounter.tally-at T0 ActorB)
+define T1_B := (SimplePNCounter.tally-at T1 ActorB)
+define T2_B := (SimplePNCounter.tally-at T2 ActorB)
+define T3_B := (SimplePNCounter.tally-at T3 ActorB)
+define T4_B := (SimplePNCounter.tally-at T4 ActorB)
+define T5_B := (SimplePNCounter.tally-at T5 ActorB)
+
+define T0_C := (SimplePNCounter.tally-at T0 ActorC)
+define T1_C := (SimplePNCounter.tally-at T1 ActorC)
+define T2_C := (SimplePNCounter.tally-at T2 ActorC)
+define T3_C := (SimplePNCounter.tally-at T3 ActorC)
+define T4_C := (SimplePNCounter.tally-at T4 ActorC)
+define T5_C := (SimplePNCounter.tally-at T5 ActorC)
+
+# Global nets at each time step
+define T0_Global := (global-net T0 DemoIds)
+define T1_Global := (global-net T1 DemoIds)
+define T2_Global := (global-net T2 DemoIds)
+define T3_Global := (global-net T3 DemoIds)
+define T4_Global := (global-net T4 DemoIds)
+define T5_Global := (global-net T5 DemoIds)
+
+(print "--- TIME T0: Initial state (after local increments, before delivery) ---")
+(print "Network:" (eval T0_Net))
+(print "Actor A:" (eval T0_A) "| Actor B:" (eval T0_B) "| Actor C:" (eval T0_C))
+(print "Global net:" (eval T0_Global))
+
+(print "\n--- TIME T1: After first message delivery ---")
+(print "Network:" (eval T1_Net))
+(print "Actor A:" (eval T1_A) "| Actor B:" (eval T1_B) "| Actor C:" (eval T1_C))
+(print "Global net:" (eval T1_Global))
+
+(print "\n--- TIME T2: After second message delivery ---")
+(print "Network:" (eval T2_Net))
+(print "Actor A:" (eval T2_A) "| Actor B:" (eval T2_B) "| Actor C:" (eval T2_C))
+(print "Global net:" (eval T2_Global))
+
+(print "\n--- TIME T3: After third message delivery ---")
+(print "Network:" (eval T3_Net))
+(print "Actor A:" (eval T3_A) "| Actor B:" (eval T3_B) "| Actor C:" (eval T3_C))
+(print "Global net:" (eval T3_Global))
+
+(print "\n--- TIME T4: After fourth message delivery ---")
+(print "Network:" (eval T4_Net))
+(print "Actor A:" (eval T4_A) "| Actor B:" (eval T4_B) "| Actor C:" (eval T4_C))
+(print "Global net:" (eval T4_Global))
+
+(print "\n--- TIME T5: After fifth message delivery (converged) ---")
+(print "Network:" (eval T5_Net))
+(print "Actor A:" (eval T5_A) "| Actor B:" (eval T5_B) "| Actor C:" (eval T5_C))
+(print "Global net:" (eval T5_Global))
+
+# ------------------------------------------------------------------
+# Backbone-backed PN-Counter bounded demo.
+# ------------------------------------------------------------------
+
+# The backbone-backed variant is deliberately omitted here to keep automated
+# demo runs well below the timeout budget. For interactive sessions, copy
+# the archived snippet from this repository and run it manually.

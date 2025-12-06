@@ -1,0 +1,207 @@
+load "../utils/fmaps"
+load "../utils/pair"
+load "../utils/list-util"
+load "../utils/set-util"
+
+# Core vector-clock
+
+module VCCore {
+
+open Set
+
+# Short names so the code stays readable.
+define ++ := FMap.++
+define -  := FMap.-
+define at := FMap.at
+define fmap-apply-axioms := FMap.apply-axioms
+
+define-sort Clock := (FMap.Map Ide N)
+define-sort Registry := (FMap.Map Ide Clock)
+
+# Empty clock represents a constant zero vector
+
+define clock-empty := (FMap.empty-map : Clock)
+
+define (clock-get clock id) :=
+  match clock {
+    FMap.empty-map => zero
+  | (FMap.update (pair key value) rest) =>
+      match (equal? key id) {
+        true => value
+      | false => (clock-get rest id)
+      }
+  | _ => zero # treat unknown shapes as empty clocks
+  }
+
+define (clock-set clock id value) :=
+  (FMap.update (pair id value) clock)
+
+
+# Increase current id counter by one
+define (clock-tick clock id) :=
+  (clock-set clock id (S (clock-get clock id)))
+
+#     conclude clock-tick-increments-self :=
+#    (forall ?clock:Clock ?id:Ide .
+#      (clock-get (clock-tick ?clock ?id) ?id) = S (clock-get ?clock ?id))
+# (clock-get (clock-set clock id (S (clock-get clock id))) ?id) = S (clock-get ?clock ?id)
+
+# helper for maximum 
+define (clock-max left right) :=
+  match left {
+    zero => right
+  | (S left') =>
+      match right {
+        zero => left
+      | (S right') => (S (clock-max left' right'))
+      }
+  }
+
+# Merge a single counter if the new value is larger
+define (clock-merge-single clock id value) :=
+  (clock-set clock id (clock-max value (clock-get clock id)))
+
+# Merge two clocks using component-wise maximum
+define (clock-join source target) :=
+  match source {
+    FMap.empty-map => target
+  | (FMap.update (pair id value) rest) =>
+      (clock-merge-single (clock-join rest target) id value)
+  | _ => target # default assumes no more entries
+  }
+
+# Check component-wise left vs right clock (using check for arithmetic comparison)
+define (clock-leq left right) :=
+  match left {
+    FMap.empty-map => true
+  | (FMap.update (pair id value) rest) =>
+      check {
+        (N.<= value (clock-get right id)) => (clock-leq rest right)
+      | else => false
+      }
+  | _ => true # unknown maps behave like empty ones
+  }
+
+# Clock equality is mutual (using check)
+define (clock-eq left right) :=
+  check {
+    (clock-leq left right) =>
+      check {
+        (clock-leq right left) => true
+      | else => false
+      }
+  | else => false
+  }
+
+# Strict "happens before" (using check without nesting)
+define (clock-happens-before left right) :=
+  check {
+    (clock-leq left right) =>
+      (check {
+        (clock-leq right left) => false  # equal clocks -> not before
+      | else => true                      # left <= right and right !<= left
+      })
+  | else => false                         # not <= implies not before
+  }
+
+# No order (neither leq holds) (using check)
+define (clock-concurrent left right) :=
+  check {
+    (clock-leq left right) => false  # left <= right means not concurrent
+  | (clock-leq right left) => false  # right <= left means not concurrent
+  | else => true                      # neither dominates -> concurrent
+  }
+
+# Fold a list of clocks into one final joined clock
+define (clock-join-list clocks) :=
+  match clocks {
+    nil => clock-empty
+  | (clock :: rest) => (clock-join clock (clock-join-list rest))
+  | _ => clock-empty # guard against malformed lists
+  }
+
+# Registry keeps snapshots for each id.
+define registry-empty := (FMap.empty-map : Registry)
+
+# Get an id snapshot. Empty means zero clock.
+define (registry-get registry id) :=
+  match registry {
+    FMap.empty-map => clock-empty
+  | (FMap.update (pair key value) rest) =>
+      match (equal? key id) {
+        true => value
+      | false => (registry-get rest id)
+      }
+  | _ => clock-empty # fall back to zero clock
+  }
+
+# Update a snapshot for one id.
+define (registry-insert registry id clock) :=
+  (FMap.update (pair id clock) registry)
+
+define (registry-set registry id clock) :=
+  (registry-insert registry id clock)
+
+# Local event viewed through the registry
+define (registry-tick registry id) :=
+  (registry-set registry id (clock-tick (registry-get registry id) id))
+
+# Merge an incoming clock into the stored snapshot
+define (registry-merge registry id incoming) :=
+  (registry-set registry id (clock-join incoming (registry-get registry id)))
+
+# ==================================================================
+# CRDT-Optimized Helpers
+# These functions support efficient dominance checking and filtering
+# for CRDTs that use vector clocks (e.g., MVRegister, ORSet).
+# ==================================================================
+
+# Check if clock-a strictly dominates clock-b (happens-before).
+# This is an alias for clarity in CRDT contexts.
+define (clock-dominates clock-a clock-b) :=
+  (clock-happens-before clock-b clock-a)
+
+# Check if clock-a is dominated by ANY clock extracted from entries in a set.
+# The get-clock-fn extracts a clock from each entry.
+# Returns true if any entry's clock dominates clock-a (early exit for efficiency).
+define (clock-dominated-by-any? clock-a entries get-clock-fn) :=
+  match entries {
+    Set.null => false
+  | (Set.insert entry rest) =>
+      match (clock-happens-before clock-a (get-clock-fn entry)) {
+        true => true
+      | false => (clock-dominated-by-any? clock-a rest get-clock-fn)
+      }
+  }
+
+# Remove all entries from a set whose clocks are dominated by target-clock.
+# The get-clock-fn extracts a clock from each entry.
+# Returns a new set with dominated entries filtered out (single-pass).
+define (clock-filter-dominated target-clock entries get-clock-fn) :=
+  match entries {
+    Set.null => Set.null
+  | (Set.insert entry rest) =>
+      (let ((pruned (clock-filter-dominated target-clock rest get-clock-fn))
+            (entry-clk (get-clock-fn entry)))
+        (check {
+          (clock-happens-before entry-clk target-clock) => pruned
+        | else => (Set.insert entry pruned)
+        }))
+  }
+
+# Check if target-clock dominates ANY entry's clock in the set (early exit).
+# Returns true if target-clock happens-before some entry's clock.
+define (clock-dominates-any? target-clock entries get-clock-fn) :=
+  match entries {
+    Set.null => false
+  | (Set.insert entry rest) =>
+      match (clock-happens-before (get-clock-fn entry) target-clock) {
+        true => true
+      | false => (clock-dominates-any? target-clock rest get-clock-fn)
+      }
+  }
+
+
+} # end module VCCore
+
+open VCCore

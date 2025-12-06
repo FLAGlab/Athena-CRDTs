@@ -1,0 +1,33 @@
+load "crdt_mv_register.ath"
+
+open Set
+open MVRegisterPayload
+open MVRegisterCRDT
+open VCCore
+
+module MVRegisterProps {
+
+define (entry-dominates left right) :=
+  (clock-happens-before (entry-clock left) (entry-clock right))
+
+define (mv-antichain entries) :=
+  match entries {
+    Set.null => true
+  | (Set.insert entry rest) =>
+      (mv-antichain rest &
+       (forall ?candidate:Entry .
+         ((?candidate in rest)
+           ==> (~ (entry-dominates entry ?candidate)
+                & ~ (entry-dominates ?candidate entry)))))
+  }
+
+define mv-normalize-antichain :=
+  (forall ?entries:State . (mv-antichain (mv-normalize ?entries)))
+
+assert mv-register-antichain :=
+  (forall ?cfg:Configuration ?actor:Ide .
+    (mv-antichain (entries ?cfg ?actor)))
+
+} # end module MVRegisterProps
+
+open MVRegisterProps

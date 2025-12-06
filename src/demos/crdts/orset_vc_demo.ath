@@ -1,0 +1,214 @@
+load "../../crdts/crdt_or_set_vc.ath"
+
+open ORSetVC
+open VCBackbone
+
+# ======================================================================
+# ORSetVC Demo - Temporal Evolution with VCBackbone
+# ======================================================================
+# This demo shows step-by-step evolution of an Observed-Remove Set CRDT
+# using vector clocks and the VCBackbone framework with VCPayload reducer.
+# ======================================================================
+
+define DemoActors := ('node1 :: 'node2 :: 'node3 :: nil)
+
+define ActorA := 'node1
+define ActorB := 'node2
+define ActorC := 'node3
+
+# Helper to check if an element is in the set
+define (set-contains? cfg actor element) :=
+  (ORSetVC.contains? cfg actor element)
+
+# Helper to get state size (rough approximation)
+define (state-size state) :=
+  match state {
+    Set.null => zero
+  | (Set.insert _ rest) => (S (state-size rest))
+  | _ => zero
+  }
+
+# Helper to show set contents for an actor
+define (show-set-for cfg actor) :=
+  (ORSetVC.lookup-state cfg actor)
+
+(print "\n======================================================================")
+(print "=== ORSetVC DEMO: Temporal Evolution ===")
+(print "======================================================================\n")
+
+# ======================================================================
+# PART 1: Initial Setup
+# ======================================================================
+
+(print "=== PART 1: Initial Configuration ===\n")
+
+define Init := (ORSetVC.init DemoActors)
+
+(print "Actors: node1, node2, node3")
+(print "Initial pending messages: " (eval (VCBackbone.is-empty Init)))
+(print "Initial node1 clock: " (eval (VCBackbone.cfg-actor-clock Init ActorA)))
+(print "Initial node2 clock: " (eval (VCBackbone.cfg-actor-clock Init ActorB)))
+(print "Initial node3 clock: " (eval (VCBackbone.cfg-actor-clock Init ActorC)))
+
+# ======================================================================
+# PART 2: Issue Operations (Local)
+# ======================================================================
+
+(print "\n=== PART 2: Issuing Local Operations ===\n")
+
+(print "T0: Alice adds 'apple'")
+define T0 := (ORSetVC.issue-add Init ActorA 'apple)
+(print "  Pending messages? " (eval (VCBackbone.has-pending T0)))
+(print "  Alice clock: " (eval (VCBackbone.cfg-actor-clock T0 ActorA)))
+
+(print "\nT1: Bob adds 'banana'")
+define T1 := (ORSetVC.issue-add T0 ActorB 'banana)
+(print "  Pending messages? " (eval (VCBackbone.has-pending T1)))
+(print "  Bob clock: " (eval (VCBackbone.cfg-actor-clock T1 ActorB)))
+
+(print "\nT2: Charlie adds 'cherry'")
+define T2 := (ORSetVC.issue-add T1 ActorC 'cherry)
+(print "  Pending messages? " (eval (VCBackbone.has-pending T2)))
+(print "  Charlie clock: " (eval (VCBackbone.cfg-actor-clock T2 ActorC)))
+
+(print "\nT3: Alice adds 'apricot'")
+define T3 := (ORSetVC.issue-add T2 ActorA 'apricot)
+(print "  Pending messages? " (eval (VCBackbone.has-pending T3)))
+(print "  Alice clock: " (eval (VCBackbone.cfg-actor-clock T3 ActorA)))
+
+(print "\n--- State Before Delivery ---")
+(print "Alice's local state size: " (eval (state-size (show-set-for T3 ActorA))))
+(print "Bob's local state size: " (eval (state-size (show-set-for T3 ActorB))))
+(print "Charlie's local state size: " (eval (state-size (show-set-for T3 ActorC))))
+(print "Network has pending: " (eval (VCBackbone.has-pending T3)))
+
+# ======================================================================
+# PART 3: Message Delivery (Step-by-Step)
+# ======================================================================
+
+(print "\n=== PART 3: Step-by-Step Message Delivery ===\n")
+
+(print "Step 1: Deliver one message")
+define D1 := (ORSetVC.reduce T3)
+(print "  Pending remaining? " (eval (VCBackbone.has-pending D1)))
+(print "  Alice state size: " (eval (state-size (show-set-for D1 ActorA))))
+(print "  Bob state size: " (eval (state-size (show-set-for D1 ActorB))))
+(print "  Charlie state size: " (eval (state-size (show-set-for D1 ActorC))))
+
+(print "\nStep 2: Deliver another message")
+define D2 := (ORSetVC.reduce D1)
+(print "  Pending remaining? " (eval (VCBackbone.has-pending D2)))
+(print "  Alice state size: " (eval (state-size (show-set-for D2 ActorA))))
+(print "  Bob state size: " (eval (state-size (show-set-for D2 ActorB))))
+
+(print "\nStep 3: Deliver another message")
+define D3 := (ORSetVC.reduce D2)
+(print "  Pending remaining? " (eval (VCBackbone.has-pending D3)))
+(print "  Alice state size: " (eval (state-size (show-set-for D3 ActorA))))
+
+(print "\n--- Using reduce* to drain all messages ---")
+define Converged := (ORSetVC.reduce* T3)
+(print "Network empty after reduce*? " (eval (VCBackbone.is-empty Converged)))
+(print "Alice state size: " (eval (state-size (show-set-for Converged ActorA))))
+(print "Bob state size: " (eval (state-size (show-set-for Converged ActorB))))
+(print "Charlie state size: " (eval (state-size (show-set-for Converged ActorC))))
+
+# ======================================================================
+# PART 4: Query Converged State
+# ======================================================================
+
+(print "\n=== PART 4: Querying Converged State ===\n")
+
+(print "Alice contains 'apple'? " (eval (set-contains? Converged ActorA 'apple)))
+(print "Alice contains 'banana'? " (eval (set-contains? Converged ActorA 'banana)))
+(print "Alice contains 'cherry'? " (eval (set-contains? Converged ActorA 'cherry)))
+(print "Alice contains 'apricot'? " (eval (set-contains? Converged ActorA 'apricot)))
+(print "Alice contains 'durian'? " (eval (set-contains? Converged ActorA 'durian)))
+
+(print "\nBob contains 'apple'? " (eval (set-contains? Converged ActorB 'apple)))
+(print "Bob contains 'banana'? " (eval (set-contains? Converged ActorB 'banana)))
+(print "Bob contains 'cherry'? " (eval (set-contains? Converged ActorB 'cherry)))
+
+(print "\nCharlie contains 'apple'? " (eval (set-contains? Converged ActorC 'apple)))
+(print "Charlie contains 'banana'? " (eval (set-contains? Converged ActorC 'banana)))
+(print "Charlie contains 'cherry'? " (eval (set-contains? Converged ActorC 'cherry)))
+(print "Charlie contains 'apricot'? " (eval (set-contains? Converged ActorC 'apricot)))
+
+# ======================================================================
+# PART 5: Concurrent Add and Remove
+# ======================================================================
+
+(print "\n=== PART 5: Concurrent Add and Remove ===\n")
+
+(print "Starting from converged state...")
+define C0 := Converged
+
+(print "\nAlice removes 'banana'")
+define C1 := (ORSetVC.issue-remove C0 ActorA 'banana)
+(print "  Pending? " (eval (VCBackbone.has-pending C1)))
+
+(print "\nBob adds 'banana' (concurrent with remove)")
+define C2 := (ORSetVC.issue-add C1 ActorB 'banana)
+(print "  Pending? " (eval (VCBackbone.has-pending C2)))
+
+(print "\nCharlie adds 'dragonfruit'")
+define C3 := (ORSetVC.issue-add C2 ActorC 'dragonfruit)
+(print "  Pending? " (eval (VCBackbone.has-pending C3)))
+
+(print "\n--- Delivering concurrent operations ---")
+define C_Final := (ORSetVC.reduce* C3)
+(print "Network empty? " (eval (VCBackbone.is-empty C_Final)))
+
+(print "\n--- Final state after concurrent ops ---")
+(print "Alice contains 'banana'? " (eval (set-contains? C_Final ActorA 'banana)))
+(print "Bob contains 'banana'? " (eval (set-contains? C_Final ActorB 'banana)))
+(print "Charlie contains 'banana'? " (eval (set-contains? C_Final ActorC 'banana)))
+(print "Alice contains 'dragonfruit'? " (eval (set-contains? C_Final ActorA 'dragonfruit)))
+(print "Bob contains 'dragonfruit'? " (eval (set-contains? C_Final ActorB 'dragonfruit)))
+(print "Charlie contains 'dragonfruit'? " (eval (set-contains? C_Final ActorC 'dragonfruit)))
+
+(print "\nAlice state size: " (eval (state-size (show-set-for C_Final ActorA))))
+(print "Bob state size: " (eval (state-size (show-set-for C_Final ActorB))))
+(print "Charlie state size: " (eval (state-size (show-set-for C_Final ActorC))))
+
+# ======================================================================
+# PART 6: Clock Progression
+# ======================================================================
+
+(print "\n=== PART 6: Vector Clock Progression ===\n")
+
+(print "Initial state:")
+(print "  Alice clock: " (eval (VCBackbone.cfg-actor-clock Init ActorA)))
+(print "  Bob clock: " (eval (VCBackbone.cfg-actor-clock Init ActorB)))
+(print "  Charlie clock: " (eval (VCBackbone.cfg-actor-clock Init ActorC)))
+
+(print "\nAfter all adds (before delivery):")
+(print "  Alice clock: " (eval (VCBackbone.cfg-actor-clock T3 ActorA)))
+(print "  Bob clock: " (eval (VCBackbone.cfg-actor-clock T3 ActorB)))
+(print "  Charlie clock: " (eval (VCBackbone.cfg-actor-clock T3 ActorC)))
+
+(print "\nAfter convergence:")
+(print "  Alice clock: " (eval (VCBackbone.cfg-actor-clock Converged ActorA)))
+(print "  Bob clock: " (eval (VCBackbone.cfg-actor-clock Converged ActorB)))
+(print "  Charlie clock: " (eval (VCBackbone.cfg-actor-clock Converged ActorC)))
+
+(print "\nAfter concurrent ops and final convergence:")
+(print "  Alice clock: " (eval (VCBackbone.cfg-actor-clock C_Final ActorA)))
+(print "  Bob clock: " (eval (VCBackbone.cfg-actor-clock C_Final ActorB)))
+(print "  Charlie clock: " (eval (VCBackbone.cfg-actor-clock C_Final ActorC)))
+
+# ======================================================================
+# PART 7: VCBackbone Utilities
+# ======================================================================
+
+(print "\n=== PART 7: VCBackbone Framework Utilities ===\n")
+
+(print "Domain of configuration: " (eval (VCBackbone.cfg-dom C_Final)))
+(print "Has actor 'node1'? " (eval (VCBackbone.cfg-has-actor? C_Final ActorA)))
+(print "Has actor 'dave'? " (eval (VCBackbone.cfg-has-actor? C_Final 'dave)))
+(print "Network is empty: " (eval (VCBackbone.cfg-empty-net C_Final)))
+(print "Network has pending: " (eval (VCBackbone.net-has-pending C_Final)))
+
+(print "\n======================================================================")
+(print "=== ORSetVC Demo Complete ===")
+(print "======================================================================\n")

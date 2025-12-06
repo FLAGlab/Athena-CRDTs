@@ -1,0 +1,327 @@
+load "../../crdts/crdt_np_counter.ath"
+load "../../framework/backbone"
+
+open SimplePNCounter
+open Backbone
+
+#=============================================================================
+# Simple PN-Counter Demo (Payload-only, no vector clocks)
+#=============================================================================
+
+# Generate unique actor IDs  
+define DemoBase := (string->id "pn-replica")
+define DemoIds := (Backbone.gen-fresh DemoBase 4)
+
+define ActorA :=
+  match DemoIds {
+    (a :: rest) => a
+  | _ => (string->id "pn-replica0")
+  }
+
+define ActorB :=
+  match DemoIds {
+    (a :: (b :: rest)) => b
+  | _ => (string->id "pn-replica1")
+  }
+
+define ActorC :=
+  match DemoIds {
+    (a :: (b :: (c :: rest))) => c
+  | _ => (string->id "pn-replica2")
+  }
+
+define ActorD :=
+  match DemoIds {
+    (a :: (b :: (c :: (d :: rest)))) => d
+  | _ => (string->id "pn-replica3")
+  }
+
+define ActorE :=
+  match DemoIds {
+    (a :: (b :: (c :: (d :: (e :: rest))))) => e
+  | _ => (string->id "pn-replica4")
+  }
+
+# Compute net value from tally pair
+define (net-of-tally t) :=
+  (SimplePNCounter.net t)
+
+# Helper to sum nets across all actor IDs
+define (sum-actor-nets snapshot ids) :=
+  match ids {
+    nil => zero
+  | (id :: rest) =>
+      let {tally := (SimplePNCounter.tally-at snapshot id);
+           net-val := (SimplePNCounter.net tally)}
+        (N.+ net-val (sum-actor-nets snapshot rest))
+  }
+
+# Compute global net using actor IDs list
+define (global-net snapshot) :=
+  (sum-actor-nets snapshot DemoIds)
+
+# Initialize the actor map
+define Init := (SimplePNCounter.init DemoIds)
+
+# Operations: A++(3), B++(2), C--(1), A--(2), B++(1), D++(4), E--(2), A++(1), C++(2)
+# Expected global net: +3 +2 -1 -2 +1 +4 -2 +1 +2 = +8
+define AfterA := (SimplePNCounter.issue-inc Init ActorA (S (S (S zero))))
+define AfterB := (SimplePNCounter.issue-inc AfterA ActorB (S (S zero)))
+define AfterC := (SimplePNCounter.issue-dec AfterB ActorC (S zero))
+define AfterA2 := (SimplePNCounter.issue-dec AfterC ActorA (S (S zero)))
+define AfterB2 := (SimplePNCounter.issue-inc AfterA2 ActorB (S zero))
+define AfterD := (SimplePNCounter.issue-inc AfterB2 ActorD (S (S (S (S zero)))))
+define AfterE := (SimplePNCounter.issue-dec AfterD ActorE (S (S zero)))
+define AfterA3 := (SimplePNCounter.issue-inc AfterE ActorA (S zero))
+define AfterC2 := (SimplePNCounter.issue-inc AfterA3 ActorC (S (S zero)))
+
+# Test Payload framework utilities on configuration
+define PayloadTestCfg := AfterC2
+define PayloadTestAM := (Payload.am PayloadTestCfg)
+define PayloadTestNet := (Payload.net PayloadTestCfg)
+
+# Use Payload.reduce* for batch delivery (framework function)
+define Delivered := (SimplePNCounter.reduce* AfterC2)
+
+# Test canonical normalization from Payload framework
+define CanonicalAM := (Payload.canonical-map PayloadTestAM)
+
+# Compute snapshots and tallies
+define InitSnapshot := (SimplePNCounter.snapshot Init)
+define AfterOpsSnapshot := (SimplePNCounter.snapshot AfterC2)
+define DeliveredSnapshot := (SimplePNCounter.snapshot Delivered)
+
+# Use Payload.canonical-map for snapshot normalization
+define PayloadDeliveredSnapshot := (Payload.canonical-map (Payload.am Delivered))
+
+# Intermediate snapshots to show progression
+define AfterASnapshot := (SimplePNCounter.snapshot AfterA)
+define AfterBSnapshot := (SimplePNCounter.snapshot AfterB)
+define AfterDSnapshot := (SimplePNCounter.snapshot AfterD)
+define AfterESnapshot := (SimplePNCounter.snapshot AfterE)
+
+# Compute tallies using both direct and Payload methods
+define A_Tally := (SimplePNCounter.tally-at DeliveredSnapshot ActorA)
+define B_Tally := (SimplePNCounter.tally-at DeliveredSnapshot ActorB)
+define C_Tally := (SimplePNCounter.tally-at DeliveredSnapshot ActorC)
+define D_Tally := (SimplePNCounter.tally-at DeliveredSnapshot ActorD)
+define E_Tally := (SimplePNCounter.tally-at DeliveredSnapshot ActorE)
+
+# Test Payload.map-lookup for individual actors
+define PayloadLookupA := (Payload.map-lookup PayloadDeliveredSnapshot ActorA)
+define PayloadLookupB := (Payload.map-lookup PayloadDeliveredSnapshot ActorB)
+define PayloadLookupC := (Payload.map-lookup PayloadDeliveredSnapshot ActorC)
+define PayloadLookupD := (Payload.map-lookup PayloadDeliveredSnapshot ActorD)
+define PayloadLookupE := (Payload.map-lookup PayloadDeliveredSnapshot ActorE)
+
+define A_Net := (net-of-tally A_Tally)
+define B_Net := (net-of-tally B_Tally)
+define C_Net := (net-of-tally C_Tally)
+define D_Net := (net-of-tally D_Tally)
+define E_Net := (net-of-tally E_Tally)
+
+define GlobalNet := (global-net DeliveredSnapshot)
+
+# Compute global nets at intermediate stages
+define InitGlobalNet := (global-net InitSnapshot)
+define AfterAGlobalNet := (global-net AfterASnapshot)
+define AfterDGlobalNet := (global-net AfterDSnapshot)
+
+# Print results
+(print "\n=== Simple PN-Counter Demo (Payload Framework) ===")
+(print "=== PART 1: Initialization and Operations ===\n")
+(print "Actors: " (eval DemoIds))
+(print "Initial snapshot: " (eval InitSnapshot))
+(print "Initial global net: " (eval InitGlobalNet))
+
+(print "\n--- Progressive Operations ---")
+(print "After A++(3): " (eval AfterASnapshot))
+(print "Global net after A: " (eval AfterAGlobalNet))
+(print "After B++(2): " (eval AfterBSnapshot))
+(print "After D++(4): " (eval AfterDSnapshot))
+(print "Global net after D: " (eval AfterDGlobalNet))
+(print "After E--(2): " (eval AfterESnapshot))
+
+(print "\n=== PART 2: Payload Framework Functions ===\n")
+(print "Payload.am (actor map before delivery): " (eval PayloadTestAM))
+(print "Payload.net (message network): " (eval PayloadTestNet))
+(print "Payload.canonical-map result: " (eval CanonicalAM))
+(print "Snapshot before delivery: " (eval AfterOpsSnapshot))
+
+(print "\n=== PART 3: After Payload.reduce* Delivery ===\n")
+(print "Operations: A++(3), B++(2), C--(1), A--(2), B++(1), D++(4), E--(2), A++(1), C++(2)")
+(print "Final snapshot: " (eval DeliveredSnapshot))
+(print "Payload normalized snapshot: " (eval PayloadDeliveredSnapshot))
+
+(print "\n=== PART 4: Per-Actor Tallies and Payload Lookups ===\n")
+(print "Actor A tally: " (eval A_Tally) " | Net: " (eval A_Net))
+(print "  Payload.map-lookup A: " (eval PayloadLookupA))
+(print "Actor B tally: " (eval B_Tally) " | Net: " (eval B_Net))
+(print "  Payload.map-lookup B: " (eval PayloadLookupB))
+(print "Actor C tally: " (eval C_Tally) " | Net: " (eval C_Net))
+(print "  Payload.map-lookup C: " (eval PayloadLookupC))
+(print "Actor D tally: " (eval D_Tally) " | Net: " (eval D_Net))
+(print "  Payload.map-lookup D: " (eval PayloadLookupD))
+(print "Actor E tally: " (eval E_Tally) " | Net: " (eval E_Net))
+(print "  Payload.map-lookup E: " (eval PayloadLookupE))
+
+(print "\n=== PART 5: Global Summary ===\n")
+(print "Global net value (sum of all actors): " (eval GlobalNet))
+(print "Expected: +3+2-1-2+1+4-2+1+2 = +8")
+(print "\n")
+
+#=============================================================================
+# Temporal Evolution: Step-by-step message delivery
+#=============================================================================
+
+(print "======================================================================")
+(print "=== TEMPORAL EVOLUTION: Step-by-step message delivery ===")
+(print "Using SimplePNCounter.reduce and Payload framework")
+(print "======================================================================\n")
+
+# Starting point: all operations issued, messages in network
+define T0 := AfterC2
+
+# Manual step-by-step delivery using SimplePNCounter.reduce (wraps Payload.reduce)
+define T1 := (SimplePNCounter.reduce T0)
+define T2 := (SimplePNCounter.reduce T1)
+define T3 := (SimplePNCounter.reduce T2)
+define T4 := (SimplePNCounter.reduce T3)
+define T5 := (SimplePNCounter.reduce T4)
+define T6 := (SimplePNCounter.reduce T5)
+define T7 := (SimplePNCounter.reduce T6)
+define T8 := (SimplePNCounter.reduce T7)
+
+# Test using Payload.net directly to inspect network
+define T0_PayloadNet := (Payload.net T0)
+define T4_PayloadNet := (Payload.net T4)
+define T8_PayloadNet := (Payload.net T8)
+
+# Snapshots at each time
+define T0_Snapshot := (SimplePNCounter.snapshot T0)
+define T1_Snapshot := (SimplePNCounter.snapshot T1)
+define T2_Snapshot := (SimplePNCounter.snapshot T2)
+define T3_Snapshot := (SimplePNCounter.snapshot T3)
+define T4_Snapshot := (SimplePNCounter.snapshot T4)
+define T5_Snapshot := (SimplePNCounter.snapshot T5)
+define T6_Snapshot := (SimplePNCounter.snapshot T6)
+define T7_Snapshot := (SimplePNCounter.snapshot T7)
+define T8_Snapshot := (SimplePNCounter.snapshot T8)
+
+# Network states using SimplePNCounter.network (wraps Payload.net)
+define T0_Net := (SimplePNCounter.network T0)
+define T1_Net := (SimplePNCounter.network T1)
+define T2_Net := (SimplePNCounter.network T2)
+define T3_Net := (SimplePNCounter.network T3)
+define T4_Net := (SimplePNCounter.network T4)
+define T5_Net := (SimplePNCounter.network T5)
+define T6_Net := (SimplePNCounter.network T6)
+define T7_Net := (SimplePNCounter.network T7)
+define T8_Net := (SimplePNCounter.network T8)
+
+# Per-actor tallies at each time
+define T0_A := (SimplePNCounter.tally-at T0_Snapshot ActorA)
+define T1_A := (SimplePNCounter.tally-at T1_Snapshot ActorA)
+define T2_A := (SimplePNCounter.tally-at T2_Snapshot ActorA)
+define T3_A := (SimplePNCounter.tally-at T3_Snapshot ActorA)
+define T4_A := (SimplePNCounter.tally-at T4_Snapshot ActorA)
+define T5_A := (SimplePNCounter.tally-at T5_Snapshot ActorA)
+define T6_A := (SimplePNCounter.tally-at T6_Snapshot ActorA)
+define T7_A := (SimplePNCounter.tally-at T7_Snapshot ActorA)
+define T8_A := (SimplePNCounter.tally-at T8_Snapshot ActorA)
+
+define T0_B := (SimplePNCounter.tally-at T0_Snapshot ActorB)
+define T1_B := (SimplePNCounter.tally-at T1_Snapshot ActorB)
+define T2_B := (SimplePNCounter.tally-at T2_Snapshot ActorB)
+define T3_B := (SimplePNCounter.tally-at T3_Snapshot ActorB)
+define T4_B := (SimplePNCounter.tally-at T4_Snapshot ActorB)
+define T5_B := (SimplePNCounter.tally-at T5_Snapshot ActorB)
+define T6_B := (SimplePNCounter.tally-at T6_Snapshot ActorB)
+define T7_B := (SimplePNCounter.tally-at T7_Snapshot ActorB)
+define T8_B := (SimplePNCounter.tally-at T8_Snapshot ActorB)
+
+define T0_C := (SimplePNCounter.tally-at T0_Snapshot ActorC)
+define T1_C := (SimplePNCounter.tally-at T1_Snapshot ActorC)
+define T2_C := (SimplePNCounter.tally-at T2_Snapshot ActorC)
+define T3_C := (SimplePNCounter.tally-at T3_Snapshot ActorC)
+define T4_C := (SimplePNCounter.tally-at T4_Snapshot ActorC)
+define T5_C := (SimplePNCounter.tally-at T5_Snapshot ActorC)
+define T6_C := (SimplePNCounter.tally-at T6_Snapshot ActorC)
+define T7_C := (SimplePNCounter.tally-at T7_Snapshot ActorC)
+define T8_C := (SimplePNCounter.tally-at T8_Snapshot ActorC)
+
+define T0_D := (SimplePNCounter.tally-at T0_Snapshot ActorD)
+define T4_D := (SimplePNCounter.tally-at T4_Snapshot ActorD)
+define T8_D := (SimplePNCounter.tally-at T8_Snapshot ActorD)
+
+define T0_E := (SimplePNCounter.tally-at T0_Snapshot ActorE)
+define T4_E := (SimplePNCounter.tally-at T4_Snapshot ActorE)
+define T8_E := (SimplePNCounter.tally-at T8_Snapshot ActorE)
+
+# Global nets at each time
+define T0_Global := (global-net T0_Snapshot)
+define T1_Global := (global-net T1_Snapshot)
+define T2_Global := (global-net T2_Snapshot)
+define T3_Global := (global-net T3_Snapshot)
+define T4_Global := (global-net T4_Snapshot)
+define T5_Global := (global-net T5_Snapshot)
+define T6_Global := (global-net T6_Snapshot)
+define T7_Global := (global-net T7_Snapshot)
+define T8_Global := (global-net T8_Snapshot)
+
+# Print temporal evolution
+(print "--- TIME T0: Initial state (after local operations, before delivery) ---")
+(print "Payload.net: " (eval T0_PayloadNet))
+(print "Global net: " (eval T0_Global))
+(print "Actor A: " (eval T0_A) " | Actor B: " (eval T0_B) " | Actor C: " (eval T0_C))
+(print "Actor D: " (eval T0_D) " | Actor E: " (eval T0_E))
+
+(print "\n--- TIME T1: After first message delivery ---")
+(print "Network: " (eval T1_Net))
+(print "Global net: " (eval T1_Global))
+(print "Actor A: " (eval T1_A) " | Actor B: " (eval T1_B) " | Actor C: " (eval T1_C))
+
+(print "\n--- TIME T2: After second message delivery ---")
+(print "Network: " (eval T2_Net))
+(print "Global net: " (eval T2_Global))
+(print "Actor A: " (eval T2_A) " | Actor B: " (eval T2_B) " | Actor C: " (eval T2_C))
+
+(print "\n--- TIME T3: After third message delivery ---")
+(print "Network: " (eval T3_Net))
+(print "Global net: " (eval T3_Global))
+(print "Actor A: " (eval T3_A) " | Actor B: " (eval T3_B) " | Actor C: " (eval T3_C))
+
+(print "\n--- TIME T4: After fourth message delivery ---")
+(print "Payload.net: " (eval T4_PayloadNet))
+(print "Global net: " (eval T4_Global))
+(print "Actor A: " (eval T4_A) " | Actor B: " (eval T4_B) " | Actor C: " (eval T4_C))
+(print "Actor D: " (eval T4_D) " | Actor E: " (eval T4_E))
+
+(print "\n--- TIME T5: After fifth message delivery ---")
+(print "Network: " (eval T5_Net))
+(print "Global net: " (eval T5_Global))
+(print "Actor A: " (eval T5_A) " | Actor B: " (eval T5_B) " | Actor C: " (eval T5_C))
+
+(print "\n--- TIME T6: After sixth message delivery ---")
+(print "Network: " (eval T6_Net))
+(print "Global net: " (eval T6_Global))
+(print "Actor A: " (eval T6_A) " | Actor B: " (eval T6_B) " | Actor C: " (eval T6_C))
+
+(print "\n--- TIME T7: After seventh message delivery ---")
+(print "Network: " (eval T7_Net))
+(print "Global net: " (eval T7_Global))
+(print "Actor A: " (eval T7_A) " | Actor B: " (eval T7_B) " | Actor C: " (eval T7_C))
+
+(print "\n--- TIME T8: After eighth message delivery (converged) ---")
+(print "Payload.net: " (eval T8_PayloadNet))
+(print "Global net: " (eval T8_Global))
+(print "Actor A: " (eval T8_A) " | Actor B: " (eval T8_B) " | Actor C: " (eval T8_C))
+(print "Actor D: " (eval T8_D) " | Actor E: " (eval T8_E))
+(print "\n")
+
+#=============================================================================
+# Backbone-backed PN-Counter bounded demo.
+# The backbone-backed variant is deliberately omitted here to keep automated
+# demo runs well below the timeout budget. For interactive sessions, copy the
+# archived snippet from this repository and run it manually.
+#=============================================================================

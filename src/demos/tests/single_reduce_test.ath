@@ -1,0 +1,30 @@
+load "../../crdts/crdt_lww_register.ath"
+
+open LWWRegisterCRDT
+open LWWRegisterPayload
+open Backbone
+
+# Test single reduce step
+
+define ids := (gen-fresh (string->id "rep") 2)
+
+define ActorA := match ids { (a :: _) => a | _ => (string->id "rep0") }
+
+define InitCfg := (LWWRegisterCRDT.init ids)
+
+define AfterIssue := (lww-register-issue InitCfg ActorA (string->id "test") ids)
+
+(print "\nBefore reduce:")
+(print "Network:")
+(eval (cfg-net AfterIssue))
+
+define AfterOneReduce := (LWWRegisterCRDT.reduce AfterIssue)
+
+(print "\nAfter one reduce:")
+(print "Network:")
+(eval (cfg-net AfterOneReduce))
+
+(print "\nStates after reduce:")
+(eval (cfg-states AfterOneReduce))
+
+(print "\n=== Test complete ===")

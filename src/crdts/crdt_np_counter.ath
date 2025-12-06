@@ -1,0 +1,126 @@
+load "../utils/set-util"
+load "../utils/msets-notp"
+load "../utils/fmaps"
+load "../utils/pair"
+load "../utils/list-util"
+load "../framework/payload"
+
+open Payload
+
+#-----------------------------------------------------------------------------
+# SimplePNCounter: Payload-only PN-Counter implementation.
+# Each actor maintains their own (positive, negative) counter pair.
+#-----------------------------------------------------------------------------
+
+module SimplePNCounter {
+
+open Payload
+
+define-sort State := (Pair N N)
+
+datatype Value := (inc Ide N)
+                | (dec Ide N)
+
+define state-empty := (pair zero zero)
+
+define (pos state) :=
+  match state {
+    (pair p_val n_val) => p_val
+  }
+
+define (neg state) :=
+  match state {
+    (pair p_val n_val) => n_val
+  }
+
+declare PNC_PAYLOAD: [] -> (Payload.PayloadOps State Value)
+
+define PNC_PAYLOAD := (Payload.payload-ops state-empty)
+
+define (payload-step PNC_PAYLOAD op prev) :=
+  match op {
+    (inc actor delta) =>
+      let {current-pos := (pos prev);
+           new-pos := (N.+ current-pos delta)}
+        (pair new-pos (neg prev))
+  | (dec actor delta) =>
+      let {current-neg := (neg prev);
+           new-neg := (N.+ current-neg delta)}
+        (pair (pos prev) new-neg)
+  }
+
+# Recursively unwrap and apply payload-step layers to get canonical state
+define (normalize-state st) :=
+  match st {
+    (Payload.payload-step ops (inc actor delta) prev) =>
+      let {norm-prev := (normalize-state prev);
+           current-pos := (pos norm-prev);
+           new-pos := (N.+ current-pos delta)}
+        (pair new-pos (neg norm-prev))
+  | (Payload.payload-step ops (dec actor delta) prev) =>
+      let {norm-prev := (normalize-state prev);
+           current-neg := (neg norm-prev);
+           new-neg := (N.+ current-neg delta)}
+        (pair (pos norm-prev) new-neg)
+  | (pair p n) => (pair p n)
+  | _ => state-empty
+  }
+
+# Apply normalization to entire actor map
+define (normalize-map am) :=
+  match am {
+    FMap.empty-map => FMap.empty-map
+  | (FMap.update (pair actor st) rest) =>
+      (FMap.update (pair actor (normalize-state st)) (normalize-map rest))
+  }
+
+define (init ids) :=
+  (Payload.init PNC_PAYLOAD ids)
+
+define (issue-inc cfg actor delta) :=
+  (Payload.enqueue-with cfg actor (inc actor delta) Payload.unit)
+
+define (issue-dec cfg actor delta) :=
+  (Payload.enqueue-with cfg actor (dec actor delta) Payload.unit)
+
+define (reduce cfg) :=
+  (Payload.reduce PNC_PAYLOAD cfg)
+
+define (reduce* cfg) :=
+  (Payload.reduce* PNC_PAYLOAD cfg)
+
+define (snapshot cfg) :=
+  match cfg {
+    (Payload.kfg am _) => (normalize-map am)
+  | _ => (normalize-map (Payload.am cfg))
+  }
+
+# Get network from configuration
+define (network cfg) :=
+  (Payload.net cfg)
+
+# Helper to lookup actor state in map (using equal? for proper comparison)
+define (lookup-actor am target) :=
+  match am {
+    FMap.empty-map => NONE
+  | (FMap.update (pair id st) rest) =>
+      match (equal? id target) {
+        true => (SOME st)
+      | false => (lookup-actor rest target)
+      }
+  }
+
+# Compute tally at a specific actor: returns (pair pos neg) for that actor
+define (tally-at am target-actor) :=
+  match (lookup-actor am target-actor) {
+    NONE => (pair zero zero)
+  | (SOME st) => (normalize-state st)
+  }
+
+# Compute net value: positive - negative
+define (net tally) :=
+  match tally {
+    (pair p n) => (N.- p n)
+  }
+
+} # end module SimplePNCounter

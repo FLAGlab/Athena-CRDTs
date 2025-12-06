@@ -1,0 +1,46 @@
+# CRDT Convergence Properties (Imported)
+# Uses GSet payload algebra to demonstrate convergence under reordering.
+
+load "crdt_gset_props.ath"
+
+extend-module GSetPayload {
+
+conclude gset-join-order-independence :=
+  (forall ?s1:(Set Ide) ?s2:(Set Ide) ?s3:(Set Ide)
+    ((payload-join GSET_PAYLOAD (payload-join GSET_PAYLOAD ?s1 ?s2) ?s3) =
+     (payload-join GSET_PAYLOAD (payload-join GSET_PAYLOAD ?s1 ?s3) ?s2)))
+pick-any s1:(Set Ide) s2:(Set Ide) s3:(Set Ide)
+  (!chain [(payload-join GSET_PAYLOAD (payload-join GSET_PAYLOAD s1 s2) s3)
+           = (payload-join GSET_PAYLOAD s1 (payload-join GSET_PAYLOAD s2 s3)) [gset-join-associative]
+           = (payload-join GSET_PAYLOAD s1 (payload-join GSET_PAYLOAD s3 s2)) [gset-join-commutative]
+           = (payload-join GSET_PAYLOAD (payload-join GSET_PAYLOAD s1 s3) s2) [gset-join-associative]])
+
+conclude gset-repeated-join-stable :=
+  (forall ?s1:(Set Ide) ?s2:(Set Ide)
+    ((payload-join GSET_PAYLOAD (payload-join GSET_PAYLOAD ?s1 ?s2) ?s2) =
+     (payload-join GSET_PAYLOAD ?s1 ?s2)))
+pick-any s1:(Set Ide) s2:(Set Ide)
+  (!chain [(payload-join GSET_PAYLOAD (payload-join GSET_PAYLOAD s1 s2) s2)
+           = (payload-join GSET_PAYLOAD s1 (payload-join GSET_PAYLOAD s2 s2)) [gset-join-associative]
+           = (payload-join GSET_PAYLOAD s1 s2) [gset-join-idempotent]])
+
+conclude gset-four-way-convergence :=
+  (forall ?s1:(Set Ide) ?s2:(Set Ide) ?s3:(Set Ide) ?s4:(Set Ide)
+    ((payload-join GSET_PAYLOAD
+       (payload-join GSET_PAYLOAD (payload-join GSET_PAYLOAD ?s1 ?s2) ?s3) ?s4) =
+     (payload-join GSET_PAYLOAD
+       (payload-join GSET_PAYLOAD (payload-join GSET_PAYLOAD ?s1 ?s3) ?s4) ?s2)))
+pick-any s1:(Set Ide) s2:(Set Ide) s3:(Set Ide) s4:(Set Ide)
+  (!chain [(payload-join GSET_PAYLOAD (payload-join GSET_PAYLOAD (payload-join GSET_PAYLOAD s1 s2) s3) s4)
+           = (payload-join GSET_PAYLOAD (payload-join GSET_PAYLOAD s1 s2) (payload-join GSET_PAYLOAD s3 s4)) [gset-join-associative gset-join-commutative]
+           = (payload-join GSET_PAYLOAD s1 (payload-join GSET_PAYLOAD s2 (payload-join GSET_PAYLOAD s3 s4))) [gset-join-associative]
+           = (payload-join GSET_PAYLOAD s1 (payload-join GSET_PAYLOAD (payload-join GSET_PAYLOAD s3 s4) s2)) [gset-join-commutative]
+           = (payload-join GSET_PAYLOAD (payload-join GSET_PAYLOAD s1 (payload-join GSET_PAYLOAD s3 s4)) s2) [gset-join-associative]
+           = (payload-join GSET_PAYLOAD (payload-join GSET_PAYLOAD (payload-join GSET_PAYLOAD s1 s3) s4) s2) [gset-join-associative]])
+
+} # end extend-module GSetPayload
+
+(print "\n=== GSet Convergence Properties Complete ===\n")
+(print "Proved: gset-join-order-independence (core convergence guarantee)\n")
+(print "Proved: gset-repeated-join-stable (idempotent delivery)\n")
+(print "Proved: gset-four-way-convergence (arbitrary reordering converges)\n")

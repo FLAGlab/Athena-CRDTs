@@ -1,0 +1,46 @@
+load "../../fmaps.ath"
+load "../../list-util.ath"
+
+# Manually inline registry-insert with debug - simplified
+
+define-sort Clock := (FMap.Map Ide N)
+define-sort Registry := (FMap.Map Ide Clock)
+
+define registry-empty := (FMap.empty-map : Registry)
+define clock-empty := (FMap.empty-map : Clock)
+
+define test-id := (string->id "test")
+
+define reg1 := (FMap.update (pair test-id clock-empty) registry-empty)
+
+(print "\nInitial registry:")
+(eval reg1)
+
+# Extract the key from reg1
+define extracted-key := match reg1 {
+  (FMap.update (pair k _) _) => k
+| _ => test-id
+}
+
+(print "\nExtracted key:")
+(eval extracted-key)
+
+(print "\ntest-id:")
+(eval test-id)
+
+(print "\nAre they equal (with =)?")
+(eval (= extracted-key test-id))
+
+(print "\nAre they equal (with equal?)?")
+(eval (equal? extracted-key test-id))
+
+# Now test check
+(print "\nTesting check directly:")
+define check-result := check {
+  (equal? extracted-key test-id) => "MATCH"
+| else => "NO-MATCH"
+}
+
+(eval check-result)
+
+(print "\n=== Test complete ===")

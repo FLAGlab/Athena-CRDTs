@@ -1,0 +1,14 @@
+module Scratch {
+
+datatype Foo := (bar x:N y:N)
+
+define (foo-first f) :=
+  match f {
+    (Scratch.bar x _) => x
+  }
+
+} # end module Scratch
+
+open Scratch
+
+print "foo-first test" (eval (Scratch.foo-first (Scratch.bar 1 2)))

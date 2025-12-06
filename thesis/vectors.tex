@@ -1,0 +1,219 @@
+% $Id: vectors.tex 1784 2012-04-27 23:29:31Z  $
+% !TEX root = main.tex
+
+\usepackage{xcolor}
+\usepackage{listings}
+
+\definecolor{athBg}{HTML}{F7F7F7}
+\definecolor{athRule}{HTML}{B6BCC1}
+\definecolor{athMono}{HTML}{111111}
+
+\lstdefinelanguage{Athena}{
+  morekeywords={load,module,define,define-sort,match,let,if,then,else,forall,conclude},
+  sensitive=true,
+  morecomment=[l]{\#},
+  morestring=[b]"
+}
+\lstdefinestyle{athena}{
+  language=Athena,
+  basicstyle=\ttfamily\small\color{athMono},
+  keywordstyle=\color{athMono},
+  commentstyle=\color{athMono},
+  stringstyle=\color{athMono},
+  numberstyle=\scriptsize\color{athMono},
+  numbers=left, numbersep=8pt,
+  breaklines=true, showstringspaces=false,
+  frame=single, rulecolor=\color{athRule},
+  backgroundcolor=\color{athBg}, tabsize=2, captionpos=b
+}
+\newcommand{\AthenaCode}[2]{\lstset{style=athena, label={#1}, caption={#2}}}
+
+
+\chapter{Vector Clocks for State-Based CRDTs}\label{cha:vectors}
+
+Vector clocks provide an algebra for reasoning about causality in asynchronous systems. We follow the standard path: (\emph{1}) Lamport’s \emph{happens-before} relation $\to$ as a partial order for events~\cite{lamport1978time}; (\emph{2}) vector timestamps (``vector clocks'') introduced independently by Fidge and Mattern to represent a causal structure and offer maintenance rules in message-passing systems~\cite{fidge1988timestamps,mattern1989virtual} and (\emph{3}) the semilattice perspective that reinforces the state-based CRDT convergence \cite{shapiro2011conflict}.
+
+\section{Mathematical model and notation}\label{sec:vc-math}
+
+\paragraph{Notation provenance.}
+We use the standard timestamp notation of Fidge and Mattern \cite{fidge1988timestamps} where clocks are finitely supported maps $C:\mathsf{Ide}\to\mathbb{N}$ (missing entries are $0$), the causal preorder is component-wise $C\preceq D \iff \forall i.\,C(i)\le D(i)$, and the merge is the pointwise maximum $(C\sqcup D)(i)=\max\{C(i),D(i)\}$. This definition refines Lamport’s happens–before relation and makes possible the increment rules \cite{mattern1989virtual,lamport1978time}. The semilattice view (idempotent, commutative and associative) is the one view used in state–based CRDT convergence proofs \cite{shapiro2011conflict}.
+
+We adopt the usual functional notation for vector timestamps from Fidge and Mattern: a clock is a mapping from identifiers of processes to natural numbers having absent components with value ~$0$~\cite{fidge1988timestamps,mattern1989virtual}. Causality is read component-wise, refining Lamport’s logical clocks~\cite{lamport1978time}.
+
+\paragraph{Clocks.} Let $\mathsf{Ide}$ be a finite or countable set of actor identifiers and $\mathbb{N}$ the naturals. A \emph{vector clock} is a finitely supported map $C:\mathsf{Ide}\to\mathbb{N}$; where $i\notin\operatorname{dom}(C)$ we read $C(i)=0$~\cite{fidge1988timestamps,mattern1989virtual}.
+
+\paragraph{Order and join.} Following the standard pointwise definition, we write
+\[
+  C \preceq D \iff \forall i\in\mathsf{Ide}.\; C(i)\le D(i)
+  \qquad\text{and}\qquad
+  (C\sqcup D)(i) = \max\{C(i),D(i)\}.
+\]
+Then $(\mathcal{C},\preceq,\sqcup)$ is a join-semilattice: $\sqcup$ is commutative, associative, idempotent, and is the least upper bound for $\preceq$. The strict causal test is:
+\[
+  C \prec D \iff C \preceq D \ \wedge\ \exists i.\; C(i) < D(i),
+\]
+and concurrency is obtained by incomparability: $C \,\|\, D$ iff neither $C\preceq D$ nor $D\preceq C$ holds~\cite{lamport1978time,fidge1988timestamps,mattern1989virtual}.
+
+\paragraph{Operational rules}
+A process increments its own component on local events, carry its current vector on send and joins using component-wise maximum on receive \cite{fidge1988timestamps,mattern1989virtual}. For state-based CRDTs this implies that metadata evolves by inflation ($C\preceq C\sqcup D$), merges are idempotent, commutative and associative and repeated  deliveries do not change the eventual outcome.
+
+\textbf{Have to do: Additionally add a footnote saying that the implementation is available in the repo, and add a link to the repo}
+\textbf{Have to do: This section on the code needs to explain a bit more what the functions are, and there use for the verification framework}
+\section{Our approach in \texttt{Athena}}\label{sec:vc-code}
+
+\ref{lst:vc-core-ops} show the definition of vector clocks, developed in \texttt{Athena}:
+
+\textbf{Have to do: add text explaining what parts of the code corespond to which parts of the definition}
+
+\AthenaCode{lst:vc-core-ops}{Definitions inside module \texttt{VCCore}}
+\begin{lstlisting}
+
+module VCCore {
+
+define ++ := FMap.++           # alias for map extension
+define -  := FMap.-            # alias for map removal
+define at := FMap.at           # alias for map lookup
+
+define-sort Clock := (FMap.Map Ide N)
+define-sort Registry := (FMap.Map Ide Clock)
+
+define clock-empty := (FMap.empty-map : Clock)
+
+define (clock-get clock id) :=
+    match clock {
+        FMap.empty-map => zero
+    | (FMap.update (pair key value) rest) =>
+        (if (equal? key id)
+            value
+            (clock-get rest id))
+    }
+\end{lstlisting}
+
+\noindent\textbf{Reading and updating.} Missing components are C mapped to $0$, matching the sparse vector convention in the literature \cite{fidge1988timestamps,mattern1989virtual}. The local \emph{tick} in \ref{lst:vc-core-ops} implements the advance on event rule.
+
+
+\AthenaCode{lst:vc-tick}{Local updates and tick}
+\begin{lstlisting}
+define (clock-set clock actor value) :=
+    match clock {
+        FMap.empty-map => (FMap.update (pair actor value) FMap.empty-map)
+    | (FMap.update (pair actor _) rest) => (FMap.update (pair actor value) rest)
+    | (FMap.update (pair other existing) rest) =>
+            (FMap.update (pair other existing) (clock-set rest actor value))
+    | _ => (FMap.update (pair actor value) FMap.empty-map)
+    }
+
+define (clock-tick clock actor) :=
+    (clock-set clock actor (S (clock-get clock actor)))
+\end{lstlisting}
+
+\noindent\textbf{Join and order.} \ref{lst:vc-join-order} mirrors the pointwise $\max$ join and $\le$ order~(\ref{sec:vc-math}), i.e., the algebra that CRDT merges rely on for inflation, idempotence, and commutativity~\cite{shapiro2011conflict}.
+
+
+\AthenaCode{lst:vc-join-order}{Join and order}
+\begin{lstlisting}
+define (clock-join source target) :=
+    match source {
+        FMap.empty-map => target
+    | ([actor count] ++ rest) =>
+            (let ((merged (clock-join rest target)))
+                (let ((existing (clock-get merged actor)))
+                    (clock-set merged actor (clock-max count existing))))
+    | _ => target
+    }
+
+define (clock-leq left right) :=
+    match left {
+        FMap.empty-map => true
+    | ([actor count] ++ rest) =>
+            (if (N.<= count (clock-get right actor))
+                    (clock-leq rest right)
+                    false)
+    | _ => true
+    }
+\end{lstlisting}
+
+\noindent\textbf{Registries.} Per-actor snapshots capture what each actor knows about each other.
+
+
+% ---------- SNIPPET 4 ----------
+\AthenaCode{lst:vc-registry}{Registries of clocks (anti-entropy metadata)}
+\begin{lstlisting}
+define registry-empty := (FMap.empty-map : Registry)
+
+define (registry-get registry actor) :=
+    match registry {
+        FMap.empty-map => clock-empty
+    | (FMap.update (pair actor clock) rest) => clock
+    | (FMap.update (pair other clock) rest) => (registry-get rest actor)
+    | _ => clock-empty
+    }
+
+define (registry-set registry actor clock) :=
+    match registry {
+        FMap.empty-map => (FMap.update (pair actor clock) FMap.empty-map)
+    | (FMap.update (pair actor _) rest) => (FMap.update (pair actor clock) rest)
+    | (FMap.update (pair other existing) rest) =>
+            (FMap.update (pair other existing) (registry-set rest actor clock))
+    | _ => (FMap.update (pair actor clock) FMap.empty-map)
+    }
+
+} # end module VCCore
+\end{lstlisting}
+
+\section{From algebra to code}
+\textbf{More at the top of the previous section}
+\begin{table}[h]
+  \centering
+  \caption{Mathematics $\leftrightarrow$ implementation}\label{tab:math-code}
+  \begin{tabular}{@{}ll@{}}
+    \toprule
+    Mathematical notion & Code realisation \\ \midrule
+    Clock $C:\mathsf{Ide}\to\mathbb{N}$ (finite support) & \texttt{define-sort Clock := (FMap.Map Ide N)} \\
+    Absent component $\equiv 0$                           & \texttt{clock-get} returns \texttt{zero} on miss \\
+    Join $(\sqcup)$ as componentwise $\max$               & \texttt{clock-join} with \texttt{clock-max} \\
+    Order $(\preceq)$ as pointwise $\le$                  & \texttt{clock-leq} \\
+    Local event at $p$                                    & \texttt{clock-tick clock p} \\
+    Knowledge cache / anti-entropy                        & \texttt{Registry} (\texttt{registry-get}/\texttt{registry-set}) \\ \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Verified fragments}\label{sec:vc-props}
+
+We prove structural facts by rewriting over finite maps. These correspond to the semilattice obligations used later in CRDT convergence proofs~\cite{shapiro2011conflict}.
+
+% ---------- SNIPPET 5 ----------
+\AthenaCode{lst:vc-core-lemmas}{Sample lemmas about \texttt{VCCore} operations}
+\begin{lstlisting}
+    conclude clock-get-empty-zero :=
+    (forall ?actor:Ide .
+        (clock-get clock-empty ?actor) = zero)
+
+    conclude clock-set-empty-overwrites :=
+    (forall ?actor:Ide ?value:N .
+        (= (at (clock-set clock-empty ?actor ?value) ?actor)
+             (SOME ?value)))
+
+    conclude clock-set-shadow-updates :=
+    (forall ?actor:Ide ?old:N ?new:N .
+        (= (at (clock-set (clock-set clock-empty ?actor ?old)
+                                                 ?actor
+                                                 ?new)
+                        ?actor)
+             (SOME ?new)))
+\end{lstlisting}
+
+From these, we may derive (omitted here): commutativity/associativity/idempotence of \texttt{clock-join}; partial-order laws for \texttt{clock-leq}; inflation $C\preceq C\sqcup D$ and $D\preceq C\sqcup D$; and the strict HB test $C\prec D \Leftrightarrow \big(C\preceq D \wedge \exists i.\,C(i)<D(i)\big)$. These are exactly the algebraic approaches used by state-based CRDT proofs~\cite{shapiro2011conflict}.
+
+\textbf{Have to do: what this? bad title}
+\section{Why this matters for state-based CRDTs}\label{sec:vc-crdts}
+
+\textbf{Have to do: build more on the properties, show an example of the problem and then how the formalization solves the problem. This is your validation, Actually put this as a separate section}
+Attaching clocks to join-semilattice payloads enables:
+\begin{itemize}
+  \item \textbf{Dominance checks:} if $C_{\text{in}}\preceq C_{\text{local}}$, skip the payload join (no new knowledge).
+  \item \textbf{Inflationary metadata:} metadata joins with $\sqcup$; payload joins with its lattice $\sqcup_{\text{pay}}$. Both of them are idempotent, commutative, associative.
+  \item \textbf{Delta subsumption:} registries summarise what each actor knows about each other.
+\end{itemize}
+
+\endinput

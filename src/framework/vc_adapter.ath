@@ -1,0 +1,44 @@
+# Vector Clock Adapter Shim
+# Provides compatibility layer so backbone can use either vc_core or vc_functional
+# without breaking existing code.
+
+load "vc_core"
+load "vc_functional"
+
+module VCAdapter {
+
+# Re-export VCCore types and operations (default, backward compatible)
+open VCCore
+open VCFunctional
+
+# Adapter functions that delegate to VCCore by default
+# but can be overridden to use VCFunctional
+
+define (vc-get-clock cfg actor) :=
+  (VCCore.clock-at cfg actor)
+
+define (vc-tick-clock cfg actor) :=
+  (VCCore.tick cfg actor)
+
+define (vc-merge-clocks cfg actor clk) :=
+  (VCCore.merge-clock cfg actor clk)
+
+define (vc-get-registry cfg) :=
+  (VCCore.get-cfg-clocks cfg)
+
+define (vc-empty-registry) :=
+  (VCCore.registry-empty)
+
+# Alternative: VCFunctional-based implementations (commented out by default)
+# Uncomment these to switch to VCFunctional backend
+
+# define (vc-get-clock-functional reg actor) :=
+#   (VCFunctional.registry-get reg actor)
+
+# define (vc-tick-clock-functional clk actor) :=
+#   (VCFunctional.clock-tick-proc clk actor)
+
+# define (vc-merge-clocks-functional clk1 clk2) :=
+#   (VCFunctional.clock-join-proc clk1 clk2)
+
+} # end module VCAdapter

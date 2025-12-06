@@ -1,0 +1,193 @@
+load "../utils/fmaps"
+load "../utils/pair"
+load "../utils/list-util"
+load "../utils/set-util"
+load "../framework/payload"
+load "../framework/vc_core"
+load "../framework/backbone"
+
+open Payload
+open VCCore
+open Set
+
+module MVRegisterPayload {
+
+open Payload
+
+define-sort Entry := (Pair Ide Clock)
+
+define-sort State := (Set.Set Entry)
+
+datatype Value := (op-write Ide Ide Clock)
+
+define state-empty := Set.null:(Set.Set Entry)
+
+define (entry-value entry) :=
+  match entry {
+    (pair value _) => value
+  }
+
+define (entry-clock entry) :=
+  match entry {
+    (pair _ clock) => clock
+  }
+
+# Use VCCore's optimized clock-filter-dominated for single-pass filtering
+define (entry-remove-dominated target entries) :=
+  (VCCore.clock-filter-dominated (entry-clock target) entries entry-clock)
+
+# Use VCCore's optimized clock-dominated-by-any? for early-exit checking
+define (entry-dominated-by? target entries) :=
+  (VCCore.clock-dominated-by-any? (entry-clock target) entries entry-clock)
+
+define (mv-insert entry entries) :=
+  (let ((without-dominated (entry-remove-dominated entry entries)))
+    (match (entry-dominated-by? entry without-dominated) {
+      true => without-dominated
+    | false => (Set.insert entry without-dominated)
+    }))
+
+define (mv-join left right) :=
+  match right {
+    Set.null => left
+  | (Set.insert entry rest) =>
+      (mv-insert entry (mv-join left rest))
+  }
+
+define (mv-normalize entries) :=
+  match entries {
+    Set.null => Set.null
+  | (Set.insert entry rest) =>
+      (mv-insert entry (mv-normalize rest))
+  }
+
+declare MV_PAYLOAD: [] -> (Payload.PayloadOps State Value)
+
+define MV_PAYLOAD := (payload-ops state-empty)
+
+declare mv-step: [Value State] -> State
+
+define (payload-step MV_PAYLOAD value state) :=
+  (mv-step value state)
+
+define (payload-join MV_PAYLOAD left right) :=
+  (mv-join left right)
+
+define (payload-apply MV_PAYLOAD value state) :=
+  (mv-step value state)
+
+define (payload-normalize-hook ops) :=
+  match ops {
+    (payload-ops state-empty) => MV_PAYLOAD
+  | _ => ops
+  }
+
+define (payload-canonical-from-init-hook ops init) :=
+  match ops {
+    (payload-ops state-empty) =>
+      match init {
+        state-empty => MV_PAYLOAD
+      | _ => ops
+      }
+  | _ => ops
+  }
+
+define (mv-step value state) :=
+  match value {
+    (op-write payload _ clock) =>
+      (mv-insert (pair payload clock) state)
+  }
+
+define (entries->list entries) :=
+  match entries {
+    Set.null => nil
+  | (Set.insert entry rest) => (entry :: (entries->list rest))
+  }
+
+define (values->list entries) :=
+  match entries {
+    Set.null => nil
+  | (Set.insert entry rest) => ((entry-value entry) :: (values->list rest))
+  }
+
+} # end module MVRegisterPayload
+
+open MVRegisterPayload
+
+
+module MVRegisterCRDT {
+
+open Backbone
+
+define PAYLOAD := MV_PAYLOAD
+
+define-sort Configuration := (Backbone.Configuration State Value)
+
+# Custom reduce wrappers that delegate to Backbone while retaining module names
+define (reduce cfg) :=
+  (Backbone.reduce PAYLOAD cfg)
+
+define (reduce* cfg) :=
+  (Backbone.reduce* PAYLOAD cfg)
+
+define broadcast := Backbone.broadcast
+
+define broadcast-from := Backbone.broadcast-from
+
+define (init-state-map ids) :=
+  (Backbone.init-state-map PAYLOAD ids)
+
+define init-clock-map := Backbone.init-clock-map
+
+define (init ids) :=
+  (Backbone.init PAYLOAD ids)
+
+define (lookup-state cfg actor) :=
+  (Backbone.cfg-state-or-drained cfg actor state-empty)
+
+define (snapshot cfg) :=
+  (Backbone.cfg-states-drained cfg)
+
+define (clock-map cfg) :=
+  (Backbone.get-cfg-clocks cfg)
+
+define (pending-net cfg) :=
+  (Backbone.get-cfg-net cfg)
+
+define (entries cfg actor) :=
+  (mv-normalize (lookup-state cfg actor))
+
+define (values cfg actor) :=
+  (values->list (entries cfg actor))
+
+define (issue-write cfg actor payload) :=
+  (let ((advanced (Backbone.cfg-tick cfg actor)))
+    (let ((clock (Backbone.cfg-actor-clock advanced actor)))
+      (Backbone.broadcast-with advanced
+                                   (op-write payload actor clock)
+                                   (lambda (recipient) clock))))
+
+define (deliver cfg) :=
+  (Backbone.cfg-with-drained-states (reduce* cfg))
+
+define (deliver-one cfg) :=
+  (Backbone.cfg-with-drained-states (reduce cfg))
+
+define (deliver-all cfg) :=
+  (Backbone.cfg-with-drained-states (reduce* cfg))
+
+define (drop-next cfg) :=
+  (Backbone.cfg-drop-next-message cfg)
+
+} # end module MVRegisterCRDT
+
+open MVRegisterCRDT
+
+define (mv-register-issue cfg actor payload) :=
+  (issue-write cfg actor payload)
+
+define (mv-register-values cfg actor) :=
+  (values cfg actor)
+
+define (mv-register-deliver cfg) :=
+  (deliver cfg)

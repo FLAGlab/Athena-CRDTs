@@ -1,0 +1,136 @@
+load "../../framework/vc_core.ath"
+
+open VCCore
+
+# ==============================================================
+# Vector Clock Quick Demo (lightweight, minimal prints)
+# ==============================================================
+
+# Actor identities
+define A := (string->id "replica-a")
+define B := (string->id "replica-b")
+define C := (string->id "replica-c")
+
+# Base empty clock
+define C0 := clock-empty
+
+# Local ticks
+define A1 := (clock-tick C0 A)          # a:1
+define B1 := (clock-tick C0 B)          # b:1
+define A2 := (clock-tick A1 A)          # a:2
+
+# Relations
+define A1_lt_A2 := (clock-happens-before A1 A2)
+define A1_conc_B1 := (clock-concurrent A1 B1)
+
+# Joins (commutativity / idempotence sanity)
+define J1 := (clock-join A2 B1)
+define J2 := (clock-join B1 A2)
+define J_eq := (clock-eq J1 J2)
+
+# Registry usage: keep per-actor snapshots
+define R0 := registry-empty
+define R1 := (registry-tick R0 A)       # A observes local a:1
+define R2 := (registry-tick R1 B)       # then B ticks: b:1
+
+# Simulate A receiving B's clock; merge into A's snapshot
+define RB := (registry-get R2 B)
+define RA := (registry-get R2 A)
+define R3 := (registry-merge R2 A RB)
+
+# Projections for small prints
+# Extract counters for (clock, id)
+define (ctr clock id) := (clock-get clock id)
+
+# Values to print (small):
+# - counters for each constructed clock on A and B
+# - relational booleans
+# - registry counters after merge
+
+define C0_A := (ctr C0 A)
+
+define A1_A := (ctr A1 A)
+
+define B1_B := (ctr B1 B)
+
+define A2_A := (ctr A2 A)
+
+define J1_A := (ctr J1 A)
+
+define J1_B := (ctr J1 B)
+
+define R3_A := (ctr (registry-get R3 A) A)
+
+define R3_B := (ctr (registry-get R3 A) B)
+
+(print "\n=== Vector Clock Quick Demo ===")
+(print "Actors: a, b, c (IDs)\n")
+
+# Counters snapshots
+(print "C0[a]=" (eval C0_A))
+(print "A1[a]=" (eval A1_A) ", B1[b]=" (eval B1_B) ", A2[a]=" (eval A2_A))
+
+# Relations
+(print "hb(A1,A2)=" (eval A1_lt_A2) ", conc(A1,B1)=" (eval A1_conc_B1))
+
+# Joins and equality
+(print "join(A2,B1)[a,b]=" (eval J1_A) "," (eval J1_B) "; eq(join(A2,B1),join(B1,A2))=" (eval J_eq))
+
+# Registry after merge
+(print "registry A snapshot after merge: [a]=" (eval R3_A) ", [b]=" (eval R3_B))
+(print "\nDone.\n")
+
+# ==============================================================
+# Concurrency Cases (three actors, minimal prints)
+# ==============================================================
+
+# Independent ticks for three actors
+define C1 := (clock-tick C0 C)          # c:1
+
+# Pairwise concurrency checks (all should be true)
+define A1_conc_C1 := (clock-concurrent A1 C1)
+define B1_conc_C1 := (clock-concurrent B1 C1)
+
+# Merge-based causality: A receives B's clock, then A ticks
+define A_recvB := (clock-join B1 A1)    # A now sees b:1
+define A_afterB_tick := (clock-tick A_recvB A)  # a increments
+define B1_hb_A_after := (clock-happens-before B1 A_afterB_tick)
+
+# Join associativity/commutativity over three clocks
+define J3 := (clock-join A1 (clock-join B1 C1))
+define J4 := (clock-join (clock-join A1 B1) C1)
+define J3_eq_J4 := (clock-eq J3 J4)
+
+# Small projections for J3 counters
+define J3_A := (ctr J3 A)
+define J3_B := (ctr J3 B)
+define J3_C := (ctr J3 C)
+
+(print "\n=== Concurrency Cases ===")
+(print "Pairwise concurrency: conc(A1,C1)=" (eval A1_conc_C1) ", conc(B1,C1)=" (eval B1_conc_C1))
+(print "After A merges B and ticks: hb(B1, A')=" (eval B1_hb_A_after))
+(print "Associativity over three joins eq? " (eval J3_eq_J4))
+(print "join(A1,B1,C1): [a,b,c]=" (eval J3_A) "," (eval J3_B) "," (eval J3_C))
+(print "\nVC concurrency section done.\n")
+
+# ==============================================================
+# Chained Merges Preserve Causality (C -> B -> A)
+# ==============================================================
+
+# B receives C, then ticks; A receives B (with C inside), then A ticks
+define B_recvC := (clock-join C1 B1)              # B sees c:1
+define B_afterC_tick := (clock-tick B_recvC B)     # b increments
+define A_recv_BC := (clock-join B_afterC_tick A1)  # A merges B (with C)
+define A_after_chain := (clock-tick A_recv_BC A)   # a increments
+
+# Expect: hb(C1, A_after_chain)
+define C1_hb_A_chain := (clock-happens-before C1 A_after_chain)
+
+# Small projection: counters of A_after_chain at [a,b,c]
+define Achain_A := (ctr A_after_chain A)
+define Achain_B := (ctr A_after_chain B)
+define Achain_C := (ctr A_after_chain C)
+
+(print "\n=== Chained Merges Preserve Causality ===")
+(print "hb(C1, A_after_chain)=" (eval C1_hb_A_chain))
+(print "A_after_chain [a,b,c]=" (eval Achain_A) "," (eval Achain_B) "," (eval Achain_C))

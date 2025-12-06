@@ -1,0 +1,192 @@
+load "../utils/fmaps"
+load "../utils/pair"
+load "../utils/list-util"
+# load "../utils/set-util"  # REMOVED: Causing expensive Set theory processing
+load "../framework/payload"
+load "../framework/vc_core"
+load "../framework/backbone"
+
+# ==================================================================
+# Observed-Remove Set (ORSet)
+# Demonstrates the power of VCCore's CRDT-optimized helpers
+# ==================================================================
+
+open Payload
+open VCCore
+open Set
+
+module ORSetPayload {
+
+open Payload
+
+# Each element is tagged with a unique identifier and vector clock
+# Entry = (element-value, unique-id, clock)
+define-sort Entry := (Pair (Pair Ide Ide) Clock)
+
+define-sort State := (Set.Set Entry)
+
+# Operations: add or remove an element
+datatype Value := (op-add Ide Ide Clock)     # (element, unique-tag, clock)
+                | (op-remove Ide (Set.Set Entry))  # (element, observed-entries)
+
+define state-empty := Set.null:(Set.Set Entry)
+
+# Extract components from an entry
+define (entry-element entry) :=
+  match entry {
+    (pair (pair elem _) _) => elem
+  }
+
+define (entry-tag entry) :=
+  match entry {
+    (pair (pair _ tag) _) => tag
+  }
+
+define (entry-clock entry) :=
+  match entry {
+    (pair _ clock) => clock
+  }
+
+define (make-entry element tag clock) :=
+  (pair (pair element tag) clock)
+
+# ==================================================================
+# ORSet Operations - Simplified (no dominance filtering)
+# ==================================================================
+
+# Add: insert new entry (simplified - no dominance filtering)
+define (orset-add element tag clock state) :=
+  (let ((new-entry (make-entry element tag clock)))
+    (Set.insert new-entry state))
+
+# Helper: check if entry is in a set
+define (entry-in-set? entry set) :=
+  (letrec ((check-membership (lambda (s)
+             match s {
+               Set.null => false
+             | (Set.insert e rest) =>
+                 match (equal? entry e) {
+                   true => true
+                 | false => (check-membership rest)
+                 }
+             | _ => false
+             })))
+    (check-membership set))
+
+# Remove: filter out observed entries for this element
+define (orset-remove element observed-entries state) :=
+  (letrec ((remove-matching (lambda (s)
+             match s {
+               Set.null => Set.null
+             | (Set.insert entry rest) =>
+                 (let ((filtered-rest (remove-matching rest)))
+                   match (entry-in-set? entry observed-entries) {
+                     true => filtered-rest
+                   | false => (Set.insert entry filtered-rest)
+                   })
+             | _ => s
+             })))
+    (remove-matching state))
+
+# Join two ORSet states (manual merge to avoid Set.union pattern match issues)
+define (orset-join left right) :=
+  (letrec ((merge-sets (lambda (s acc)
+             match s {
+               Set.null => acc
+             | (Set.insert entry rest) =>
+                 (merge-sets rest (Set.insert entry acc))
+             | _ => acc
+             })))
+    (merge-sets left right))
+
+# Lookup: get all entries for an element
+define (orset-lookup element state) :=
+  (letrec ((find-entries (lambda (s)
+             match s {
+               Set.null => Set.null
+             | (Set.insert entry rest) =>
+                 (let ((filtered-rest (find-entries rest)))
+                   match (equal? (entry-element entry) element) {
+                     true => (Set.insert entry filtered-rest)
+                   | false => filtered-rest
+                   })
+             | _ => Set.null
+             })))
+    (find-entries state))
+
+# Contains: check if element has any live entries
+define (orset-contains? element state) :=
+  match (orset-lookup element state) {
+    Set.null => false
+  | _ => true
+  }
+
+# Payload operations
+declare ORSET_PAYLOAD: [] -> (Payload.PayloadOps State Value)
+
+define ORSET_PAYLOAD := (payload-ops state-empty)
+
+declare orset-step: [Value State] -> State
+
+define (payload-step ORSET_PAYLOAD value state) :=
+  (orset-step value state)
+
+define (payload-join ORSET_PAYLOAD left right) :=
+  (orset-join left right)
+
+define (payload-apply ORSET_PAYLOAD value state) :=
+  (orset-step value state)
+
+# Step function: apply an operation
+define (orset-step value state) :=
+  match value {
+    (op-add element tag clock) => (orset-add element tag clock state)
+  | (op-remove element observed) => (orset-remove element observed state)
+  }
+
+} # end module ORSetPayload
+
+# ==================================================================
+# Backbone-backed ORSet CRDT
+# ==================================================================
+
+module ORSetCRDT {
+
+open Backbone
+open ORSetPayload
+
+define CRDT_OPS := ORSetPayload.ORSET_PAYLOAD
+
+define (init ids) := (Backbone.init CRDT_OPS ids)
+
+# Helper to get state for an actor (using state-empty from payload module)
+define (lookup-state cfg actor) :=
+  (Backbone.cfg-state-or-drained cfg actor state-empty)
+
+# Issue an add operation: tag with unique ID and current clock
+define (issue-add cfg actor element) :=
+  (let ((tag (string->id (id->string element)))
+        (ticked (Backbone.cfg-tick cfg actor))
+        (clock (Backbone.cfg-actor-clock ticked actor)))
+    (Backbone.broadcast-from ticked actor (op-add element tag clock)))
+
+# Issue a remove: observe current entries for the element
+define (issue-remove cfg actor element) :=
+  (let ((current-state (lookup-state cfg actor))
+        (observed (ORSetPayload.orset-lookup element current-state)))
+    (Backbone.broadcast-from cfg actor (op-remove element observed)))
+
+# Query operations
+define (lookup cfg actor element) :=
+  (ORSetPayload.orset-lookup element (lookup-state cfg actor))
+
+define (contains? cfg actor element) :=
+  (ORSetPayload.orset-contains? element (lookup-state cfg actor))
+
+# Standard backbone operations
+define (reduce cfg) := (Backbone.reduce CRDT_OPS cfg)
+define (reduce* cfg) := (Backbone.reduce* CRDT_OPS cfg)
+
+} # end module ORSetCRDT
+
+open ORSetCRDT

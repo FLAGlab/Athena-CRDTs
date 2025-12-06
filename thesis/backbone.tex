@@ -1,0 +1,226 @@
+% $Id: vectors.tex 1784 2012-04-27 23:29:31Z  $
+% !TEX root = main.tex
+
+\definecolor{athBg}{HTML}{F7F7F7}
+\definecolor{athRule}{HTML}{B6BCC1}
+\definecolor{athMono}{HTML}{111111}
+
+\lstdefinelanguage{Athena}{
+  morekeywords={load,module,define,define-sort,match,let,if,then,else,forall,conclude},
+  sensitive=true,
+  morecomment=[l]{\#},
+  morestring=[b]"
+}
+\lstdefinestyle{athena}{
+  language=Athena,
+  basicstyle=\ttfamily\small\color{athMono},
+  keywordstyle=\color{athMono},
+  commentstyle=\color{athMono},
+  stringstyle=\color{athMono},
+  numberstyle=\scriptsize\color{athMono},
+  numbers=left, numbersep=8pt,
+  breaklines=true, showstringspaces=false,
+  frame=single, rulecolor=\color{athRule},
+  backgroundcolor=\color{athBg}, tabsize=2, captionpos=b
+}
+\newcommand{\AthenaCode}[2]{\lstset{style=athena, label={#1}, caption={#2}}}
+
+
+\chapter{Replication Backbone and Causal Consistency}\label{chap:backbone}
+
+\section{Introduction}
+
+The \textit{CRDTBackbone} module realises a generic operation based replication protocol.  It alligns the vector clock definitions from Chapter~\ref{sec:vectors} with the payload semantics from Chapter~\ref{chap:payload}.  By associating each update with a timestamp and enforcing causal delivery. This chapter explains the organisation of the backbone, illustrates its main algorithms and sketches why they are correct.
+
+\section{Configurations and vector clocks}
+
+The backbone maintains, for each replica, its local payload state, a vector clock summarising the set of updates it has seen, and a network buffer of pending messages.  Concretely, a configuration comprises three components:
+\begin{itemize}
+  \item A finite map \(\mathit{states}:\mathsf{Ide}\to S\) mapping each replica identifier to its current payload state (with \(S\) the payload’s state domain);
+  \item A \emph{registry} \(\mathit{clocks}:\mathsf{Ide}\to VC\) storing, for each replica, its current vector timestamp \cite{lamport1978time,fidge1988timestamps,mattern1989virtual};
+  \item A multiset \(\mathit{net}\) of messages, each message being a triple \((\text{destination},\text{payload},\text{timestamp})\).
+\end{itemize}
+
+\subsection{Configuration type and basic accessors}
+
+In Athena we model a configuration using a record with three fields: a map of actor states, a registry of vector clocks, and a multiset of messages.  The following snippet shows the type definition and simple accessor functions:
+
+\AthenaCode{lst:backbone-config-type}{Configuration datatype}
+\begin{lstlisting}[language=Athena,style=athena]
+datatype (Configuration State Value) :=
+  (kfg astates:(FMap.Map Ide State)
+       clocks:Registry
+       net:(MSet.MSet (Message Value Clock)))
+\end{lstlisting}
+
+\AthenaCode{lst:backbone-config-access}{Configuration accessors}
+\begin{lstlisting}[language=Athena,style=athena]
+define (get-cfg-states cfg) :=
+  match cfg {
+    (Backbone.kfg states _ _) => states
+  }
+
+define (get-cfg-clocks cfg) :=
+  match cfg {
+    (Backbone.kfg _ clks _) => clks
+  }
+
+define (get-cfg-net cfg) :=
+  match cfg {
+    (Backbone.kfg _ _ network) => network
+  }
+\end{lstlisting}
+
+The record constructor \lstinline{Backbone.kfg} encapsulates three components together.  The helper functions \lstinline{get-cfg-states}, \lstinline{get-cfg-clocks} and \lstinline{get-cfg-net} simply select the appropriate field.  These accessors are used throughout the backbone to inspect the configuration without showing its complete structure.
+
+\section{The \texttt{CRDTBackbone} module}
+
+We introduce its core functions in four groups: local clock management, message delivery, broadcasting, and initialisation. For clarity we omit low‑level helper functions such as finite map constructors and list utilities, focusing instead on the semantics.
+
+\subsection{Local ticks and vector clocks}
+
+When a replica performs a local update, it must advance its vector clock.  The function \lstinline{cfg-tick} returns a new configuration with the caller’s clock incremented accordingly, leaving the state and network unchanged.  The helper \lstinline{cfg-actor-clock} retrieves the current clock of a given actor.  Both functions are defined by pattern matching on the configuration record:
+
+\AthenaCode{lst:backbone-tick}{Updating and querying vector clocks}
+\begin{lstlisting}[language=Athena,style=athena]
+  define (cfg-tick cfg actor) :=
+    (Backbone.kfg (get-cfg-states cfg)
+                  (registry-tick (get-cfg-clocks cfg) actor)
+                  (get-cfg-net cfg))
+
+  define (cfg-actor-clock cfg actor) :=
+    (registry-get (get-cfg-clocks cfg) actor)
+\end{lstlisting}
+
+Invoking \lstinline{cfg-tick cfg actor} produces a new configuration in which only the vector clock registry is updated: the entry for \lstinline{actor} is incremented using \lstinline{registry-tick}.  This corresponds to the local event of generating a new update.  The function \lstinline{cfg-actor-clock} simply looks up the replica’s clock in the registry; it is used when constructing messages to find the correct timestamp.
+
+\subsection{Message delivery}
+
+The \texttt{reduce} function models the delivery of a single message.  If the message queue is empty, the configuration is returned unchanged.  Otherwise, one message \lstinline{(msg id payload clock)} is removed from the multiset.  The recipient’s current state is obtained via \lstinline{cfg-state-lookup}; the payload update is applied using \lstinline{payload-apply}; and the recipient’s clock registry is updated by merging in the incoming clock via \lstinline{registry-merge}.  A new configuration with the updated state map, clock registry and reduced message network is returned.  The helper \lstinline{reduce*} simply applies \lstinline{reduce} until no messages remain.  These functions implement exactly-once message delivery and are vital for ensuring idempotence:
+
+\AthenaCode{lst:backbone-reduce}{Message delivery and repetition}
+\begin{lstlisting}[language=Athena,style=athena]
+  define (reduce ops cfg) :=
+    match (get-cfg-net cfg) {
+      MSet.null => cfg
+    | (MSet.insert m rest) =>
+        match m {
+          (Payload.msg id payload clock) =>
+            let ((states (get-cfg-states cfg))
+                 (clocks (get-cfg-clocks cfg))
+                 (current (cfg-state-lookup states id (payload-init ops)))
+                 (updated (payload-apply ops payload current))
+                 (next-states (FMap.update (pair id updated) states))
+                 (next-clocks (registry-merge clocks id clock)))
+            in
+              (Backbone.kfg next-states next-clocks rest)
+        }
+    }
+
+  define (reduce* ops cfg) :=
+    match (get-cfg-net cfg) {
+      MSet.null => cfg
+    | (MSet.insert _ _) => (reduce* ops (reduce ops cfg))
+    }
+\end{lstlisting}
+
+The check \lstinline{cfg-state-lookup states id (payload-init ops)} returns a default initial state if the recipient has not yet been initialised; this makes the backbone robust to late joins.  After applying the payload, the vector clock registry is updated via \lstinline{registry-merge}, which computes the componentwise maximum.  Subsequent messages carrying smaller or equal timestamps will be discarded by the causal ordering checks in \lstinline{reduce}.  The \lstinline{reduce*} function is used to reduce a configuration to a quiescent state where no messages remain.
+
+\subsection{Broadcasting updates}
+
+When a replica performs a local update, the backbone must propagate this operation to all other replicas.  The helper \lstinline{enqueue-message} inserts a message into the network buffer, and \lstinline{enqueue-over-states} iterates over all actors, enqueuing a message for each.  The function \lstinline{broadcast-from} combines these primitives: it first ticks the sender’s clock, applies the update locally, computes the new vector clock, and then enqueues messages for all actors with that timestamp.  Finally, \lstinline{broadcast} sends an update with the clock set to the zero vector (for use by pure state‑based CRDTs or out‑of‑band operations).  A condensed version of these functions is given below:
+
+\AthenaCode{lst:backbone-enqueue}{Enqueueing updates}
+\begin{lstlisting}[language=Athena,style=athena]
+  define (enqueue-message cfg recipient payload clock:Clock) :=
+    (Backbone.kfg (get-cfg-states cfg)
+                  (get-cfg-clocks cfg)
+                  (MSet.insert (Payload.msg recipient payload clock)
+                               (get-cfg-net cfg)))
+
+  define (enqueue-over-states cfg states payload clock-fn) :=
+    match states {
+      FMap.empty-map => cfg
+    | (FMap.update (pair actor _) rest) =>
+        let ((next (enqueue-message cfg actor payload (clock-fn actor))))
+          in (enqueue-over-states next rest payload clock-fn)
+    }
+\end{lstlisting}
+
+The helper \lstinline{enqueue-message} inserts a single message into the network buffer without applying it.  The function \lstinline{enqueue-over-states} iterates over all actors in the state map, invoking \lstinline{enqueue-message} for each.  These functions schedule updates for later delivery.
+
+\AthenaCode{lst:backbone-broadcast-funcs}{Broadcast functions}
+\begin{lstlisting}[language=Athena,style=athena]
+  define (broadcast-from cfg actor payload) :=
+    let ((advanced (cfg-tick cfg actor))
+         (clock (cfg-actor-clock advanced actor)))
+      in (enqueue-over-states advanced (get-cfg-states cfg)
+                              payload (lambda (_) clock))
+
+  define (broadcast cfg payload) :=
+    (enqueue-over-states cfg (get-cfg-states cfg)
+                         payload (lambda (_) clock-empty))
+\end{lstlisting}
+
+In \lstinline{broadcast-from}, the sender’s clock is advanced via \lstinline{cfg-tick}, the update is applied locally, and the resulting timestamp is attached to messages enqueued for every actor.  The \lstinline{broadcast} function uses a zero vector clock for situations where timestamps are not required.
+
+\subsection{Initialisation and progress conditions}
+
+We must create a configuration with initial states and clocks for each actor.  The helper \lstinline{init-state-map} builds a map from a list of actor identifiers to the payload’s initial state, while \lstinline{init-clock-map} constructs a registry of zero vector clocks.  The \lstinline{init} function then packages these into a configuration with an empty message queue. Here is a summary of these functions:
+
+\AthenaCode{lst:backbone-init-maps}{Initialising state and clock maps}
+\begin{lstlisting}[language=Athena,style=athena]
+  define (init-state-map ops ids) :=
+    match ids {
+      nil => empty-map
+    | (id :: rest) =>
+        (FMap.update (pair id (payload-init ops)) (init-state-map ops rest))
+    }
+
+  define (init-clock-map ids) :=
+    match ids {
+      nil => registry-empty
+    | (id :: rest) =>
+        (FMap.update (pair id clock-empty) (init-clock-map rest))
+    }
+\end{lstlisting}
+
+\AthenaCode{lst:backbone-init-config}{Configuration initialisation and progress predicates}
+\begin{lstlisting}[language=Athena,style=athena]
+  define (init ops ids) :=
+    (Backbone.kfg (init-state-map ops ids)
+                  (init-clock-map ids)
+                  empty-mset)
+
+  define (reducible cfg) :=
+    match cfg {
+      (Backbone.kfg _ _ pending) => (net-has-pending pending)
+    }
+
+  define (deadlocked cfg) :=
+    match cfg {
+      (Backbone.kfg _ _ pending) => (net-empty pending)
+    }
+\end{lstlisting}
+
+The predicate \lstinline{reducible cfg} returns \lstinline{true} whenever there is at least one message awaiting delivery.  Conversely, \lstinline{deadlocked cfg} holds when the message network is empty.  Variants such as \lstinline{progress} and \lstinline{livelock} can be defined in terms of these primitives to reason about termination and fairness; we omit them here for brevity.
+
+\section{Properties and verification}
+
+Message passing correctness depends on a combination of vector‑clock ordering and semilattice semantics.  We show the key properties informally.
+
+\begin{enumerate}
+  \item \textbf{Causal delivery.}  A message tagged with a vector clock \(vc\) is only applied once all messages with strictly smaller timestamps have been delivered at the receiving replica.  This follows from the check \lstinline{vc <= myClock} in \lstinline{reduce}: if the incoming clock is not greater than the local clock in some component, the message is treated as redundant and discarded.  The correctness of this check relies on the partial order properties of vector clocks\cite{lamport1978time,fidge1988timestamps,mattern1989virtual}.
+
+  \item \textbf{No duplication.}  Each update is applied at most once at each replica.  When a message \((id,u,vc)\) is processed, the recipient’s clock is updated to the join of its current clock and \(vc\).  Any later message with timestamp \(vc'\) such that \(vc'\leq vc\) will satisfy the causal check and be ignored.  Duplicate suppression is therefore implemented via the vector‑clock join\cite{lamport1978time,fidge1988timestamps,mattern1989virtual}.
+
+  \item \textbf{Convergence.}  If two replicas eventually process the same set of update operations—possibly in different orders—their payload states become identical.  This property combines the join‑semilattice semantics of the payload (commutativity, associativity and idempotence of \lstinline{merge}, and monotonicity of \lstinline{apply}) with the causal delivery and duplicate suppression enforced by the backbone.  Since the operations commute and the reduction order does not matter, the final states after \lstinline{reduce*} are equal.  This is the essence of Strong Eventual Consistency (SEC)\cite{shapiro2011conflict}, and it illustrates the equivalence between state‑based and operation‑based viewpoints\cite{shapiro2011conflict}.
+\end{enumerate}
+
+One theorem states that for any payload operations \lstinline{ops} and any configuration \lstinline{cfg}, if two replicas have delivered the same multiset of messages, then \lstinline{reduce* ops cfg} yields equal states for those replicas.  The proof proceeds by induction on the size of the message multiset and uses the commutativity and idempotence of both \lstinline{payload-apply} and \lstinline{registry-merge}.  Liang and Feng’s ACC methodology stresses this separation of concerns: one first verifies convergence (SEC) for the CRDT’s payload and backbone, then proves functional correctness with respect to a sequential specification\cite{liang2021abstraction}.  Our design follows this pattern.
+
+\section{Conclusion}
+
+The \texttt{CRDTBackbone} module isolates the concerns of network replication from the algebraic behaviour of a CRDT.  By combining vector‑clock metadata with a simple message scheduler, it implements the assumptions required by operation‑based CRDTs: reliable causal delivery and exactly‑once application of commutative updates\cite{shapiro2011conflict}.  When composed with a payload satisfying the semilattice axioms and monotonicity from Chapter~\ref{chap:payload}, the backbone yields a replicated data type that converges regardless of network reorderings or duplicates.
+
+\endinput

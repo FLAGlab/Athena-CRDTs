@@ -1,0 +1,98 @@
+load "src/framework/payload_examples"
+load "src/framework/nat-max.ath"
+
+extend-module GCounterPayload {
+  open N
+
+  # Establish equivalence between gcounter-max and N.Max
+  # This allows us to leverage all proven N.Max properties
+  assert gcounter-max-is-N-Max :=
+    (forall ?n1:N ?n2:N
+      (= (GCounterPayload.gcounter-max ?n1 ?n2)
+         (N.Max ?n1 ?n2)))
+
+  # Import N.Max properties via the equivalence
+  conclude gmax-commutative :=
+    (forall ?n1:N ?n2:N
+      (= (GCounterPayload.gcounter-max ?n1 ?n2)
+         (GCounterPayload.gcounter-max ?n2 ?n1)))
+    pick-any n1:N n2:N
+      (!chain [(GCounterPayload.gcounter-max n1 n2)
+               = (N.Max n1 n2)                                [gcounter-max-is-N-Max]
+               = (N.Max n2 n1)                                [N.Max.commutative]
+               = (GCounterPayload.gcounter-max n2 n1)         [gcounter-max-is-N-Max]])
+
+  conclude gmax-associative :=
+    (forall ?n1:N ?n2:N ?n3:N
+      (= (GCounterPayload.gcounter-max (GCounterPayload.gcounter-max ?n1 ?n2) ?n3)
+         (GCounterPayload.gcounter-max ?n1 (GCounterPayload.gcounter-max ?n2 ?n3))))
+    pick-any n1:N n2:N n3:N
+      (!chain [(GCounterPayload.gcounter-max (GCounterPayload.gcounter-max n1 n2) n3)
+               = (N.Max (N.Max n1 n2) n3)                                              [gcounter-max-is-N-Max]
+               = (N.Max n1 (N.Max n2 n3))                                              [N.Max.associative]
+               = (GCounterPayload.gcounter-max n1 (GCounterPayload.gcounter-max n2 n3)) [gcounter-max-is-N-Max]])
+
+  conclude gmax-idempotent :=
+    (forall ?n:N
+      (= (GCounterPayload.gcounter-max ?n ?n) ?n))
+    pick-any n:N
+      (!chain [(GCounterPayload.gcounter-max n n)
+               = (N.Max n n)                       [gcounter-max-is-N-Max]
+               = n                                 [N.Max.idempotent]])
+
+  # Derive monotonicity from N.Max axioms and N.Less= properties
+  conclude gmax-left-monotone :=
+    (forall ?n1:N ?n2:N
+      (<= ?n1 (GCounterPayload.gcounter-max ?n1 ?n2)))
+    pick-any n1:N n2:N
+      (!two-cases
+        assume (n2 < n1)
+          (!chain-> [(n2 < n1)
+                     ==> ((N.Max n1 n2) = n1)                                 [N.Max.less2]
+                     ==> ((GCounterPayload.gcounter-max n1 n2) = n1)          [gcounter-max-is-N-Max]
+                     ==> (n1 = (GCounterPayload.gcounter-max n1 n2))          [sym]
+                     ==> (n1 <= (GCounterPayload.gcounter-max n1 n2))         [N.Less=.Implied-by-equal]])
+        assume (~ n2 < n1)
+          let {ineq := (!chain-> [(~ n2 < n1)
+                                   ==> (n1 <= n2) [N.Less=.trichotomy2]])}
+          let {eq := (!chain [(GCounterPayload.gcounter-max n1 n2)
+                               = (N.Max n1 n2) [gcounter-max-is-N-Max]
+                               = n2             [N.Max.not-less2]])}
+          let {upper := (!chain-> [eq
+                                   ==> (n2 = (GCounterPayload.gcounter-max n1 n2)) [sym]
+                                   ==> (n2 <= (GCounterPayload.gcounter-max n1 n2))
+                                     [N.Less=.Implied-by-equal]])}
+          (!chain-> [(!both ineq upper)
+                     ==> (n1 <= (GCounterPayload.gcounter-max n1 n2))
+                     [N.Less=.transitive]]))
+
+  conclude gmax-right-monotone :=
+    (forall ?n1:N ?n2:N
+      (<= ?n2 (GCounterPayload.gcounter-max ?n1 ?n2)))
+    pick-any n1:N n2:N
+      (!two-cases
+        assume (n2 < n1)
+          let {ineq := (!chain-> [(n2 < n1)
+                                   ==> (n2 <= n1) [N.Less=.Implied-by-<]])}
+          let {eq := (!chain-> [(n2 < n1)
+                                 ==> ((N.Max n1 n2) = n1) [N.Max.less2]
+                                 ==> ((GCounterPayload.gcounter-max n1 n2) = n1) [gcounter-max-is-N-Max]
+                                 ==> (n1 = (GCounterPayload.gcounter-max n1 n2)) [sym]])}
+          let {upper := (!chain-> [eq
+                                    ==> (n1 <= (GCounterPayload.gcounter-max n1 n2)) [N.Less=.Implied-by-equal]])}
+          (!chain-> [(!both ineq upper)
+                     ==> (n2 <= (GCounterPayload.gcounter-max n1 n2)) [N.Less=.transitive]])
+        assume (~ n2 < n1)
+          (!chain-> [(~ n2 < n1)
+                     ==> ((N.Max n1 n2) = n2)                                 [N.Max.not-less2]
+                     ==> ((GCounterPayload.gcounter-max n1 n2) = n2)          [gcounter-max-is-N-Max]
+                     ==> (n2 = (GCounterPayload.gcounter-max n1 n2))          [sym]
+                     ==> (n2 <= (GCounterPayload.gcounter-max n1 n2))         [N.Less=.Implied-by-equal]]))
+
+  # Backward compatibility aliases for existing proofs
+  define gcounter-max-commutative := gmax-commutative
+  define gcounter-max-associative := gmax-associative
+  define gcounter-max-idempotent := gmax-idempotent
+  define gcounter-max-left-monotone := gmax-left-monotone
+  define gcounter-max-right-monotone := gmax-right-monotone
+}

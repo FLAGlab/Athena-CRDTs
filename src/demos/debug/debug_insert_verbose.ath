@@ -1,0 +1,52 @@
+load "../../fmaps.ath"
+
+# Recreate registry-insert with debug output
+
+define-sort Clock := (FMap.Map Ide N)
+define-sort Registry := (FMap.Map Ide Clock)
+
+define registry-empty := (FMap.empty-map : Registry)
+define clock-empty := (FMap.empty-map : Clock)
+
+define (debug-registry-insert registry id clock depth) :=
+  match registry {
+    FMap.empty-map => 
+      (let () 
+        (print "Base case")
+        (FMap.update (pair id clock) registry-empty))
+  | (FMap.update (pair key existing) rest) =>
+      (let () 
+        (print "Recursive case")
+        (print "key:")
+        (eval key)
+        (print "id:")
+        (eval id)
+        (print "key = id:")
+        (eval (= key id))
+        (print "equal? key id:")
+        (eval (equal? key id))
+        (if (= key id)
+            (let () 
+              (print "Keys match - replacing")
+              (FMap.update (pair id clock) rest))
+            (let () 
+              (print "Keys differ - recursing")
+              (FMap.update (pair key existing) (debug-registry-insert rest id clock (S depth))))))
+  }
+
+define test-id := (string->id "test")
+
+define reg1 := (FMap.update (pair test-id clock-empty) registry-empty)
+
+(print "\n=== First insert ===")
+(eval reg1)
+
+define clock1 := (FMap.update (pair test-id (S zero)) clock-empty)
+
+(print "\n=== Second insert (should replace) ===")
+define reg2 := (debug-registry-insert reg1 test-id clock1 zero)
+
+(print "\nFinal registry:")
+(eval reg2)
+
+(print "\n=== Test complete ===")

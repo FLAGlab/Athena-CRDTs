@@ -1,0 +1,17 @@
+load "../../fmaps.ath"
+
+open FMap
+
+define (test-check key id) :=
+  check {
+    (key = id) => 'matched
+  | else => 'not-matched
+  }
+
+define _test1 := (test-check 'rep0 'rep0)
+define _test2 := (test-check 'rep0 'rep1)
+define _test3 := (test-check 'foo 'foo)
+
+(!_test1)
+(!_test2)
+(!_test3)

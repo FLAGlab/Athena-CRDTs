@@ -1,0 +1,44 @@
+load "vc_backbone"
+load "vc_core"
+
+module VCPayload {
+
+open VCBackbone
+open VCCore
+
+structure (VCPayloadOps State Value ClockType) :=
+  (vc-payload-ops State)
+
+declare vc-payload-apply: (State, Value, ClockType)
+  [(VCPayloadOps State Value ClockType) Value State] -> State
+
+declare vc-payload-op-clock: (State, Value, ClockType)
+  [(VCPayloadOps State Value ClockType) Value] -> (Option ClockType)
+
+define (reduce ops cfg) :=
+  match (get-pending cfg) {
+    Set.null => cfg
+  | (Set.insert msg rest) =>
+      match msg {
+        (pair actor value) =>
+              (let ((current (state-or cfg actor Set.null))
+                    (next    (vc-payload-apply ops value current))
+                    (cfg1    (update-state cfg actor next))
+                    (oc      (vc-payload-op-clock ops value))
+                    (cfg2    (match oc { NONE => cfg1 | (SOME clk) => (merge-clock cfg1 actor clk) }))
+                    (cfg3    (with-pending cfg2 rest)))
+                cfg3)
+      | _ => cfg
+      }
+  }
+
+define (reduce* ops cfg) :=
+  match (has-pending cfg) {
+    false => cfg
+  | true  => (reduce* ops (reduce ops cfg))
+  }
+
+} # end module VCPayload
+
+open VCPayload
+open VCCore

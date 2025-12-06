@@ -1,0 +1,35 @@
+load "../../crdts/crdt_g_set.ath"
+
+open GSetCRDT
+open Backbone
+
+define TestIds := ((string->id "replica0") :: ((string->id "replica1") :: nil))
+
+declare TestCfg: (Backbone.Configuration GSetPayload.State GSetPayload.Value)
+define TestCfg := (GSetCRDT.init TestIds)
+
+define ActorState := (Backbone.cfg-state-or TestCfg (string->id "replica0") Set.null)
+
+(eval ActorState)
+
+define ActorStateIsEmpty := (= ActorState Set.null:(Set.Set Ide))
+
+(eval ActorStateIsEmpty)
+
+define DirectMap := (FMap.update (pair (string->id "k0") (S zero)) FMap.empty-map)
+
+define LookupExisting := (Backbone.cfg-state-lookup DirectMap (string->id "k0") zero)
+
+(eval LookupExisting)
+
+define LookupExistingMatches := (= LookupExisting (S zero))
+
+(eval LookupExistingMatches)
+
+define LookupMissing := (Backbone.cfg-state-lookup DirectMap (string->id "missing") (S (S zero)))
+
+(eval LookupMissing)
+
+define LookupMissingMatches := (= LookupMissing (S (S zero)))
+
+(eval LookupMissingMatches)

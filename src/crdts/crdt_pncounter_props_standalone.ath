@@ -1,0 +1,12 @@
+load "../framework/pncounter_props.ath"
+
+open PNCounterPayload
+
+(print "\n=== PN-Counter Property Proofs Complete ===\n")
+(print "Proved: pn-join-commutative\n")
+(print "Proved: pn-join-associative\n")
+(print "Proved: pn-join-idempotent\n")
+(print "Proved: pn-join-left-pos-monotone\n")
+(print "Proved: pn-join-right-pos-monotone\n")
+(print "Proved: pn-join-left-neg-monotone\n")
+(print "Proved: pn-join-right-neg-monotone\n")

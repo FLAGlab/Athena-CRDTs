@@ -1,0 +1,97 @@
+load "../framework/vc_backbone"
+load "../framework/vc_payload"
+
+module MVRegisterVC {
+
+open VCBackbone
+open VCPayload
+
+define-sort Entry := (Pair Ide Clock)
+define-sort State := (Set.Set Entry)
+
+datatype Value := (op-write value:Ide clock:Clock)
+
+define state-empty := Set.null
+
+define (entry-value entry) :=
+  match entry {
+    (pair value _) => value
+  }
+
+define (entry-clock entry) :=
+  match entry {
+    (pair _ clock) => clock
+  }
+
+define (entry-remove-dominated target entries) :=
+  (VCCore.clock-filter-dominated (entry-clock target) entries entry-clock)
+
+define (entry-dominated-by? target entries) :=
+  (VCCore.clock-dominated-by-any? (entry-clock target) entries entry-clock)
+
+define (mv-insert entry entries) :=
+  (let ((without-dominated (entry-remove-dominated entry entries)))
+    (match (entry-dominated-by? entry without-dominated) {
+      true => without-dominated
+    | false => (Set.insert entry without-dominated)
+    }))
+
+define (mv-join left right) :=
+  match right {
+    Set.null => left
+  | (Set.insert entry rest) =>
+      (mv-insert entry (mv-join left rest))
+  }
+
+define (apply-write value clock state) :=
+  (mv-insert (pair value clock) state)
+
+define (init ids) :=
+  (VCBackbone.init state-empty ids)
+
+define (lookup-state cfg actor) :=
+  (VCBackbone.state-or cfg actor state-empty)
+
+define (issue-write cfg actor value) :=
+  (let ((ticked (VCBackbone.cfg-tick cfg actor))
+        (clock (VCBackbone.cfg-actor-clock ticked actor)))
+  (VCBackbone.broadcast-from ticked actor (MVRegisterVC.op-write value clock)))
+
+define (values cfg actor) :=
+  (let ((entries (lookup-state cfg actor)))
+    (letrec ((extract-values (lambda (s)
+               match s {
+                 Set.null => nil
+               | (Set.insert entry rest) =>
+                   ((entry-value entry) :: (extract-values rest))
+               | _ => nil
+               })))
+      (extract-values entries)))
+
+define (op-clock value) :=
+  match value { (MVRegisterVC.op-write _ clock) => (SOME clock) }
+
+define (apply-operation value state) :=
+  match value { (MVRegisterVC.op-write val clock) => (apply-write val clock state) }
+
+define ops := (VCPayload.vc-payload-ops state-empty)
+
+define (vc-payload-apply ops value state) :=
+  match ops {
+    (vc-payload-ops _) => (apply-operation value state)
+  }
+
+define (vc-payload-op-clock ops value) :=
+  match ops {
+    (vc-payload-ops _) => (op-clock value)
+  }
+
+define (reduce cfg) :=
+  (VCPayload.reduce ops cfg)
+
+define (reduce* cfg) :=
+  (VCPayload.reduce* ops cfg)
+
+} # end module MVRegisterVC
+
+open MVRegisterVC

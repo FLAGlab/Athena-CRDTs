@@ -1,0 +1,52 @@
+load "crdt_gcounter.ath"
+load "../framework/gcounter_max_props.ath"
+
+open Backbone
+open GCounterPayload
+open BackboneGCounter
+
+module BackboneGCounterProps {
+
+# ------------------------------------------------------------------
+# GCounter CRDT Properties: Proving Strong Eventual Consistency
+# ------------------------------------------------------------------
+# 
+# This module proves high-level CRDT properties by reusing the algebraic
+# properties proven in gcounter_max_props.ath. We don't duplicate the
+# low-level max proofs here.
+
+# GCounter join satisfies the commutativity property required for CRDTs
+conclude gcounter-join-commutative :=
+  (forall ?n1:N ?n2:N
+    (= (payload-join GCOUNTER_PAYLOAD ?n1 ?n2)
+       (payload-join GCOUNTER_PAYLOAD ?n2 ?n1)))
+  pick-any n1:N n2:N
+    (!chain [(payload-join GCOUNTER_PAYLOAD n1 n2)
+             = (GCounterPayload.gcounter-max n1 n2) [GCounterPayload.payload-join]
+             = (GCounterPayload.gcounter-max n2 n1) [GCounterPayload.gcounter-max-commutative]
+             = (payload-join GCOUNTER_PAYLOAD n2 n1) [GCounterPayload.payload-join]])
+
+# GCounter join is associative, mirroring the max operation
+conclude gcounter-join-associative :=
+  (forall ?n1:N ?n2:N ?n3:N
+    (= (payload-join GCOUNTER_PAYLOAD (payload-join GCOUNTER_PAYLOAD ?n1 ?n2) ?n3)
+       (payload-join GCOUNTER_PAYLOAD ?n1 (payload-join GCOUNTER_PAYLOAD ?n2 ?n3))))
+  pick-any n1:N n2:N n3:N
+    (!chain [(payload-join GCOUNTER_PAYLOAD (payload-join GCOUNTER_PAYLOAD n1 n2) n3)
+             = (GCounterPayload.gcounter-max (GCounterPayload.gcounter-max n1 n2) n3) [GCounterPayload.payload-join]
+             = (GCounterPayload.gcounter-max n1 (GCounterPayload.gcounter-max n2 n3)) [GCounterPayload.gcounter-max-associative]
+             = (payload-join GCOUNTER_PAYLOAD n1 (payload-join GCOUNTER_PAYLOAD n2 n3)) [GCounterPayload.payload-join]])
+
+# GCounter join is idempotent, mirroring the max operation
+conclude gcounter-join-idempotent :=
+  (forall ?n:N
+    (= (payload-join GCOUNTER_PAYLOAD ?n ?n)
+       ?n))
+  pick-any n:N
+    (!chain [(payload-join GCOUNTER_PAYLOAD n n)
+             = (GCounterPayload.gcounter-max n n) [GCounterPayload.payload-join]
+             = n [GCounterPayload.gcounter-max-idempotent]])
+
+} # end module BackboneGCounterProps
+
+open BackboneGCounterProps

@@ -1,0 +1,45 @@
+load "../../crdts/crdt_lww_register.ath"
+
+open LWWRegisterCRDT
+open LWWRegisterPayload
+open Backbone
+
+# Manually test reduce
+
+define ids := ((string->id "a") :: nil)
+
+define init-cfg := (LWWRegisterCRDT.init ids)
+
+(print "\nInitial config:")
+(eval init-cfg)
+
+# Manually create a message
+define test-msg := 
+  (Payload.msg 
+    (string->id "a")
+    (op-write (string->id "val") (string->id "a") zero FMap.empty-map)
+    FMap.empty-map)
+
+(print "\nTest message:")
+(eval test-msg)
+
+# Insert into network
+define cfg-with-msg :=
+  (Backbone.kfg
+    (cfg-states init-cfg)
+    (cfg-clocks init-cfg)
+    (MSet.insert test-msg MSet.null))
+
+(print "\nConfig with message:")
+(eval (cfg-net cfg-with-msg))
+
+# Try one reduce step
+define after-one-reduce := (LWWRegisterCRDT.reduce cfg-with-msg)
+
+(print "\nAfter one reduce:")
+(eval (cfg-net after-one-reduce))
+
+(print "\nState after reduce:")
+(eval (cfg-states after-one-reduce))
+
+(print "\n=== Test complete ===")

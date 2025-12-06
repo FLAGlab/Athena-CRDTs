@@ -1,0 +1,74 @@
+load "../../crdts/crdt_or_set.ath"
+
+open ORSetPayload
+
+# ORSet Payload Demo - Direct state operations with evaluations
+
+define apple := (string->id "apple")
+define banana := (string->id "banana")
+define cherry := (string->id "cherry")
+
+define tag1 := (string->id "tag1")
+define tag2 := (string->id "tag2")
+define tag3 := (string->id "tag3")
+
+define clk1 := (VCCore.clock-set VCCore.clock-empty (string->id "a") (S zero))
+define clk2 := (VCCore.clock-set VCCore.clock-empty (string->id "b") (S zero))
+define clk3 := (VCCore.clock-set clk1 (string->id "b") (S zero))
+
+(print "\n=== ORSet Payload Demo: Add-Wins Semantics ===\n")
+
+# Initialize
+(print "--- Initialization ---")
+define S0 := state-empty
+(print "Empty set")
+(print "Contains apple? " (eval (orset-contains? apple S0)))
+(print "Contains banana? " (eval (orset-contains? banana S0)))
+
+# Add apple
+(print "\n--- Add apple ---")
+define S1 := (orset-add apple tag1 clk1 S0)
+(print "Contains apple? " (eval (orset-contains? apple S1)))
+(print "Contains banana? " (eval (orset-contains? banana S1)))
+
+# Add banana
+(print "\n--- Add banana ---")
+define S2 := (orset-add banana tag2 clk2 S1)
+(print "Contains apple? " (eval (orset-contains? apple S2)))
+(print "Contains banana? " (eval (orset-contains? banana S2)))
+
+# Join with another set
+(print "\n--- Join operation ---")
+define S3 := (orset-add cherry tag3 clk3 S0)
+define S4 := (orset-join S2 S3)
+(print "After join, contains apple? " (eval (orset-contains? apple S4)))
+(print "After join, contains banana? " (eval (orset-contains? banana S4)))
+(print "After join, contains cherry? " (eval (orset-contains? cherry S4)))
+
+# Remove apple
+(print "\n--- Remove apple ---")
+define observed := (orset-lookup apple S4)
+define S5 := (orset-remove apple observed S4)
+(print "After remove, contains apple? " (eval (orset-contains? apple S5)))
+(print "After remove, contains banana? " (eval (orset-contains? banana S5)))
+(print "After remove, contains cherry? " (eval (orset-contains? cherry S5)))
+
+# Add-wins: concurrent add and remove
+(print "\n--- Concurrent add and remove (add-wins) ---")
+define S6a := (orset-add apple tag1 clk1 S0)
+define S6b := (orset-remove apple observed S0)
+define S7 := (orset-join S6a S6b)
+(print "After concurrent add/remove, contains apple? " (eval (orset-contains? apple S7)))
+(print "(Should be true - add-wins semantics)")
+
+# Final state
+(print "\n--- Final State Summary ---")
+(print "S5 (after sequential remove):")
+(print "  apple: " (eval (orset-contains? apple S5)))
+(print "  banana: " (eval (orset-contains? banana S5)))
+(print "  cherry: " (eval (orset-contains? cherry S5)))
+(print "\nS7 (after concurrent add-wins):")
+(print "  apple: " (eval (orset-contains? apple S7)))
+
+(print "\n=== Demo Complete ===\n")
+

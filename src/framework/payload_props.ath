@@ -1,0 +1,73 @@
+load "payload"
+
+open Payload
+
+
+module PayloadFrameworkProps {
+
+# Foundational payload lemmas with direct equational proofs.
+
+conclude payload-init-unfold :=
+  (forall ?init:'State
+    (= (payload-init (payload-ops ?init))
+       ?init))
+  pick-any init:'State
+    (!chain [(payload-init (payload-ops init))
+             = init [payload-init]])
+
+conclude payload-apply-delegates :=
+  (forall ?init:'State
+    (forall ?value:'Value
+      (forall ?state:'State
+        (= (payload-apply (payload-ops ?init) ?value ?state)
+           (payload-step (payload-ops ?init) ?value ?state)))))
+  pick-any init:'State value:'Value state:'State
+    (!chain [(payload-apply (payload-ops init) value state)
+             = (payload-step (payload-ops init) value state) [payload-apply]])
+
+# ------------------------------------------------------------------
+# CRDT Payload Properties: Axioms for Strong Eventual Consistency
+# ------------------------------------------------------------------
+
+# Commutativity of join: merge operations must be commutative for SEC.
+# This is a property schema that specific payloads must satisfy.
+define payload-join-commutative :=
+  (forall ?ops:(Payload.PayloadOps 'State 'Value)
+    (forall ?s1:'State
+      (forall ?s2:'State
+        (= (payload-join ?ops ?s1 ?s2)
+           (payload-join ?ops ?s2 ?s1)))))
+
+# Associativity of join: merge operations must be associative.
+define payload-join-associative :=
+  (forall ?ops:(Payload.PayloadOps 'State 'Value)
+    (forall ?s1:'State
+      (forall ?s2:'State
+        (forall ?s3:'State
+          (= (payload-join ?ops (payload-join ?ops ?s1 ?s2) ?s3)
+             (payload-join ?ops ?s1 (payload-join ?ops ?s2 ?s3)))))))
+
+# Idempotence of join: merging a state with itself yields the same state.
+define payload-join-idempotent :=
+  (forall ?ops:(Payload.PayloadOps 'State 'Value)
+    (forall ?s:'State
+      (= (payload-join ?ops ?s ?s)
+         ?s)))
+
+# Step preservation: applying a step preserves the ability to merge.
+# This ensures that local operations don't break convergence.
+define payload-step-preserves-join :=
+  (forall ?ops:(Payload.PayloadOps 'State 'Value)
+    (forall ?v:'Value
+      (forall ?s1:'State
+        (forall ?s2:'State
+          (= (payload-join ?ops (payload-step ?ops ?v ?s1) ?s2)
+             (payload-step ?ops ?v (payload-join ?ops ?s1 ?s2)))))))
+
+# Note: These are property schemas. Concrete CRDT implementations must
+# prove these for their specific payload-join and payload-step definitions.
+# See GCounterPayload and other examples for instantiations.
+
+} # end module PayloadFrameworkProps
+
+open PayloadFrameworkProps

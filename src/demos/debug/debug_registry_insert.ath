@@ -1,0 +1,56 @@
+load "../../fmaps.ath"
+load "../../list-util.ath"
+
+# Manually inline registry-insert with debug
+
+define-sort Clock := (FMap.Map Ide N)
+define-sort Registry := (FMap.Map Ide Clock)
+
+define registry-empty := (FMap.empty-map : Registry)
+define clock-empty := (FMap.empty-map : Clock)
+
+define test-id := (string->id "test")
+
+define reg1 := (FMap.update (pair test-id clock-empty) registry-empty)
+
+(print "\nInitial registry:")
+(eval reg1)
+
+# Now try to insert with same ID
+
+(print "\nAttempting insert with same ID...")
+
+define reg2 := match reg1 {
+  FMap.empty-map => 
+    begin
+      (print "Matched empty-map branch");
+      (FMap.update (pair test-id (FMap.update (pair test-id (S zero)) clock-empty)) registry-empty)
+    end
+| (FMap.update (pair key existing) rest) =>
+    begin
+      (print "Matched update branch");
+      (print "key:");
+      (eval key);
+      (print "test-id:");
+      (eval test-id);
+      (print "equal? result:");
+      (eval (equal? key test-id));
+      check {
+        (equal? key test-id) => 
+          begin
+            (print "Taking match branch - will replace");
+            (FMap.update (pair test-id (FMap.update (pair test-id (S zero)) clock-empty)) rest)
+          end
+      | else =>
+          begin
+            (print "Taking else branch - will recurse");
+            (FMap.update (pair key existing) registry-empty)
+          end
+      }
+    end
+}
+
+(print "\nFinal registry:")
+(eval reg2)
+
+(print "\n=== Test complete ===")

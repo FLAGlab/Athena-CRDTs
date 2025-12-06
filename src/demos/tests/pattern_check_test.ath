@@ -1,0 +1,24 @@
+load "../../fmaps.ath"
+
+# Test check with pattern-matched values
+
+define test-id := (string->id "test")
+
+define test-map := (FMap.update (pair test-id (string->id "value")) FMap.empty-map)
+
+(print "\nTest map:")
+(eval test-map)
+
+define result := match test-map {
+  (FMap.update (pair key val) rest) =>
+    check {
+      (equal? key test-id) => "keys-match"
+    | else => "keys-differ"
+    }
+| _ => "no-match"
+}
+
+(print "\nResult of check with pattern-matched key:")
+(eval result)
+
+(print "\nTest complete")

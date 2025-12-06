@@ -1,0 +1,113 @@
+# Attempting to prove reduce* properties using MSet induction
+# This shows whether the MSet structure supports the induction we need
+
+load "backbone"
+
+open Backbone
+open VCFunctional
+open MSet
+
+module BackboneInductiveProof {
+
+# Let's try to prove that reduce* empties the network
+# using structural induction on the MSet
+
+# First, let's try a simpler property: network size decreases
+# Actually, let's just try to prove reduce*-drains-net directly
+
+# ATTEMPT 1: Direct proof by induction on network structure
+# 
+# The issue: reduce* is defined on Configuration, not directly on MSet
+# We need to extract the network and reason about it
+
+# Helper: state that a configuration's network is empty
+define (cfg-net-is-empty cfg) :=
+  (get-cfg-net cfg) = MSet.null
+
+# Lemma: reduce* makes network empty
+# Let's try to prove this by induction on the network
+
+define reduce*-empties-network-statement :=
+  (forall ?ops:(Payload.PayloadOps 'State 'Value)
+    (forall ?states:(FMap.Map Ide 'State)
+      (forall ?clocks:Registry
+        (forall ?net:(MSet.MSet (Payload.Message 'Value Clock))
+          (= (get-cfg-net (Backbone.reduce* ?ops 
+                                            (Backbone.kfg ?states ?clocks ?net)))
+             MSet.null)))))
+
+# Try to prove it
+# 
+# by-induction reduce*-empties-network-statement {
+#   null => 
+#     # Base case: empty network
+#     pick-any ops states clocks
+#       (!chain [(get-cfg-net (reduce* ops (kfg states clocks null)))
+#                = (get-cfg-net (kfg states clocks null))  [reduce*]
+#                = null                                    [get-cfg-net]])
+#   
+#   | (insert msg rest) =>
+#     # Inductive case: non-empty network
+#     # IH: forall ops states clocks. get-cfg-net (reduce* ops (kfg states clocks rest)) = null
+#     pick-any ops states clocks
+#       let {IH := (forall ?ops ?states ?clocks .
+#                    (get-cfg-net (reduce* ?ops (kfg ?states ?clocks rest))) = null)}
+#         (!chain [(get-cfg-net (reduce* ops (kfg states clocks (insert msg rest))))
+#                  = (get-cfg-net (reduce* ops (reduce ops (kfg states clocks (insert msg rest)))))
+#                    [reduce*]
+#                  = (get-cfg-net (reduce* ops (kfg states' clocks' rest)))
+#                    [reduce]  # This step needs more work - reduce returns new states/clocks
+#                  = null
+#                    [IH]])  # Apply induction hypothesis
+# }
+
+# PROBLEM: The induction hypothesis talks about specific 'rest', but after reduce,
+# we get NEW states and clocks. The IH should say "for ANY states and clocks",
+# which it does, but we need to instantiate it properly.
+
+# ATTEMPT 2: Prove a weaker version first
+# Prove that reduce on (insert msg rest) gives network = rest
+
+conclude reduce-consumes-message-concrete :=
+  (forall ?ops:(Payload.PayloadOps 'State 'Value)
+    (forall ?states:(FMap.Map Ide 'State)
+      (forall ?clocks:Registry
+        (forall ?msg:(Payload.Message 'Value Clock)
+          (forall ?rest:(MSet.MSet (Payload.Message 'Value Clock))
+            (= (get-cfg-net (Backbone.reduce ?ops 
+                                              (Backbone.kfg ?states 
+                                                            ?clocks 
+                                                            (MSet.insert ?msg ?rest))))
+               ?rest))))))
+  pick-any ops:(Payload.PayloadOps 'State 'Value)
+           states:(FMap.Map Ide 'State)
+           clocks:Registry
+           msg:(Payload.Message 'Value Clock)
+           rest:(MSet.MSet (Payload.Message 'Value Clock))
+    # By pattern matching in reduce definition:
+    # reduce matches (insert msg rest) and returns (kfg ... rest)
+    (!chain [(get-cfg-net (Backbone.reduce ops 
+                                            (Backbone.kfg states clocks (MSet.insert msg rest))))
+             = ?rest [Backbone.reduce Backbone.get-cfg-net]])
+    # ISSUE: Athena can't automatically extract that reduce pattern-matches
+    # and returns rest. We'd need to assert this as an axiom about reduce.
+
+# CONCLUSION: We cannot prove this without either:
+# 1. Exposing the pattern-match semantics of reduce as a lemma
+# 2. Axiomatizing that reduce consumes exactly one message
+# 3. Having Athena automatically reason about pattern match results
+
+} # end module BackboneInductiveProof
+
+(print "\n=== Analysis: Why We Can't Prove reduce* Properties ===\n")
+(print "\nThe MSet structure DOES support induction.\n")
+(print "The PROBLEM is that reduce's pattern matching semantics\n")
+(print "are not exposed as rewrite rules.\n")
+(print "\nTo prove reduce*-drains-net, we need:\n")
+(print "  1. A lemma that reduce consumes exactly one message\n")
+(print "  2. This lemma should state:\n")
+(print "       reduce ops (kfg s c (insert m r)) = (kfg s' c' r)\n")
+(print "     for some s' and c'\n")
+(print "  3. Then we can induct on the MSet structure\n")
+(print "\nWithout exposing pattern-match semantics, we must ASSERT this.\n")
+(print "But the assertion is TRUE by definition of reduce!\n")

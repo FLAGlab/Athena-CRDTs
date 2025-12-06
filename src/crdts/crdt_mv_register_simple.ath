@@ -1,0 +1,286 @@
+load "../framework/payload"
+load "../framework/backbone"
+load "../framework/vc_core"
+load "../utils/fmaps"
+load "../utils/pair"
+load "../utils/list-util"
+load "../utils/set-util"
+
+# SimpleMVRegister: Starting from GCounter template, progressively building
+# toward a full Multi-Value Register with vector clocks and conflict resolution.
+
+open Payload
+open Backbone
+open VCCore
+open Set
+
+# ------------------------------------------------------------------
+# SimpleMVRegister: Payload-only version (starting simple like SimpleGCounter)
+# ------------------------------------------------------------------
+module SimpleMVRegister {
+
+  open Payload
+
+  # Entry: (value, clock) pair - tracks causality of writes
+  define-sort Entry := (Pair Ide Clock)
+  
+  # State: Set of concurrent entries
+  define-sort State := (Set.Set Entry)
+  
+  # Value: Write operation with actor, payload, and vector clock
+  datatype Value := (op-write Ide Ide Clock)
+  
+  # Payload ops instance
+  declare MV_PAYLOAD: [] -> (Payload.PayloadOps State Value)
+  
+  # Initial state: empty set
+  define state-empty := Set.null:(Set.Set Entry)
+  
+  define MV_PAYLOAD := (payload-ops state-empty)
+  
+  # Helper: extract value from entry
+  define (entry-value entry) :=
+    match entry {
+      (pair value _) => value
+    }
+  
+  # Helper: extract clock from entry
+  define (entry-clock entry) :=
+    match entry {
+      (pair _ clock) => clock
+    }
+  
+  # Step function: apply a write operation
+  declare mv-step: [Value State] -> State
+  
+  define (payload-step MV_PAYLOAD value state) :=
+    (mv-step value state)
+  
+  define (payload-join MV_PAYLOAD left right) :=
+    match right {
+      Set.null => left
+    | (Set.insert entry rest) =>
+        (Set.insert entry (payload-join MV_PAYLOAD left rest))
+    }
+  
+  define (payload-apply MV_PAYLOAD value state) :=
+    (mv-step value state)
+  
+  # For now, just insert the new entry (we'll add conflict resolution later)
+  define (mv-step value state) :=
+    match value {
+      (op-write payload _ clock) =>
+        (Set.insert (pair payload clock) state)
+    }
+  
+  # Normalization: recursively apply all payload-step operations
+  define (normalize-state state) :=
+    match state {
+      Set.null => Set.null
+    | (Set.insert entry rest) => (Set.insert entry (normalize-state rest))
+    | (Payload.payload-step _ (op-write payload _ clock) previous) =>
+        (Set.insert (pair payload clock) (normalize-state previous))
+    | (Payload.payload-step _ _ previous) =>
+        (normalize-state previous)
+    | value => value
+    }
+  
+  define (normalize-map candidate) :=
+    match candidate {
+      FMap.empty-map => FMap.empty-map
+    | (FMap.update (pair actor value) rest) =>
+        (FMap.update (pair actor (normalize-state value))
+                      (normalize-map rest))
+    | value => value
+    }
+  
+  define (init ids) := (Payload.init MV_PAYLOAD ids)
+  
+  # Issue a write from an actor
+  define (issue-write cfg actor payload) :=
+    (enqueue-with cfg actor (op-write payload actor) unit)
+  
+  define (reduce cfg) := (Payload.reduce MV_PAYLOAD cfg)
+  
+  define (reduce* cfg) :=
+    match (net cfg) {
+      MSet.null => cfg
+    | (MSet.insert _ _) => (reduce* (reduce cfg))
+    }
+  
+  define (snapshot cfg) :=
+    match cfg {
+      (kfg am _) => (normalize-map am)
+    | _ => (normalize-map (Payload.am cfg))
+    }
+  
+  define (net cfg) :=
+    match cfg {
+      (kfg _ pending) => pending
+    | _ => (Payload.net cfg)
+    }
+  
+  # Lookup value at specific actor
+  define (value-at-map map actor) :=
+    match map {
+      FMap.empty-map => state-empty
+    | (FMap.update (pair key value) rest) =>
+        match (equal? key actor) {
+          true => value
+        | false => (value-at-map rest actor)
+        }
+    }
+  
+  define (value-at cfg actor) :=
+    (value-at-map (snapshot cfg) actor)
+  
+  # Extract list of values from a set of entries
+  define (entries->values entries) :=
+    match entries {
+      Set.null => nil
+    | (Set.insert entry rest) =>
+        ((entry-value entry) :: (entries->values rest))
+    }
+  
+  # Get values at actor
+  define (values-at cfg actor) :=
+    (entries->values (value-at cfg actor))
+  
+  define (deliver-one cfg) :=
+    (reduce cfg)
+  
+  define (deliver-all cfg) :=
+    (reduce* cfg)
+
+} # end module SimpleMVRegister
+
+# ------------------------------------------------------------------
+# BackboneMVRegister: Uses Backbone framework with vector clocks
+# ------------------------------------------------------------------
+module BackboneMVRegister {
+
+  open Payload
+  open Backbone
+  open VCCore
+  
+  # Reuse the types from SimpleMVRegister
+  define-sort Entry := (Pair Ide Clock)
+  define-sort State := (Set.Set Entry)
+  datatype Value := (op-write Ide Ide Clock)
+  
+  define state-empty := Set.null:(Set.Set Entry)
+  
+  declare MV_PAYLOAD: [] -> (Payload.PayloadOps State Value)
+  define MV_PAYLOAD := (payload-ops state-empty)
+  
+  # Helper functions
+  define (entry-value entry) :=
+    match entry {
+      (pair value _) => value
+    }
+  
+  define (entry-clock entry) :=
+    match entry {
+      (pair _ clock) => clock
+    }
+  
+  declare mv-step: [Value State] -> State
+  
+  define (payload-step MV_PAYLOAD value state) :=
+    (mv-step value state)
+  
+  define (payload-apply MV_PAYLOAD value state) :=
+    (mv-step value state)
+  
+  define (payload-normalize-hook ops) :=
+    match ops {
+      (payload-ops state-empty) => MV_PAYLOAD
+    | _ => ops
+    }
+  
+  define (payload-canonical-from-init-hook ops init) :=
+    match ops {
+      (payload-ops state-empty) =>
+        match init {
+          state-empty => MV_PAYLOAD
+        | _ => ops
+        }
+    | _ => ops
+    }
+  
+  define (mv-step value state) :=
+    match value {
+      (op-write payload _ clock) =>
+        (Set.insert (pair payload clock) state)
+    }
+  
+  # Initialize with Backbone (includes clock map)
+  define (init ids) := (Backbone.init MV_PAYLOAD ids)
+  
+  # Issue write: tick clock and broadcast with current clock
+  define (issue-write cfg actor payload) :=
+    (let ((advanced (Backbone.cfg-tick cfg actor)))
+      (let ((clock (Backbone.cfg-actor-clock advanced actor)))
+        (Backbone.broadcast-with advanced
+                                 (op-write payload actor clock)
+                                 (lambda (recipient) clock))))
+  
+  define (reduce cfg) := (Backbone.reduce MV_PAYLOAD cfg)
+  
+  # Use Backbone's reduce* directly
+  define (reduce* cfg) := (Backbone.reduce* MV_PAYLOAD cfg)
+  
+  define (normalize-state state) :=
+    match state {
+      Set.null => Set.null
+    | (Set.insert entry rest) => (Set.insert entry (normalize-state rest))
+    | (Payload.payload-step _ (op-write payload _ clock) previous) =>
+        (Set.insert (pair payload clock) (normalize-state previous))
+    | (Payload.payload-step _ _ previous) =>
+        (normalize-state previous)
+    | value => value
+    }
+  
+  define (normalize-state-map entries) :=
+    match entries {
+      FMap.empty-map => FMap.empty-map
+    | (FMap.update (pair actor value) rest) =>
+        (FMap.update (pair actor (normalize-state value))
+                     (normalize-state-map rest))
+    }
+  
+  define (snapshot cfg) :=
+    (normalize-state-map (Backbone.get-cfg-states cfg))
+  
+  define (pending-net cfg) :=
+    (Backbone.get-cfg-net cfg)
+  
+  define (actor-clock cfg actor) :=
+    (Backbone.cfg-actor-clock cfg actor)
+  
+  define (state-at cfg actor) :=
+    (Backbone.cfg-state-lookup (snapshot cfg) actor state-empty)
+  
+  define (value-at cfg actor) :=
+    (state-at cfg actor)
+  
+  define (entries->values entries) :=
+    match entries {
+      Set.null => nil
+    | (Set.insert entry rest) =>
+        ((entry-value entry) :: (entries->values rest))
+    }
+  
+  define (values-at cfg actor) :=
+    (entries->values (value-at cfg actor))
+  
+  define (deliver-one cfg) :=
+    (reduce cfg)
+  
+  define (deliver-all cfg) :=
+    (reduce* cfg)
+
+} # end module BackboneMVRegister
+
+open SimpleMVRegister
+open BackboneMVRegister

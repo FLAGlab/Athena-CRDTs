@@ -1,0 +1,73 @@
+load "../../framework/backbone.ath"
+load "../../framework/payload.ath"
+
+open Backbone
+open Payload
+
+# Test Ide equality and map lookup
+
+define id1 := (string->id "test")
+define id2 := (string->id "test")
+
+(print "\nTesting Ide equality:")
+(print "id1:")
+(eval id1)
+(print "id2:")
+(eval id2)
+
+(print "\nDirect equality (=):")
+(eval (= id1 id2))
+
+(print "\nBuiltin equal?:")
+(eval (equal? id1 id2))
+
+# Test map lookup
+define test-map := (FMap.update (pair id1 (string->id "value1")) FMap.empty-map)
+
+(print "\nTest map:")
+(eval test-map)
+
+define lookup-with-id1 := (map-lookup test-map id1)
+define lookup-with-id2 := (map-lookup test-map id2)
+
+(print "\nLookup with id1:")
+(eval lookup-with-id1)
+
+(print "\nLookup with id2 (should be same):")
+(eval lookup-with-id2)
+
+# Test fresh ID generation
+define base := (string->id "replica")
+define fresh-ids := (gen-fresh base 3)
+
+(print "\nFresh IDs:")
+(eval fresh-ids)
+
+define first-id := match fresh-ids { (a :: _) => a | _ => base }
+define second-id := match fresh-ids { (_ :: (b :: _)) => b | _ => base }
+
+(print "\nFirst ID:")
+(eval first-id)
+(print "\nSecond ID:")
+(eval second-id)
+
+(print "\nAre they equal?")
+(eval (equal? first-id second-id))
+
+# Test map with generated IDs
+define gen-map := (FMap.update (pair first-id (string->id "first")) 
+                   (FMap.update (pair second-id (string->id "second")) FMap.empty-map))
+
+(print "\nGenerated map:")
+(eval gen-map)
+
+define lookup-first := (map-lookup gen-map first-id)
+define lookup-second := (map-lookup gen-map second-id)
+
+(print "\nLookup first:")
+(eval lookup-first)
+
+(print "\nLookup second:")
+(eval lookup-second)
+
+(print "\n=== Equality test complete ===")

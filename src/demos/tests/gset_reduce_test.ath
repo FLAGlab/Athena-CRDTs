@@ -1,0 +1,38 @@
+load "../../crdts/crdt_g_set.ath"
+
+open GSetCRDT
+open GSetPayload
+open Backbone
+
+# Test GSet reduce
+
+define ids := ((string->id "a") :: nil)
+define actorA := (string->id "a")
+
+define init-cfg := (GSetCRDT.init ids)
+
+(print "\nInitial:")
+(eval init-cfg)
+
+define after-add := (issue-add init-cfg actorA (string->id "x"))
+
+(print "\nAfter add (before reduce):")
+(print "Network:")
+(eval (pending-net after-add))
+(print "States:")
+(eval (snapshot after-add))
+
+define after-reduce := (GSetCRDT.reduce* after-add)
+
+(print "\nAfter reduce*:")
+(print "Network:")
+(eval (pending-net after-reduce))
+(print "States:")
+(eval (snapshot after-reduce))
+
+define final-set := (lookup-state after-reduce actorA)
+
+(print "\nFinal set:")
+(eval final-set)
+
+(print "\n=== Test complete ===")

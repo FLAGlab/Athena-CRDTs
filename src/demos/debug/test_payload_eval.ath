@@ -1,0 +1,87 @@
+# Debug test: Can we evaluate payload-step directly?
+
+load "../../crdts/crdt_lww_register"
+load "../../crdts/crdt_g_set"
+
+open LWWRegisterPayload
+open GSetPayload
+
+# Test 1: Direct evaluation of GSet payload-step (known working)
+define gset-test-value := (op-add (string->id "item1"))
+define gset-test-state := Set.null:(Set.Set Ide)
+define gset-result := (payload-step GSET_PAYLOAD gset-test-value gset-test-state)
+
+(print "\n=== Test 1: GSet payload-step ===")
+(print "Input value:")
+(eval gset-test-value)
+(print "Input state:")
+(eval gset-test-state)
+(print "Result of payload-step:")
+(eval gset-result)
+
+# Test 2: Direct evaluation of LWW payload-step
+define lww-test-clock := (FMap.update (pair (string->id "replica0") (S zero)) FMap.empty-map)
+define lww-test-value := (op-write (string->id "value1") (string->id "replica0") (S (S (S (S zero)))) lww-test-clock)
+define lww-test-state := reg-empty
+define lww-result := (payload-step LWW_PAYLOAD lww-test-value lww-test-state)
+
+(print "\n=== Test 2: LWW payload-step ===")
+(print "Input value:")
+(eval lww-test-value)
+(print "Input state:")
+(eval lww-test-state)
+(print "Result of payload-step:")
+(eval lww-result)
+
+# Test 3: Can we pattern match on lww-result?
+define (test-lww-match result) :=
+  match result {
+    reg-empty => (print "Matched reg-empty")
+  | (reg-entry v w c r) => (print "Matched reg-entry")
+  }
+
+(print "\n=== Test 3: Pattern match on LWW result ===")
+(test-lww-match lww-result)
+
+# Test 4: What happens when we store it in a map?
+define test-map := (FMap.update (pair (string->id "actor1") lww-result) FMap.empty-map)
+
+(print "\n=== Test 4: Stored in map ===")
+(print "Map contents:")
+(eval test-map)
+
+# Test 5: Retrieve from map and pattern match
+define (map-lookup map target fallback) :=
+  match map {
+    FMap.empty-map => fallback
+  | (FMap.update (pair key value) rest) =>
+      match (equal? key target) {
+        true => value
+      | false => (map-lookup rest target fallback)
+      }
+  }
+
+define retrieved := (map-lookup test-map (string->id "actor1") reg-empty)
+
+(print "\n=== Test 5: Retrieved from map ===")
+(print "Retrieved value:")
+(eval retrieved)
+
+define (test-retrieved-match result) :=
+  match result {
+    reg-empty => (print "Retrieved: Matched reg-empty")
+  | (reg-entry v w c r) => (print "Retrieved: Matched reg-entry")
+  }
+
+(print "Pattern matching on retrieved:")
+(test-retrieved-match retrieved)
+
+# Test 6: Compare with GSet retrieval
+define gset-map := (FMap.update (pair (string->id "actor1") gset-result) FMap.empty-map)
+define gset-retrieved := (map-lookup gset-map (string->id "actor1") Set.null)
+
+(print "\n=== Test 6: GSet retrieval ===")
+(print "GSet retrieved:")
+(eval gset-retrieved)
+(print "GSet has item1?")
+(eval (Set.in (string->id "item1") gset-retrieved))

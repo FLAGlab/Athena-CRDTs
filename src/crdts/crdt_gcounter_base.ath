@@ -1,0 +1,339 @@
+load "../framework/payload"
+load "../framework/payload_examples"
+load "../framework/backbone"
+load "../framework/backbone.ath"
+load "../framework/pncounter_props.ath"
+load "../utils/fmaps"
+load "../utils/pair"
+load "../utils/list-util"
+
+# Framework-based GCounter examples: a simple payload-only variant and a
+# variant that uses the CRDT backbone (with vector clocks). These examples
+# are small, self-contained, and intended as templates for migrating ad-hoc
+# CRDTs to the reusable framework.
+
+open Payload
+open Backbone
+open GCounterPayload
+
+# ------------------------------------------------------------------
+# SimpleGCounter: uses only the PayloadFramework (no vector clocks).
+# ------------------------------------------------------------------
+module SimpleGCounter {
+
+  # Reuse the generic GCounter payload instance from payload_examples.
+
+  define PAYLOAD := GCOUNTER_PAYLOAD
+
+  define (normalize-state state) :=
+    match state {
+      zero => zero
+    | (S rest) => (S (normalize-state rest))
+    | (Payload.payload-step _ (GCounterPayload.increment delta) previous) =>
+        (N.+ delta (normalize-state previous))
+    | (Payload.payload-step _ _ previous) =>
+        (normalize-state previous)
+    | value => value
+    }
+
+  define (normalize-map candidate) :=
+    match candidate {
+      FMap.empty-map => FMap.empty-map
+    | (FMap.update (pair actor value) rest) =>
+        (FMap.update (pair actor (normalize-state value))
+                      (normalize-map rest))
+    | value => value
+    }
+
+  define (normalize-net candidate) :=
+    match candidate {
+      (Payload.net (Payload.kfg _ net)) => (normalize-net net)
+    | value => value
+    }
+
+  define (init ids) := (Payload.init PAYLOAD ids)
+
+  # Broadcast a local increment of `delta` to all actors.
+  define (broadcast cfg delta) :=
+    match cfg {
+      (Payload.kfg am net) =>
+        let { add-msg := (lambda (id) (msg id (increment delta) unit)) }
+          (Payload.kfg am (map add-msg (FMap.dom am)))
+    }
+
+  # The reduce function is the one from Payload.
+  define (reduce cfg) := (Payload.reduce PAYLOAD cfg)
+
+  define (reduce* cfg) :=
+    match (net cfg) {
+      MSet.null => cfg
+    | (MSet.insert _ _) => (reduce* (reduce cfg))
+    }
+
+  define (issue-increment cfg actor delta) :=
+    (enqueue-with cfg actor (increment delta) unit)
+
+  define (snapshot cfg) :=
+    match cfg {
+      (kfg am _) => (normalize-map am)
+    | _ => (normalize-map (Payload.am cfg))
+    }
+
+  define (net cfg) :=
+    match cfg {
+      (kfg _ pending) => (normalize-net pending)
+    | _ => (normalize-net (Payload.net cfg))
+    }
+
+  define (value-at-map map actor) :=
+    match map {
+      FMap.empty-map => zero
+    | (FMap.update (pair key value) rest) =>
+        match (equal? key actor) {
+          true => value
+        | false => (value-at-map rest actor)
+        }
+    }
+
+  define (value-at cfg actor) :=
+    (value-at-map (snapshot cfg) actor)
+
+  define (deliver-one cfg) :=
+    (reduce cfg)
+
+  define (deliver-all cfg) :=
+    (reduce* cfg)
+
+} # end module SimpleGCounter
+
+# ------------------------------------------------------------------
+# BackboneGCounter: uses CRDTBackbone with vector clocks (VCCore).
+# This demonstrates how to combine payloads with clocks for message meta.
+# ------------------------------------------------------------------
+module BackboneGCounter {
+
+  open Payload
+  open Backbone
+  open VCCore
+  open GCounterPayload
+  open BackbonePayloadAdapter
+
+  define PAYLOAD := GCOUNTER_PAYLOAD
+
+  # Configuration type is the one from Backbone. Provide simple
+  # init that seeds both states and clock-map.
+  define (init ids) := (Backbone.init PAYLOAD ids)
+
+  # Broadcast a local increment using the sender's clock metadata
+  define (broadcast cfg delta sender) :=
+    (Backbone.broadcast-from cfg sender (increment delta))
+
+  # Reduce uses the backbone reduce which also merges clocks
+  define (reduce cfg) := (Backbone.reduce PAYLOAD cfg)
+
+  define (reduce* cfg) := (Backbone.reduce* PAYLOAD cfg)
+
+  define (issue-increment cfg actor delta) :=
+    (broadcast cfg delta actor)
+
+  define (snapshot cfg) :=
+    (Backbone.cfg-states-drained cfg)
+
+  define (pending-net cfg) :=
+    (Backbone.get-cfg-net cfg)
+
+  define (actor-clock cfg actor) :=
+    (Backbone.cfg-actor-clock cfg actor)
+
+  define (state-at cfg actor) :=
+    (Backbone.cfg-state-or cfg actor zero)
+
+  define (value-at cfg actor) :=
+    (state-at cfg actor)
+
+  define (with-states cfg states) :=
+    (Backbone.kfg cfg states)
+
+  define (normalize cfg) :=
+    (Backbone.cfg-with-drained-states (reduce* cfg))
+
+  define (map-sum map) :=
+    match map {
+      FMap.empty-map => zero
+    | (FMap.update (pair _ value) rest) =>
+        (N.+ value (map-sum rest))
+    }
+
+  define (total cfg) :=
+    (map-sum (snapshot cfg))
+
+  define (deliver-one cfg) :=
+    (Backbone.reduce PAYLOAD cfg)
+
+  define (deliver-all cfg) :=
+    (Backbone.reduce* PAYLOAD cfg)
+
+  define (drop-next cfg) :=
+    (Backbone.cfg-drop-next-message cfg)
+
+} # end module BackboneGCounter
+
+open SimpleGCounter
+open BackboneGCounter
+
+# ------------------------------------------------------------------
+# SimplePNCounter: payload-only PN-counter for quick local checks.
+# State is a pair of maps (positives, negatives) from Ide to N.
+# ------------------------------------------------------------------
+module SimplePNCounter {
+
+  open Payload
+
+  define-sort State := (Pair (FMap.Map Ide N) (FMap.Map Ide N))
+
+  datatype Value := (inc Ide N) | (dec Ide N)
+
+  define state-empty := (pair FMap.empty-map FMap.empty-map)
+
+  define (pos s) := match s { (pair p _) => p | _ => FMap.empty-map }
+  define (neg s) := match s { (pair _ n) => n | _ => FMap.empty-map }
+
+  define (map-get m k) :=
+    match m {
+      FMap.empty-map => zero
+    | (FMap.update (pair key value) rest) =>
+        match (equal? key k) { true => value | false => (map-get rest k) }
+    }
+
+  define (map-delete m k) :=
+    match m {
+      FMap.empty-map => FMap.empty-map
+    | (FMap.update (pair key value) rest) =>
+        match (equal? key k) {
+          true => (map-delete rest k)
+        | false => (FMap.update (pair key value) (map-delete rest k))
+        }
+    }
+
+  define (map-set m k v) := (FMap.update (pair k v) (map-delete m k))
+
+  declare PNC_PAYLOAD: [] -> (Payload.PayloadOps State Value)
+  define PNC_PAYLOAD := (payload-ops state-empty)
+
+  define (payload-step PNC_PAYLOAD value state) :=
+    match value {
+      (inc a d) => (pair (map-set (pos state) a (N.+ (map-get (pos state) a) d))
+                          (neg state))
+    | (dec a d) => (pair (pos state)
+                          (map-set (neg state) a (N.+ (map-get (neg state) a) d)))
+    | _ => state
+    }
+
+  # Drain nested payload-step layers into a canonical pair of maps
+  define (normalize-state s) :=
+    match s {
+      (Payload.payload-step _ (inc a d) prev) =>
+        (let ((ns (normalize-state prev)))
+          (pair (map-set (pos ns) a (N.+ (map-get (pos ns) a) d))
+                (neg ns)))
+    | (Payload.payload-step _ (dec a d) prev) =>
+        (let ((ns (normalize-state prev)))
+          (pair (pos ns)
+                (map-set (neg ns) a (N.+ (map-get (neg ns) a) d))))
+    | value => value
+    }
+
+  define (normalize-map m) :=
+    match m {
+      FMap.empty-map => FMap.empty-map
+    | (FMap.update (pair actor value) rest) =>
+        (FMap.update (pair actor (normalize-state value))
+                     (normalize-map rest))
+    }
+
+  # Init a network of actors with empty PN states.
+  define (init ids) := (Payload.init PNC_PAYLOAD ids)
+
+  # Enqueue local operations.
+  define (issue-inc cfg actor d) := (enqueue-with cfg actor (inc actor d) unit)
+  define (issue-dec cfg actor d) := (enqueue-with cfg actor (dec actor d) unit)
+
+  # Reduce pending messages (payload-only mechanics).
+  define (reduce cfg) := (Payload.reduce PNC_PAYLOAD cfg)
+  define (reduce* cfg) := (Payload.reduce* PNC_PAYLOAD cfg)
+
+  # Snapshot raw actor-state map (no backbone/clocks here).
+  define (snapshot cfg) :=
+    match cfg {
+      (kfg am _) => (normalize-map am)
+    | _ => (normalize-map (Payload.am cfg))
+    }
+
+  # Helpers to compute tallies.
+  define (sum m) :=
+    match m { FMap.empty-map => zero
+            | (FMap.update (pair _ v) rest) => (N.+ v (sum rest)) }
+
+  define (tally-of s) := (pair (sum (pos s)) (sum (neg s)))
+
+  define (tally-at cfg actor) :=
+    match (Payload.map-lookup (snapshot cfg) actor) {
+      NONE => (pair zero zero)
+    | (SOME s) => (tally-of (normalize-state s))
+    }
+
+  define (net cfg) := (Payload.net cfg)
+}
+
+  # ------------------------------------------------------------------
+  # BackbonePNCounter: payload wired through the shared Backbone plumbing.
+  # ------------------------------------------------------------------
+  module BackbonePNCounter {
+
+    open Payload
+    open Backbone
+    open BackbonePayloadAdapter
+    open PNCounterPayload
+    open Pr
+    open N
+
+    define PAYLOAD := PNC_PAYLOAD
+
+    define (init ids) := (Backbone.init PAYLOAD ids)
+
+    define (reduce cfg) := (Backbone.reduce PAYLOAD cfg)
+
+    define (reduce* cfg) := (Backbone.reduce* PAYLOAD cfg)
+
+    define (issue-inc cfg actor delta) :=
+      (Backbone.broadcast-from cfg actor (inc delta))
+
+    define (issue-dec cfg actor delta) :=
+      (Backbone.broadcast-from cfg actor (dec delta))
+
+    define (deliver-one cfg) := (Backbone.reduce PAYLOAD cfg)
+
+    define (deliver-all cfg) := (Backbone.reduce* PAYLOAD cfg)
+
+    define (drop-next cfg) := (Backbone.cfg-drop-next-message cfg)
+
+    define (pending-net cfg) := (Backbone.get-cfg-net cfg)
+
+    define (actor-clock cfg actor) := (Backbone.cfg-actor-clock cfg actor)
+
+    define (snapshot cfg) := (Backbone.cfg-states-drained cfg)
+
+    define (state-at cfg actor) := (Backbone.cfg-state-or cfg actor (pr zero zero))
+
+    define (tally cfg actor) := (state-at cfg actor)
+
+    define (net-value tally) :=
+      match tally {
+        (pr pos neg) => (N.- pos neg)
+      }
+
+    define (value-at cfg actor) := (net-value (tally cfg actor))
+
+    define (normalize cfg) := (Backbone.cfg-with-drained-states (reduce* cfg))
+
+  } # end module BackbonePNCounter
